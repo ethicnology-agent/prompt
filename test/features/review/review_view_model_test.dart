@@ -18,7 +18,10 @@ class _Repository implements ReviewRepository {
   @override
   Stream<ReviewRun> get progress => progressController.stream;
   @override
-  Future<ReviewSnapshot> loadSnapshot(ReviewTarget target) => snapshotFuture;
+  Future<ReviewSnapshot> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source = ReviewDiffSource.session,
+  }) => snapshotFuture;
   @override
   Future<ReviewRun> start(
     ReviewTarget target,

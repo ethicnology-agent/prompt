@@ -37,12 +37,19 @@ class _FakeRepository implements ReviewRepository {
   final started = <List<ReviewReviewerConfiguration>>[];
   var cancelled = false;
   var disposed = false;
+  ReviewDiffSource? lastSource;
 
   @override
   Stream<ReviewRun> get progress => progressController.stream;
   @override
-  Future<ReviewSnapshot> loadSnapshot(ReviewTarget target) =>
-      loadOverride?.call() ?? Future.value(snapshot);
+  Future<ReviewSnapshot> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source = ReviewDiffSource.session,
+  }) {
+    lastSource = source;
+    return loadOverride?.call() ?? Future.value(snapshot);
+  }
+
   @override
   Future<ReviewRun> start(
     ReviewTarget target,
@@ -636,6 +643,57 @@ void main() {
       expect(find.textContaining('Unknown pricing:'), findsOneWidget);
     },
   );
+
+  testWidgets('picks what the review compares', (tester) async {
+    final snapshot = ReviewSnapshot.stored(
+      target: _target,
+      files: const [
+        ReviewFile(path: 'a.dart', status: 'modified', patch: 'patch'),
+      ],
+    );
+    final repository = _FakeRepository(snapshot);
+    final vm = ReviewViewModel(repository);
+    await tester.pumpWidget(_screen(vm, _capabilities(_models)));
+    await tester.pump();
+
+    // The session diff is what a review defaults to.
+    expect(repository.lastSource, ReviewDiffSource.session);
+    expect(find.byKey(const ValueKey('review-diff-source')), findsOneWidget);
+
+    await tester.tap(find.text('Uncommitted'));
+    await tester.pump();
+    expect(repository.lastSource, ReviewDiffSource.uncommitted);
+
+    await tester.tap(find.text('Branch'));
+    await tester.pump();
+    expect(repository.lastSource, ReviewDiffSource.branch);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a source with nothing to show keeps the picker reachable', (
+    tester,
+  ) async {
+    final snapshot = ReviewSnapshot.stored(
+      target: _target,
+      files: const [
+        ReviewFile(path: 'a.dart', status: 'modified', patch: 'patch'),
+      ],
+    );
+    final repository = _FakeRepository(
+      snapshot,
+      loadOverride: () => Future.error(
+        const ReviewValidationException('There are no uncommitted changes.'),
+      ),
+    );
+    final vm = ReviewViewModel(repository);
+    await tester.pumpWidget(_screen(vm, _capabilities(_models)));
+    await tester.pump();
+    await tester.pump();
+
+    expect(find.text('There are no uncommitted changes.'), findsOneWidget);
+    // Without the picker here, an empty source would be a dead end.
+    expect(find.byKey(const ValueKey('review-diff-source')), findsOneWidget);
+  });
 
   testWidgets('renders a snapshot of server-shaped patches', (tester) async {
     // Real patches from OpenCode open with their own `diff --git` header and

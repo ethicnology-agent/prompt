@@ -349,11 +349,13 @@ class _ReviewRepositoryForScreen implements ReviewRepository {
   @override
   Stream<ReviewRun> get progress => _progress.stream;
   @override
-  Future<ReviewSnapshot> loadSnapshot(ReviewTarget target) async =>
-      ReviewSnapshot(
-        target: target,
-        files: const [ReviewFile(path: 'a', status: 'M', patch: 'x')],
-      );
+  Future<ReviewSnapshot> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source = ReviewDiffSource.session,
+  }) async => ReviewSnapshot(
+    target: target,
+    files: const [ReviewFile(path: 'a', status: 'M', patch: 'x')],
+  );
   @override
   Future<ReviewRun> start(
     ReviewTarget target,

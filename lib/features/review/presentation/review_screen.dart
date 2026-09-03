@@ -27,13 +27,14 @@ class _ReviewScreenState extends State<ReviewScreen> {
   final _roles = <ReviewRole>[ReviewRole.correctness, ReviewRole.security];
   final _selection = <ReviewRole, String?>{};
   int _tab = 0;
+  ReviewDiffSource _source = ReviewDiffSource.session;
   ReviewSnapshot? _parsedSnapshot;
   List<DiffFile> _parsedFiles = const <DiffFile>[];
 
   @override
   void initState() {
     super.initState();
-    unawaited(widget.viewModel.loadSnapshot(widget.target));
+    unawaited(widget.viewModel.loadSnapshot(widget.target, source: _source));
     unawaited(
       widget.viewModel.history(
         widget.target.profile.id,
@@ -187,13 +188,22 @@ class _ReviewScreenState extends State<ReviewScreen> {
       return const Center(child: CircularProgressIndicator());
     }
     if (run.state == ReviewRunState.failed && run.snapshot == null) {
-      return _message(
-        run.error?.message ?? 'Unable to load the session diff.',
-        retry: true,
+      // The picker stays: a source with nothing to show is a normal answer,
+      // and the way out of it is to pick another one.
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _sourcePicker(),
+          const SizedBox(height: 24),
+          _message(
+            run.error?.message ?? 'Unable to load the diff.',
+            retry: true,
+          ),
+        ],
       );
     }
     final snapshot = run.snapshot;
-    if (snapshot == null) return _message('Loading session diff…');
+    if (snapshot == null) return _message('Loading the diff…');
     if (run.state == ReviewRunState.idle) return _setup(snapshot);
     return _results(run);
   }
@@ -204,10 +214,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
       Text(text, textAlign: TextAlign.center),
       if (retry) ...[
         const SizedBox(height: 12),
-        FilledButton(
-          onPressed: () => widget.viewModel.loadSnapshot(widget.target),
-          child: const Text('Retry'),
-        ),
+        FilledButton(onPressed: _reload, child: const Text('Retry')),
       ],
     ],
   );
@@ -222,6 +229,8 @@ class _ReviewScreenState extends State<ReviewScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
+        _sourcePicker(),
+        const SizedBox(height: 16),
         ValueListenableBuilder<ReviewHistoryState>(
           valueListenable: widget.viewModel.historyState,
           builder: (context, historyState, _) {
@@ -460,6 +469,36 @@ class _ReviewScreenState extends State<ReviewScreen> {
     );
   }
 
+  void _reload() {
+    _parsedSnapshot = null;
+    unawaited(widget.viewModel.loadSnapshot(widget.target, source: _source));
+  }
+
+  /// Chooses what the review compares.
+  ///
+  /// Only the new side varies: the server offers the working tree and the
+  /// current branch, each against its natural base. Comparing two arbitrary
+  /// refs needs parameters the diff endpoint does not accept yet.
+  Widget _sourcePicker() => Align(
+    alignment: Alignment.centerLeft,
+    child: SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: SegmentedButton<ReviewDiffSource>(
+        key: const ValueKey('review-diff-source'),
+        segments: [
+          for (final source in ReviewDiffSource.values)
+            ButtonSegment(value: source, label: Text(source.label)),
+        ],
+        selected: {_source},
+        showSelectedIcon: false,
+        onSelectionChanged: (selection) {
+          setState(() => _source = selection.first);
+          _reload();
+        },
+      ),
+    ),
+  );
+
   /// Restores the side gutter the diff tab drops from the page padding.
   ///
   /// Only the diff itself should reach the screen edges; the run header, the
@@ -495,10 +534,7 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   child: const Text('Cancel'),
                 ),
               if (run.state != ReviewRunState.running)
-                TextButton(
-                  onPressed: () => widget.viewModel.loadSnapshot(widget.target),
-                  child: const Text('New review'),
-                ),
+                TextButton(onPressed: _reload, child: const Text('New review')),
             ],
           ),
         ),

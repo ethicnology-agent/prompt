@@ -52,6 +52,70 @@ ReviewSnapshot snapshot() => ReviewSnapshot(
 );
 
 void main() {
+  test('loads uncommitted work and the branch from the VCS endpoint', () async {
+    final requests = <Uri>[];
+    final service = OpenCodeReviewService(
+      OpenCodeTransport(
+        MockClient((incoming) async {
+          requests.add(incoming.url);
+          if (incoming.url.path == '/vcs/diff') {
+            return http.Response(
+              '[{"file":"lib/a.dart","status":"modified",'
+              '"patch":"@@ -1 +1 @@\\n-a\\n+b","additions":1,"deletions":1}]',
+              200,
+            );
+          }
+          return http.Response('', 500);
+        }),
+      ),
+      credentialsStore: MemoryCredentials(),
+    );
+
+    final uncommitted = await service.loadSnapshot(
+      target(),
+      source: ReviewDiffSource.uncommitted,
+    );
+    final branch = await service.loadSnapshot(
+      target(),
+      source: ReviewDiffSource.branch,
+    );
+
+    expect(uncommitted.source, ReviewDiffSource.uncommitted);
+    expect(branch.source, ReviewDiffSource.branch);
+    expect(uncommitted.files.single.path, 'lib/a.dart');
+    expect(requests.map((url) => url.queryParameters['mode']), [
+      'git',
+      'branch',
+    ]);
+    // Context is bounded on purpose: omitting it returns close to whole files
+    // and spends the snapshot budget on code nobody touched.
+    expect(
+      requests.map((url) => url.queryParameters['context']),
+      everyElement('${OpenCodeReviewService.vcsContextLines}'),
+    );
+    expect(requests.map((url) => url.path), everyElement('/vcs/diff'));
+  });
+
+  test('reports an empty result in the words of the chosen source', () async {
+    final service = OpenCodeReviewService(
+      OpenCodeTransport(
+        MockClient((incoming) async => http.Response('[]', 200)),
+      ),
+      credentialsStore: MemoryCredentials(),
+    );
+
+    await expectLater(
+      service.loadSnapshot(target(), source: ReviewDiffSource.uncommitted),
+      throwsA(
+        isA<ReviewValidationException>().having(
+          (error) => error.message,
+          'message',
+          'There are no uncommitted changes.',
+        ),
+      ),
+    );
+  });
+
   test(
     'keeps a snapshot whose entries omit the optional diff fields',
     () async {

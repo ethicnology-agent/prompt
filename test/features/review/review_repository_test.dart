@@ -23,17 +23,19 @@ class FakeReviewService implements ReviewExecutionService {
   final completers = <String, Completer<ReviewPass>>{};
 
   @override
-  Future<ReviewSnapshot> loadSnapshot(ReviewTarget target) async =>
-      ReviewSnapshot(
-        target: target,
-        files: const [
-          ReviewFile(
-            path: 'lib/a.dart',
-            status: 'modified',
-            patch: '@@ -1 +1 @@\n-a\n+b',
-          ),
-        ],
-      );
+  Future<ReviewSnapshot> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source = ReviewDiffSource.session,
+  }) async => ReviewSnapshot(
+    target: target,
+    files: const [
+      ReviewFile(
+        path: 'lib/a.dart',
+        status: 'modified',
+        patch: '@@ -1 +1 @@\n-a\n+b',
+      ),
+    ],
+  );
   @override
   Future<String> createChild(
     ReviewSnapshot snapshot,

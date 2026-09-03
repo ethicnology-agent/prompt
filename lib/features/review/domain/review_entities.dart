@@ -36,6 +36,34 @@ class ReviewTarget {
   final OpenCodeSession session;
 }
 
+/// What a review compares.
+///
+/// A comparison has two sides, and only the new one varies here: the server
+/// exposes the working tree and the current branch, each against its natural
+/// base. Comparing two arbitrary refs would need parameters `GET /vcs/diff`
+/// does not accept yet.
+enum ReviewDiffSource {
+  /// The newest non-empty diff produced by a message in this session.
+  session('Session'),
+
+  /// Everything not yet committed in the working tree.
+  uncommitted('Uncommitted'),
+
+  /// The current branch against the repository's default branch.
+  branch('Branch');
+
+  const ReviewDiffSource(this.label);
+
+  final String label;
+
+  String get emptyMessage => switch (this) {
+    ReviewDiffSource.session => 'The session diff is empty.',
+    ReviewDiffSource.uncommitted => 'There are no uncommitted changes.',
+    ReviewDiffSource.branch =>
+      'This branch has no changes against the default branch.',
+  };
+}
+
 class ReviewFile {
   const ReviewFile({
     required this.path,
@@ -48,17 +76,24 @@ class ReviewFile {
 }
 
 class ReviewSnapshot {
-  ReviewSnapshot({required this.target, required List<ReviewFile> files})
-    : files = List.unmodifiable(files) {
+  ReviewSnapshot({
+    required this.target,
+    required List<ReviewFile> files,
+    this.source = ReviewDiffSource.session,
+  }) : files = List.unmodifiable(files) {
     if (files.isEmpty) {
-      throw const ReviewValidationException('The session diff is empty.');
+      throw ReviewValidationException(source.emptyMessage);
     }
   }
 
   /// Reopens a persisted snapshot, including a server response with no files.
-  ReviewSnapshot.stored({required this.target, required List<ReviewFile> files})
-    : files = List.unmodifiable(files);
+  ReviewSnapshot.stored({
+    required this.target,
+    required List<ReviewFile> files,
+    this.source = ReviewDiffSource.session,
+  }) : files = List.unmodifiable(files);
   final ReviewTarget target;
+  final ReviewDiffSource source;
   final List<ReviewFile> files;
   String get fullDiff => files
       .map((file) => '--- ${file.path} (${file.status})\n${file.patch}')

@@ -8,7 +8,10 @@ import 'review_cost_estimator.dart';
 import 'review_result_parser.dart';
 
 abstract interface class ReviewExecutionService {
-  Future<ReviewSnapshot> loadSnapshot(ReviewTarget target);
+  Future<ReviewSnapshot> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source,
+  });
   Future<String> createChild(
     ReviewSnapshot snapshot,
     ReviewReviewerConfiguration config,
@@ -33,8 +36,46 @@ class OpenCodeReviewService implements ReviewExecutionService {
   final CredentialsStore credentialsStore;
   final Duration pollInterval;
 
+  /// Lines of unchanged context requested around each change.
+  ///
+  /// `GET /vcs/diff` returns close to whole-file content when this is omitted:
+  /// measured against a live server, six changed files cost about 237,000
+  /// patch characters unbounded and 56,613 at ten lines of context, against a
+  /// snapshot budget of 200,000. Enough context to judge a change, not enough
+  /// to spend the budget on code nobody touched.
+  static const vcsContextLines = 6;
+
   @override
-  Future<ReviewSnapshot> loadSnapshot(ReviewTarget target) async {
+  Future<ReviewSnapshot> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source = ReviewDiffSource.session,
+  }) => switch (source) {
+    ReviewDiffSource.session => _loadSessionSnapshot(target),
+    ReviewDiffSource.uncommitted => _loadVcsSnapshot(target, source, 'git'),
+    ReviewDiffSource.branch => _loadVcsSnapshot(target, source, 'branch'),
+  };
+
+  Future<ReviewSnapshot> _loadVcsSnapshot(
+    ReviewTarget target,
+    ReviewDiffSource source,
+    String mode,
+  ) async {
+    final query = Uri(
+      queryParameters: {
+        'directory': target.session.directory,
+        'mode': mode,
+        'context': '$vcsContextLines',
+      },
+    ).query;
+    final response = await _get(target, '/vcs/diff?$query');
+    return ReviewSnapshot(
+      target: target,
+      source: source,
+      files: _parseDiff(response.body),
+    );
+  }
+
+  Future<ReviewSnapshot> _loadSessionSnapshot(ReviewTarget target) async {
     final query = Uri(
       queryParameters: {'directory': target.session.directory},
     ).query;

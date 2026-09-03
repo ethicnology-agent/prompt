@@ -5,7 +5,10 @@ import 'opencode_review_service.dart';
 
 abstract interface class ReviewRepository {
   Stream<ReviewRun> get progress;
-  Future<ReviewSnapshot> loadSnapshot(ReviewTarget target);
+  Future<ReviewSnapshot> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source,
+  });
   Future<ReviewRun> start(
     ReviewTarget target,
     List<ReviewReviewerConfiguration> configurations, {
@@ -32,8 +35,10 @@ class InMemoryReviewRepository implements ReviewRepository {
   Stream<ReviewRun> get progress => _progress.stream;
 
   @override
-  Future<ReviewSnapshot> loadSnapshot(ReviewTarget target) =>
-      service.loadSnapshot(target);
+  Future<ReviewSnapshot> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source = ReviewDiffSource.session,
+  }) => service.loadSnapshot(target, source: source);
 
   void _publish(ReviewRun run) {
     if (!_disposed && !_progress.isClosed) _progress.add(run);

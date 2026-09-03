@@ -111,11 +111,14 @@ class ReviewViewModel extends ValueNotifier<ReviewRun> {
   late final StreamSubscription<ReviewRun> _progressSubscription;
   bool _disposed = false;
 
-  Future<void> loadSnapshot(ReviewTarget target) async {
+  Future<void> loadSnapshot(
+    ReviewTarget target, {
+    ReviewDiffSource source = ReviewDiffSource.session,
+  }) async {
     if (_disposed) return;
     value = ReviewRun(state: ReviewRunState.loading);
     try {
-      final snapshot = await repository.loadSnapshot(target);
+      final snapshot = await repository.loadSnapshot(target, source: source);
       if (_disposed) return;
       value = ReviewRun(state: ReviewRunState.idle, snapshot: snapshot);
     } on ReviewValidationException catch (error) {
