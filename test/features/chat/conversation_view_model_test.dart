@@ -42,6 +42,24 @@ Future<void> _settleLive() async {
   await _settle();
 }
 
+/// Waits for [done] instead of guessing how long the pipeline needs.
+///
+/// The view model batches SSE deltas, so a fixed delay is a race against the
+/// machine: it passes alone and fails when the suite runs under load. Failing
+/// here means the update never arrived, which is a real result rather than a
+/// slow one.
+Future<void> _settleUntil(
+  bool Function() done, {
+  Duration timeout = const Duration(seconds: 5),
+}) async {
+  final deadline = DateTime.now().add(timeout);
+  while (!done() && DateTime.now().isBefore(deadline)) {
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await _settle();
+  }
+  await _settle();
+}
+
 class _StaticPasswordStore implements CredentialsStore {
   const _StaticPasswordStore();
 
@@ -318,7 +336,10 @@ void main() {
         'text': 'Streamed reply',
       },
     });
-    await _settleLive();
+    await _settleUntil(() {
+      final state = viewModel.messages.value;
+      return state is ConversationReady && state.messages.isNotEmpty;
+    });
 
     final after = viewModel.messages.value;
     expect(after, isA<ConversationReady>());
