@@ -141,6 +141,39 @@ class OpenCodeSessionsService {
     };
   }
 
+  /// Whether [session] is generating right now, or null if it cannot be told.
+  ///
+  /// `/session/status` only covers the sessions its own server runs, so a
+  /// session driven by another OpenCode process is missing from it. The
+  /// message stream lives in storage that every process shares: an assistant
+  /// message that has been created and not completed is a generation in
+  /// flight. Only the newest message is fetched.
+  Future<bool?> fetchIsGenerating(
+    ServerProfile profile,
+    String? password,
+    String sessionId,
+    String directory,
+  ) async {
+    final query = Uri(
+      queryParameters: {'directory': directory, 'limit': '1'},
+    ).query;
+    final response = await _get(
+      profile,
+      password,
+      '/session/${Uri.encodeComponent(sessionId)}/message?$query',
+    );
+    final decoded = jsonDecode(response.body);
+    if (decoded is! List || decoded.isEmpty) return null;
+    final last = decoded.last;
+    if (last is! Map) return null;
+    final info = last['info'];
+    if (info is! Map) return null;
+    if (info['role'] != 'assistant') return false;
+    final time = info['time'];
+    if (time is! Map) return null;
+    return time['completed'] == null;
+  }
+
   Future<void> renameSession(
     ServerProfile profile,
     String? password,

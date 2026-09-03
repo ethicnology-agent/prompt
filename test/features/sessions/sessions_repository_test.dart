@@ -125,6 +125,60 @@ void main() {
     },
   );
 
+  test('reads the last message when the server reports no status', () async {
+    // A server reports only the sessions it runs itself, so a session driven
+    // by another OpenCode process is absent from the map. The message stream
+    // is shared storage: an assistant message created and not completed is a
+    // generation in flight.
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final messageRequests = <String>[];
+    final client = MockClient((request) async {
+      if (request.url.path == '/session/status') {
+        return http.Response('{}', 200);
+      }
+      if (request.url.path == '/project') {
+        return http.Response(
+          '[{"id":"project-1","worktree":"/workspace/project"}]',
+          200,
+        );
+      }
+      if (request.url.path == '/session') {
+        return http.Response(
+          '[${_sessionJson('generating', updated: now)},'
+          '${_sessionJson('finished', updated: now)},'
+          '${_sessionJson('ancient', updated: now - 864000000)}]',
+          200,
+        );
+      }
+      if (request.url.path.endsWith('/message')) {
+        messageRequests.add(request.url.path);
+        expect(request.url.queryParameters['limit'], '1');
+        final completed = request.url.path.contains('generating')
+            ? ''
+            : ',"completed":2';
+        return http.Response(
+          '[{"info":{"id":"m","role":"assistant",'
+          '"time":{"created":1$completed}}}]',
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+
+    final loaded =
+        await SessionsRepository(
+              OpenCodeSessionsService(OpenCodeTransport(client)),
+              const _PasswordStore('secret'),
+            ).load(profile)
+            as SessionsLoaded;
+
+    expect(loaded.activities['generating'], SessionActivity.working);
+    expect(loaded.activities['finished'], SessionActivity.idle);
+    // Untouched for ten days: not worth a request, and safely idle.
+    expect(loaded.activities['ancient'], SessionActivity.idle);
+    expect(messageRequests, hasLength(2));
+  });
+
   test(
     'keeps sessions and reports unavailable activity when status fetch fails',
     () async {
@@ -157,7 +211,7 @@ void main() {
   );
 
   test(
-    'maps omitted successful statuses to idle per session directory',
+    'separates an unreported session from a directory whose status failed',
     () async {
       final client = MockClient((request) async {
         if (request.url.path == '/project') {
@@ -198,7 +252,10 @@ void main() {
 
       final loaded = result as SessionsLoaded;
       expect(loaded.activities['ok-busy'], SessionActivity.working);
+      // Unreported by a reachable server and untouched since the epoch: too
+      // stale for a generation to be in flight, so idle without asking.
       expect(loaded.activities['ok-idle'], SessionActivity.idle);
+      // Its whole directory could not be queried: a different problem.
       expect(loaded.activities['failed-id'], SessionActivity.unavailable);
       expect(loaded.unavailableDirectories, {'/srv/failed'});
       expect(loaded.sessions, hasLength(3));
@@ -719,10 +776,15 @@ OpenCodeSession _session() => OpenCodeSession(
   updatedAt: DateTime.fromMillisecondsSinceEpoch(1000),
 );
 
-String _sessionJson(String id, {String? shareUrl, String? parentId}) =>
+String _sessionJson(
+  String id, {
+  String? shareUrl,
+  String? parentId,
+  int updated = 1000,
+}) =>
     '''
 {"id":"$id","projectID":"project-1","directory":"/workspace/project",
-"title":"Session","time":{"created":1000,"updated":1000}
+"title":"Session","time":{"created":1000,"updated":$updated}
 ${shareUrl == null ? '' : ',"share":{"url":"$shareUrl"}'}
 ${parentId == null ? '' : ',"parentID":"$parentId"'}}
 ''';

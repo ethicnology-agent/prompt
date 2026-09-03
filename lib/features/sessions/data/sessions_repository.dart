@@ -101,6 +101,7 @@ class SessionsRepository {
       final sessions = byId.values.map(_toDomain).toList()
         ..sort((left, right) => right.updatedAt.compareTo(left.updatedAt));
       final activities = <String, SessionActivity>{};
+      final unreported = <String>{};
       final unavailableActivityDirectories = <String>{};
       final sessionsByDirectory = <String, List<String>>{};
       for (final session in sessions) {
@@ -116,9 +117,12 @@ class SessionsRepository {
             directory,
           );
           for (final sessionId in sessionsByDirectory[directory]!) {
-            activities[sessionId] = _toActivity(
-              statuses[sessionId] ?? const OpenCodeSessionStatusIdle(),
-            );
+            final status = statuses[sessionId];
+            if (status != null) {
+              activities[sessionId] = _toActivity(status);
+            } else {
+              unreported.add(sessionId);
+            }
           }
         } on OpenCodeHttpFailure {
           unavailableActivityDirectories.add(directory);
@@ -133,10 +137,18 @@ class SessionsRepository {
         }
         if (unavailableActivityDirectories.contains(directory)) {
           for (final sessionId in sessionsByDirectory[directory]!) {
+            unreported.remove(sessionId);
             activities[sessionId] = SessionActivity.unavailable;
           }
         }
       });
+      await _resolveUnreported(
+        profile,
+        password,
+        sessions,
+        unreported,
+        activities,
+      );
       return SessionsLoaded(
         List.unmodifiable(sessions),
         projects: List.unmodifiable(
@@ -167,11 +179,80 @@ class SessionsRepository {
     }
   }
 
+  /// How recently a session must have moved to be worth asking about.
+  ///
+  /// A session's timestamp advances when a message is created, so a generation
+  /// in flight keeps the timestamp of its start. The window has to outlast a
+  /// long run while still excluding the archive.
+  static const unreportedRecency = Duration(hours: 6);
+
+  /// Ceiling on the extra requests one catalog load may spend.
+  static const unreportedProbeLimit = 12;
+
+  /// Decides the activity of the sessions `/session/status` said nothing about.
+  ///
+  /// That endpoint only covers the sessions its own server runs, so a session
+  /// driven by another OpenCode process is missing from it, and calling that
+  /// idle was wrong exactly when it mattered. For the recently active ones the
+  /// shared message stream answers the question outright; a session untouched
+  /// for hours is left as idle, since nothing has been recorded for it in far
+  /// longer than a generation lasts.
+  Future<void> _resolveUnreported(
+    ServerProfile profile,
+    String? password,
+    List<OpenCodeSession> sessions,
+    Set<String> unreported,
+    Map<String, SessionActivity> activities,
+  ) async {
+    if (unreported.isEmpty) return;
+    final now = DateTime.now();
+    final candidates = <OpenCodeSession>[];
+    for (final session in sessions) {
+      if (!unreported.contains(session.id)) continue;
+      if (now.difference(session.updatedAt) <= unreportedRecency) {
+        candidates.add(session);
+      } else {
+        activities[session.id] = SessionActivity.idle;
+      }
+    }
+    // `sessions` is already newest first, so the ceiling drops the stalest.
+    for (final session in candidates.skip(unreportedProbeLimit)) {
+      activities[session.id] = SessionActivity.idle;
+    }
+    await _forEachBounded(candidates.take(unreportedProbeLimit), (
+      session,
+    ) async {
+      try {
+        final generating = await _sessionsService.fetchIsGenerating(
+          profile,
+          password,
+          session.id,
+          session.directory,
+        );
+        activities[session.id] = switch (generating) {
+          true => SessionActivity.working,
+          false => SessionActivity.idle,
+          null => SessionActivity.unknown,
+        };
+      } on OpenCodeHttpFailure {
+        activities[session.id] = SessionActivity.unknown;
+      } on OpenCodeTransportFailure {
+        activities[session.id] = SessionActivity.unknown;
+      } on TimeoutException {
+        activities[session.id] = SessionActivity.unknown;
+      } on http.ClientException {
+        activities[session.id] = SessionActivity.unknown;
+      } on FormatException {
+        activities[session.id] = SessionActivity.unknown;
+      }
+    });
+  }
+
   /// Runs [action] over [values] with a bounded number of in-flight requests so
   /// a large project catalog cannot open one connection per project at once.
-  static Future<void> _forEachBounded(
-    Iterable<String> values,
-    Future<void> Function(String value) action, {
+  static Future<void> _forEachBounded<T>(
+    Iterable<T> values,
+    Future<void> Function(T value) action, {
     int concurrency = 4,
   }) async {
     final pending = values.toList(growable: false);
