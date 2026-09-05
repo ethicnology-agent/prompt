@@ -887,58 +887,39 @@ class _ConversationScreenState extends State<ConversationScreen>
   Widget _activityPanel({double? maxHeight, bool flexible = false}) {
     final activityMaxHeight =
         (maxHeight ?? MediaQuery.sizeOf(context).height) < 500 ? 160.0 : 320.0;
-    return ValueListenableBuilder<PendingApproval?>(
-      valueListenable: widget.viewModel.pendingApproval,
-      builder: (context, approval, _) =>
-          ValueListenableBuilder<List<QueuedPrompt>>(
-            valueListenable: widget.viewModel.queue,
-            builder: (context, prompts, _) {
-              final activePrompts = prompts
-                  .where(
-                    (prompt) => prompt.state != QueuedPromptState.acknowledged,
-                  )
-                  .toList(growable: false);
-              if (approval == null && activePrompts.isEmpty) {
-                return const SizedBox.shrink();
-              }
-              final panel = ConstrainedBox(
-                constraints: BoxConstraints(maxHeight: activityMaxHeight),
-                child: SingleChildScrollView(
-                  key: const ValueKey('conversation-activity-scroll'),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (approval != null) ...[
-                        const Divider(height: 1),
-                        ApprovalDock(
-                          key: ValueKey(_approvalKey(approval)),
-                          approval: approval,
-                          onRespondToPermission:
-                              widget.viewModel.respondToPermission,
-                          onReplyToQuestion: widget.viewModel.replyToQuestion,
-                          onRejectQuestion: widget.viewModel.rejectQuestion,
-                        ),
-                      ],
-                      if (activePrompts.isNotEmpty) ...[
-                        const Divider(height: 1),
-                        QueuePanel(
-                          prompts: activePrompts,
-                          onRemove: (prompt) =>
-                              widget.viewModel.removeFromQueue(prompt.id),
-                          onSendNow: _confirmSendNow,
-                          onMergeIntoPrevious: (prompt) =>
-                              widget.viewModel.mergeIntoPrevious(prompt.id),
-                        ),
-                      ],
-                    ],
-                  ),
+    // The pending approval is not here: it takes the composer's place, see
+    // _composerPanel. Stacking it above the input read as two bars bolted
+    // together, and put the one thing that must be acted on furthest from the
+    // thumb.
+    return ValueListenableBuilder<List<QueuedPrompt>>(
+      valueListenable: widget.viewModel.queue,
+      builder: (context, prompts, _) {
+        final activePrompts = prompts
+            .where((prompt) => prompt.state != QueuedPromptState.acknowledged)
+            .toList(growable: false);
+        if (activePrompts.isEmpty) return const SizedBox.shrink();
+        final panel = ConstrainedBox(
+          constraints: BoxConstraints(maxHeight: activityMaxHeight),
+          child: SingleChildScrollView(
+            key: const ValueKey('conversation-activity-scroll'),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Divider(height: 1),
+                QueuePanel(
+                  prompts: activePrompts,
+                  onRemove: (prompt) =>
+                      widget.viewModel.removeFromQueue(prompt.id),
+                  onSendNow: _confirmSendNow,
+                  onMergeIntoPrevious: (prompt) =>
+                      widget.viewModel.mergeIntoPrevious(prompt.id),
                 ),
-              );
-              return flexible
-                  ? Flexible(fit: FlexFit.loose, child: panel)
-                  : panel;
-            },
+              ],
+            ),
           ),
+        );
+        return flexible ? Flexible(fit: FlexFit.loose, child: panel) : panel;
+      },
     );
   }
 
@@ -952,18 +933,34 @@ class _ConversationScreenState extends State<ConversationScreen>
         constraints: BoxConstraints(
           maxWidth: constrainWidth ? 960 : double.infinity,
         ),
-        child: Composer(
-          controller: _composerController,
-          command: _selectedCommand,
-          attachments: widget.viewModel.attachments,
-          onRemoveAttachment: widget.viewModel.removeAttachment,
-          onSubmit: _submitComposer,
-          voiceState: widget.voiceViewModel?.state,
-          onVoiceHoldStart: widget.voiceViewModel == null
-              ? null
-              : _startVoiceCapture,
-          onVoiceHoldEnd: widget.voiceViewModel?.finishSegmentFromUserAction,
-          onVoiceStop: widget.voiceViewModel?.stopModeFromUserAction,
+        // While something is waiting on the user, it stands where the input
+        // stands. Generation is blocked until it is answered, so offering a
+        // text field beside it invited typing into a session that cannot
+        // listen, and left the required action stacked above as a second bar.
+        child: ValueListenableBuilder<PendingApproval?>(
+          valueListenable: widget.viewModel.pendingApproval,
+          builder: (context, approval, _) => approval == null
+              ? Composer(
+                  controller: _composerController,
+                  command: _selectedCommand,
+                  attachments: widget.viewModel.attachments,
+                  onRemoveAttachment: widget.viewModel.removeAttachment,
+                  onSubmit: _submitComposer,
+                  voiceState: widget.voiceViewModel?.state,
+                  onVoiceHoldStart: widget.voiceViewModel == null
+                      ? null
+                      : _startVoiceCapture,
+                  onVoiceHoldEnd:
+                      widget.voiceViewModel?.finishSegmentFromUserAction,
+                  onVoiceStop: widget.voiceViewModel?.stopModeFromUserAction,
+                )
+              : ApprovalDock(
+                  key: ValueKey(_approvalKey(approval)),
+                  approval: approval,
+                  onRespondToPermission: widget.viewModel.respondToPermission,
+                  onReplyToQuestion: widget.viewModel.replyToQuestion,
+                  onRejectQuestion: widget.viewModel.rejectQuestion,
+                ),
         ),
       ),
     ),

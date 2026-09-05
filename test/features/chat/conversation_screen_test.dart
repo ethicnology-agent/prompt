@@ -25,6 +25,7 @@ import 'package:prompt/features/chat/domain/session_artifacts.dart';
 import 'package:prompt/features/chat/domain/session_execution_state.dart';
 import 'package:prompt/features/chat/presentation/conversation_screen.dart';
 import 'package:prompt/features/chat/presentation/conversation_view_model.dart';
+import 'package:prompt/features/chat/presentation/widgets/approval_dock.dart';
 import 'package:prompt/features/chat/presentation/widgets/composer.dart';
 import 'package:prompt/features/chat/presentation/widgets/session_artifacts_panel.dart';
 import 'package:prompt/features/capabilities/data/capabilities_repository.dart';
@@ -561,17 +562,19 @@ void main() {
     await pumpScreen(tester, textScale: 1.3, viewInsetsBottom: 180);
     expect(tester.takeException(), isNull);
     // On a phone the questionnaire lives in a sheet, so the dock only has to
-    // keep the way into it reachable.
+    // keep the way into it reachable. Refusing happens inside, once read.
     await tester.ensureVisible(find.text('Answer'));
-    await tester.ensureVisible(find.text('Reject'));
+    expect(find.text('Reject'), findsNothing);
     await tester.ensureVisible(find.text('Queued prompt'));
+    // The request stands where the input stands: generation is blocked until
+    // it is answered, so there is no field inviting a message meanwhile.
     expect(
       find.byWidgetPredicate(
         (widget) =>
             widget is TextField &&
             widget.decoration?.hintText == 'Message this session…',
       ),
-      findsOneWidget,
+      findsNothing,
     );
     expect(tester.takeException(), isNull);
     await tester.binding.setSurfaceSize(null);
@@ -750,6 +753,57 @@ void main() {
       ['main'],
     ]);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the request stands in for the composer, and gives it back', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(420, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpScreen(tester);
+
+    final composerField = find.byWidgetPredicate(
+      (widget) =>
+          widget is TextField &&
+          widget.decoration?.hintText == 'Message this session…',
+    );
+    expect(composerField, findsOneWidget);
+
+    viewModel.pendingApproval.value = PendingQuestionApproval(
+      sessionId: 'session-1',
+      requestId: 'stand-in',
+      questions: const [
+        QuestionPrompt(
+          question: 'Which branch?',
+          header: 'Target',
+          options: [QuestionOption(label: 'main', description: 'Default')],
+        ),
+      ],
+    );
+    await tester.pump();
+
+    // In the composer's place, not stacked above it as a second bar.
+    expect(composerField, findsNothing);
+    expect(
+      find.byKey(const ValueKey('approval-open-questions')),
+      findsOneWidget,
+    );
+    expect(find.byType(ApprovalDock), findsOneWidget);
+    // One way in and nothing else: refusing belongs with the questions, so it
+    // is read before it is refused.
+    expect(find.text('Reject'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('approval-open-questions')));
+    await tester.pumpAndSettle();
+    expect(find.text('Reject'), findsOneWidget);
+    expect(find.text('Submit answers'), findsOneWidget);
+    Navigator.of(tester.element(find.text('Reject'))).pop();
+    await tester.pumpAndSettle();
+
+    viewModel.pendingApproval.value = null;
+    await tester.pump();
+
+    expect(find.byType(ApprovalDock), findsNothing);
+    expect(composerField, findsOneWidget);
   });
 
   testWidgets('the open sheet survives the stream rebuilding the request', (

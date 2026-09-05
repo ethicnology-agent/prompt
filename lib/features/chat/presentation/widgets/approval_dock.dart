@@ -220,26 +220,21 @@ class ApprovalDockState extends State<ApprovalDock> {
               : 'The agent is asking $count questions',
           style: theme.textTheme.titleSmall,
         ),
-        // No preview of the question here. It would be the one thing on this
-        // screen that is deliberately cut short, and the sheet a tap away
-        // shows it whole.
+        // Nothing else here on purpose. This says something is waiting and
+        // opens it; the questions, their descriptions and the way to refuse
+        // them all live one tap away, where they can be read in full. A
+        // preview would be the one thing deliberately cut short, and a Reject
+        // button here would invite refusing a request nobody has read.
         const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
-          children: [
-            FilledButton(
-              key: const ValueKey('approval-open-questions'),
-              onPressed: _submitting
-                  ? null
-                  : () => _openQuestionSheet(context, approval),
-              child: Text(count == 1 ? 'Answer' : 'Answer questions'),
-            ),
-            TextButton(
-              onPressed: _submitting ? null : () => _reject(approval.requestId),
-              child: const Text('Reject'),
-            ),
-          ],
+        Align(
+          alignment: Alignment.centerLeft,
+          child: FilledButton(
+            key: const ValueKey('approval-open-questions'),
+            onPressed: _submitting
+                ? null
+                : () => _openQuestionSheet(context, approval),
+            child: Text(count == 1 ? 'Answer' : 'Answer questions'),
+          ),
         ),
       ],
     );
