@@ -877,10 +877,7 @@ class QueueSendCoordinator {
         final remaining = excludedApprovalId == null
             ? value
             : value
-                  .where(
-                    (candidate) =>
-                        _pendingApprovalId(candidate) != excludedApprovalId,
-                  )
+                  .where((candidate) => candidate.id != excludedApprovalId)
                   .toList(growable: false);
         final approval = remaining.isEmpty ? null : remaining.first;
         if (approval == null) {
@@ -970,13 +967,6 @@ class QueueSendCoordinator {
   bool _isBlockPauseReason(QueuePauseReason? reason) {
     return reason == QueuePauseReason.permissionPending ||
         reason == QueuePauseReason.questionPending;
-  }
-
-  String _pendingApprovalId(PendingApproval approval) {
-    return switch (approval) {
-      PendingPermissionApproval(:final permissionId) => permissionId,
-      PendingQuestionApproval(:final requestId) => requestId,
-    };
   }
 
   void _maybeDispatch() {

@@ -24,6 +24,17 @@ sealed class PendingApproval {
   const PendingApproval({required this.sessionId});
 
   final String sessionId;
+
+  /// Identity of the request awaiting an answer.
+  ///
+  /// The live conversation state is rebuilt on every SSE event, so the same
+  /// pending request arrives as a fresh object again and again. Anything that
+  /// must survive those rebuilds — a form the user is filling in, for one —
+  /// has to compare this rather than the object.
+  String get id => switch (this) {
+    PendingPermissionApproval(:final permissionId) => permissionId,
+    PendingQuestionApproval(:final requestId) => requestId,
+  };
 }
 
 /// A pending tool-call permission, reduced from a `permission.updated` SSE

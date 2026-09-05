@@ -560,7 +560,9 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(480, 450));
     await pumpScreen(tester, textScale: 1.3, viewInsetsBottom: 180);
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.text('Submit answers'));
+    // On a phone the questionnaire lives in a sheet, so the dock only has to
+    // keep the way into it reachable.
+    await tester.ensureVisible(find.text('Answer'));
     await tester.ensureVisible(find.text('Reject'));
     await tester.ensureVisible(find.text('Queued prompt'));
     expect(
@@ -700,6 +702,208 @@ void main() {
     await tester.ensureVisible(find.text('Submit answers'));
     await tester.ensureVisible(find.text('Queued prompt'));
     await tester.ensureVisible(composer);
+  });
+
+  testWidgets('a phone answers the questionnaire in a sheet', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(420, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    viewModel.pendingApproval.value = PendingQuestionApproval(
+      sessionId: 'session-1',
+      requestId: 'question-sheet',
+      questions: const [
+        QuestionPrompt(
+          question: 'Which branch should the fix target?',
+          header: 'Target',
+          options: [
+            QuestionOption(label: 'main', description: 'Default branch'),
+            QuestionOption(label: 'develop', description: 'Integration'),
+          ],
+        ),
+      ],
+    );
+    await pumpScreen(tester);
+
+    // The dock keeps only the way in; the form itself is not crammed into it.
+    expect(find.text('Submit answers'), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('approval-open-questions')));
+    await tester.pumpAndSettle();
+
+    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(
+      find.descendant(
+        of: find.byType(BottomSheet),
+        matching: find.text('Which branch should the fix target?'),
+      ),
+      findsOneWidget,
+    );
+    expect(find.text('Submit answers'), findsOneWidget);
+
+    await tester.tap(find.text('main'));
+    await tester.pump();
+    await tester.tap(find.text('Submit answers'));
+    await tester.pumpAndSettle();
+
+    // Answering closes the sheet rather than leaving it open over the chat.
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(viewModel.lastQuestionRequestId, 'question-sheet');
+    expect(viewModel.lastQuestionAnswers, [
+      ['main'],
+    ]);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('the open sheet survives the stream rebuilding the request', (
+    tester,
+  ) async {
+    PendingQuestionApproval sameRequest() => PendingQuestionApproval(
+      sessionId: 'session-1',
+      requestId: 'question-live',
+      questions: const [
+        QuestionPrompt(
+          question: 'Which branch should the fix target?',
+          header: 'Target',
+          options: [QuestionOption(label: 'main', description: 'Default')],
+        ),
+      ],
+    );
+
+    await tester.binding.setSurfaceSize(const Size(420, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    viewModel.pendingApproval.value = sameRequest();
+    await pumpScreen(tester);
+    await tester.tap(find.byKey(const ValueKey('approval-open-questions')));
+    await tester.pumpAndSettle();
+    expect(find.byType(BottomSheet), findsOneWidget);
+
+    // Live conversation state is rebuilt on every SSE event, so the very same
+    // pending question arrives as a fresh object. That must not disturb a form
+    // the user is in the middle of filling in.
+    await tester.tap(find.text('main'));
+    await tester.pump();
+    viewModel.pendingApproval.value = sameRequest();
+    await tester.pump();
+
+    expect(find.byType(BottomSheet), findsOneWidget);
+    await tester.tap(find.text('Submit answers'));
+    await tester.pumpAndSettle();
+    expect(viewModel.lastQuestionAnswers, [
+      ['main'],
+    ]);
+  });
+
+  testWidgets('a different request replaces the form and its answers', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(420, 760));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    viewModel.pendingApproval.value = PendingQuestionApproval(
+      sessionId: 'session-1',
+      requestId: 'first',
+      questions: const [
+        QuestionPrompt(
+          question: 'First question',
+          header: 'First',
+          options: [QuestionOption(label: 'one', description: '')],
+        ),
+      ],
+    );
+    await pumpScreen(tester);
+    await tester.tap(find.byKey(const ValueKey('approval-open-questions')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('one'));
+    await tester.pump();
+
+    viewModel.pendingApproval.value = PendingQuestionApproval(
+      sessionId: 'session-1',
+      requestId: 'second',
+      questions: const [
+        QuestionPrompt(
+          question: 'Second question',
+          header: 'Second',
+          options: [
+            QuestionOption(label: 'a', description: ''),
+            QuestionOption(label: 'b', description: ''),
+          ],
+        ),
+      ],
+    );
+    await tester.pumpAndSettle();
+
+    // The sheet was asking about a request nobody waits on any more.
+    expect(find.byType(BottomSheet), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('approval-open-questions')));
+    await tester.pumpAndSettle();
+    // Two options means the controllers were rebuilt for the new question.
+    expect(find.text('a'), findsOneWidget);
+    expect(find.text('b'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a long option is shown whole, description included', (
+    tester,
+  ) async {
+    const label =
+        'Rewrite the migration so it can be replayed on a shared database';
+    const description =
+        'Keeps the published revision untouched and adds a new one, which is '
+        'the only safe order once another branch has consumed it.';
+    await tester.binding.setSurfaceSize(const Size(400, 780));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    viewModel.pendingApproval.value = PendingQuestionApproval(
+      sessionId: 'session-1',
+      requestId: 'question-long',
+      questions: const [
+        QuestionPrompt(
+          question: 'How should the migration be handled?',
+          header: 'Migration',
+          options: [QuestionOption(label: label, description: description)],
+          allowsCustomAnswer: true,
+        ),
+      ],
+    );
+    await pumpScreen(tester);
+    await tester.tap(find.byKey(const ValueKey('approval-open-questions')));
+    await tester.pumpAndSettle();
+
+    // Nothing about an option is hidden: neither a long label, nor the
+    // description that used to reach screen readers only.
+    final labelFinder = find.text(label);
+    expect(labelFinder, findsOneWidget);
+    expect(find.text(description), findsOneWidget);
+    expect(
+      tester.widget<Text>(labelFinder).overflow,
+      isNot(TextOverflow.ellipsis),
+    );
+    expect(tester.widget<Text>(labelFinder).maxLines, isNull);
+
+    // A free answer gets room to grow instead of scrolling out of sight.
+    final field = tester.widget<TextField>(
+      find.widgetWithText(TextField, 'Or type your own answer'),
+    );
+    expect(field.maxLines, greaterThan(1));
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('a wide layout keeps the questionnaire in the dock', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(1100, 800));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    viewModel.pendingApproval.value = PendingQuestionApproval(
+      sessionId: 'session-1',
+      requestId: 'question-wide-inline',
+      questions: const [
+        QuestionPrompt(
+          question: 'Choose an option',
+          header: 'Approval',
+          options: [QuestionOption(label: 'Allow', description: 'Proceed')],
+        ),
+      ],
+    );
+    await pumpScreen(tester);
+
+    expect(find.text('Submit answers'), findsOneWidget);
+    expect(find.byKey(const ValueKey('approval-open-questions')), findsNothing);
   });
 
   testWidgets('pulling up from the transcript bottom refreshes the session', (
