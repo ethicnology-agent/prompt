@@ -38,8 +38,8 @@ class ConnectionViewModel extends ValueNotifier<ConnectionUiState> {
     final result = await _repository.test(profile, password);
 
     switch (result) {
-      case ConnectionSucceeded():
-        value = ConnectionReady(profile);
+      case ConnectionSucceeded(profile: final verified):
+        value = ConnectionReady(verified ?? profile);
       case ConnectionFailed(:final failure):
         value = ConnectionError(failure);
     }
@@ -49,8 +49,8 @@ class ConnectionViewModel extends ValueNotifier<ConnectionUiState> {
     value = const ConnectionChecking();
     final result = await _repository.restore(profile);
     switch (result) {
-      case ConnectionSucceeded():
-        value = ConnectionReady(profile);
+      case ConnectionSucceeded(profile: final verified):
+        value = ConnectionReady(verified ?? profile);
       case ConnectionFailed(:final failure):
         value = ConnectionError(failure);
     }

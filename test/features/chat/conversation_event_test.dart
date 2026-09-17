@@ -20,6 +20,18 @@ OpenCodeEventEnvelope _envelope(
 void main() {
   const sessionId = 'ses_1';
 
+  test('explicit gateway error becomes non-dispatchable unknown state', () {
+    final event = mapConversationEvent(
+      _envelope('session.status', {
+        'sessionID': sessionId,
+        'status': {'type': 'error'},
+      }),
+      sessionId: sessionId,
+    );
+    expect(event, isA<SessionStatusEvent>());
+    expect((event as SessionStatusEvent).state, isA<SessionExecutionUnknown>());
+  });
+
   group('message.updated', () {
     test('maps a user message for the tracked session', () {
       final event = mapConversationEvent(

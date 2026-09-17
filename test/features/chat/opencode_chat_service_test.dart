@@ -10,6 +10,7 @@ import 'package:prompt/features/queue/domain/queued_prompt.dart';
 import 'package:prompt/features/chat/domain/permission_response.dart';
 import 'package:prompt/features/chat/domain/session_execution_state.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/queue/domain/prompt_execution_options.dart';
 import 'package:prompt/features/sessions/domain/open_code_session.dart';
 
@@ -82,6 +83,50 @@ void main() {
   });
 
   group('sendPromptAsync', () {
+    test('native gateway carries the durable operation identity', () async {
+      http.Request? captured;
+      final service = OpenCodeChatService(
+        OpenCodeTransport(
+          MockClient((request) async {
+            captured = request;
+            return http.Response('', 204);
+          }),
+        ),
+      );
+      for (final backend in [
+        AgentBackend.gatewayClaude,
+        AgentBackend.gatewayCodex,
+      ]) {
+        await service.sendPromptAsync(
+          ServerProfile(
+            origin: profile.origin,
+            username: 'prompt',
+            backend: backend,
+          ),
+          'secret',
+          session,
+          'Hello',
+          operationId: 'durable-operation-1',
+        );
+        expect(jsonDecode(captured!.body)['messageID'], 'durable-operation-1');
+        expect(
+          captured!.url.path,
+          startsWith('/prompt/${backend.engine}/session/'),
+        );
+      }
+      await service.sendPromptAsync(
+        profile,
+        'secret',
+        session,
+        'Hello',
+        operationId: 'durable-operation-1',
+      );
+      expect(
+        jsonDecode(captured!.body).containsKey('messageID'),
+        isFalse,
+        reason: 'Direct OpenCode wire format stays unchanged.',
+      );
+    });
     test('sends a Basic-authorized request with an encoded path, '
         'directory query, and a text part body', () async {
       http.Request? captured;

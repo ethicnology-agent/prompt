@@ -52,6 +52,19 @@ void main() {
     expect(row.attachmentsJson, isNull);
   });
 
+  test('v6 profile IDs survive additive backend migration', () async {
+    _createFixture(databaseFile, version: 6);
+    database = PromptDatabase.forTesting(NativeDatabase(databaseFile));
+    final profile = await database!
+        .select(database!.serverProfiles)
+        .getSingle();
+    expect(profile.id, 'legacy-profile');
+    expect(profile.origin, 'http://10.80.0.1:4096');
+    expect(profile.username, 'legacy-user');
+    expect(profile.backend, 'directOpenCode');
+    await _expectVersion6(database!);
+  });
+
   test(
     'migrates v2 to v6 and preserves model options with default operation fields',
     () async {
@@ -146,7 +159,9 @@ Future<void> _expectVersion6(PromptDatabase database) async {
   final version = await database
       .customSelect('PRAGMA user_version')
       .getSingle();
-  expect(version.data['user_version'], 6);
+  expect(version.data['user_version'], 7);
+  final profiles = await database.select(database.serverProfiles).get();
+  expect(profiles.single.backend, 'directOpenCode');
 }
 
 void _createFixture(File file, {required int version}) {

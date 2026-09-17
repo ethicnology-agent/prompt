@@ -46,6 +46,9 @@ class ChatRepository {
   final List<_RecordedEvent> _events = <_RecordedEvent>[];
   int _eventSequence = 0;
   int _loadGeneration = 0;
+  Future<ChatLoadResult>? _latestLoad;
+  int _latestLoadGeneration = 0;
+  (String, String, String)? _latestLoadScope;
   OpenCodeSession? _activeSession;
   String? _olderCursor;
   bool _hasMore = false;
@@ -81,6 +84,8 @@ class ChatRepository {
 
   void deactivateConversation() {
     _activeSession = null;
+    _latestLoad = null;
+    _latestLoadScope = null;
     _loadGeneration++;
     _resetPagination();
     _historyFailure = null;
@@ -139,7 +144,15 @@ class ChatRepository {
     _publish(state, _conversation.value.messages);
   }
 
-  Future<ChatLoadResult> load(
+  Future<ChatLoadResult> load(ServerProfile profile, OpenCodeSession session) {
+    final result = _load(profile, session);
+    _latestLoad = result;
+    _latestLoadGeneration = _loadGeneration;
+    _latestLoadScope = (profile.id, session.id, session.directory);
+    return result;
+  }
+
+  Future<ChatLoadResult> _load(
     ServerProfile profile,
     OpenCodeSession session,
   ) async {
@@ -154,6 +167,13 @@ class ChatRepository {
       final password = await _credentialsStore.readPassword(profile.id);
       final page = await _chatService.listMessages(profile, password, session);
       if (loadGeneration != _loadGeneration) {
+        // Startup/reconnect and the visible screen can request overlapping
+        // snapshots. Never report an empty successful transcript merely
+        // because a newer authoritative request has not finished yet.
+        if (_latestLoadGeneration > loadGeneration &&
+            _latestLoadScope == (profile.id, session.id, session.directory)) {
+          return _latestLoad!;
+        }
         return ChatLoaded(
           _conversation.value.messages,
           hasMore: _hasMore,
@@ -398,6 +418,7 @@ class ChatRepository {
     ServerProfile profile,
     OpenCodeSession session,
     String text, {
+    String? operationId,
     List<QueuedAttachment> attachments = const <QueuedAttachment>[],
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
   }) {
@@ -408,6 +429,7 @@ class ChatRepository {
         password,
         session,
         text,
+        operationId: operationId,
         attachments: attachments,
         executionOptions: executionOptions,
       );

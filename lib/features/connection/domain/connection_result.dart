@@ -1,9 +1,12 @@
+import 'server_profile.dart';
+
 sealed class ConnectionResult {
   const ConnectionResult();
 }
 
 class ConnectionSucceeded extends ConnectionResult {
-  const ConnectionSucceeded();
+  const ConnectionSucceeded({this.profile});
+  final ServerProfile? profile;
 }
 
 class ConnectionFailed extends ConnectionResult {
@@ -18,6 +21,7 @@ enum ConnectionFailure {
   unavailable,
   unexpectedResponse,
   secureStorageUnavailable,
+  unsupportedBackend,
 }
 
 extension ConnectionFailureMessage on ConnectionFailure {
@@ -33,6 +37,8 @@ extension ConnectionFailureMessage on ConnectionFailure {
         'The server responded, but is not ready for Prompt.',
       ConnectionFailure.secureStorageUnavailable =>
         'Prompt cannot store the server credential securely on this device.',
+      ConnectionFailure.unsupportedBackend =>
+        'This gateway has not verified support for the selected agent. Check its configuration.',
     };
   }
 }

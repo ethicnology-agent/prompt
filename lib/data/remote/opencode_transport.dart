@@ -20,7 +20,7 @@ class OpenCodeHttpFailure implements Exception {
 }
 
 class OpenCodeTransport {
-  OpenCodeTransport(this._client);
+  OpenCodeTransport(http.Client client) : _client = _PrivateRouteClient(client);
 
   final http.Client _client;
 
@@ -92,7 +92,28 @@ class OpenCodeTransport {
     if (!ConnectionOriginPolicy.supports(profile.origin)) {
       throw const InvalidOpenCodeOrigin();
     }
-    return profile.origin.resolve(path);
+    final relative = Uri.parse(path);
+    // Validate raw segments before Uri normalization can erase traversal.
+    final decodedPath = Uri.decodeComponent(
+      path.split('?').first.split('#').first,
+    );
+    if (relative.hasScheme ||
+        relative.hasAuthority ||
+        !path.startsWith('/') ||
+        path.startsWith('//') ||
+        relative.pathSegments.contains('..') ||
+        decodedPath.split('/').contains('..') ||
+        decodedPath.contains('\\') ||
+        decodedPath.codeUnits.any((unit) => unit < 32 || unit == 127) ||
+        decodedPath.toLowerCase().contains('%2e') ||
+        decodedPath.toLowerCase().contains('%2f') ||
+        decodedPath.toLowerCase().contains('%5c')) {
+      throw const InvalidOpenCodeOrigin();
+    }
+    final routed = profile.backend.isGateway && path != '/prompt/capabilities'
+        ? '/prompt/${profile.backend.engine}$path'
+        : path;
+    return profile.origin.resolve(routed);
   }
 
   Map<String, String> _headers(ServerProfile profile, String? password) {
@@ -100,5 +121,19 @@ class OpenCodeTransport {
       username: profile.username,
       password: password,
     );
+  }
+}
+
+/// A configured private endpoint may not redirect credentials or content to
+/// another origin, including a public HTTPS origin. Ownership stays with the
+/// composition root; this wrapper never disposes the injected client.
+class _PrivateRouteClient extends http.BaseClient {
+  _PrivateRouteClient(this._delegate);
+  final http.Client _delegate;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) {
+    request.followRedirects = false;
+    return _delegate.send(request);
   }
 }

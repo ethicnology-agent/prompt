@@ -25,6 +25,20 @@ class OpenCodeEventService {
     ServerProfile profile,
     String? password,
   ) async* {
+    final connection = await open(profile, password);
+    try {
+      yield* connection.events;
+    } finally {
+      await connection.close();
+    }
+  }
+
+  /// Completes only after an authenticated successful HTTP response. The
+  /// connection owns the raw subscription, independently of decoder progress.
+  Future<OpenCodeEventConnection> open(
+    ServerProfile profile,
+    String? password,
+  ) async {
     final response = await _transport.send(
       profile,
       password,
@@ -32,9 +46,10 @@ class OpenCodeEventService {
       headers: const {'accept': 'text/event-stream'},
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
+      await response.stream.listen((_) {}).cancel();
       throw OpenCodeTransportFailure(response.statusCode);
     }
-    yield* decode(response.stream);
+    return OpenCodeEventConnection(response.stream);
   }
 
   static Stream<OpenCodeEventEnvelope> decode(Stream<List<int>> bytes) async* {
@@ -86,5 +101,30 @@ class OpenCodeEventService {
     if (event != null) {
       yield event;
     }
+  }
+}
+
+class OpenCodeEventConnection {
+  OpenCodeEventConnection(Stream<List<int>> bytes) {
+    _subscription = bytes.listen(
+      _bytes.add,
+      onError: _bytes.addError,
+      onDone: _bytes.close,
+    );
+  }
+
+  final _bytes = StreamController<List<int>>();
+  late final StreamSubscription<List<int>> _subscription;
+  bool _closed = false;
+  Stream<OpenCodeEventEnvelope> get events =>
+      OpenCodeEventService.decode(_bytes.stream);
+
+  Future<void> close() async {
+    if (_closed) return;
+    _closed = true;
+    await _subscription.cancel();
+    // A caller may close a superseded connection before attaching a decoder.
+    // Closing an unlistened controller must not block lifecycle teardown.
+    unawaited(_bytes.close());
   }
 }

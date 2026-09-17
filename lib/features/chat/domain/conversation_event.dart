@@ -350,7 +350,10 @@ ConversationEvent? _mapSessionStatus(
     return null;
   }
   final state = _mapSessionExecutionState(status);
-  if (state is SessionExecutionUnknown) {
+  // A native gateway failure is an explicit loss of executable context. It
+  // must replace stale busy/permission state without ever authorizing dispatch.
+  // Continue ignoring unrecognized/malformed future statuses.
+  if (state is SessionExecutionUnknown && status['type'] != 'error') {
     return null;
   }
   return SessionStatusEvent(sessionId: eventSessionId, state: state);

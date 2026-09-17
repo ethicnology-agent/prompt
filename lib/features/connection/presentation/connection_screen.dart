@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../domain/connection_result.dart';
 import '../domain/connection_origin_policy.dart';
 import '../domain/server_profile.dart';
+import '../domain/agent_backend.dart';
 import 'connection_view_model.dart';
 
 class ConnectionScreen extends StatefulWidget {
@@ -29,6 +30,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _editedAddress = false;
+  AgentBackend _backend = AgentBackend.directOpenCode;
 
   @override
   void initState() {
@@ -43,6 +45,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     }
     _originController.text = profile.origin.toString();
     _usernameController.text = profile.username ?? '';
+    setState(() => _backend = profile.backend);
     await widget.viewModel.restore(profile);
   }
 
@@ -61,6 +64,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
     final profile = ServerProfile(
       origin: Uri.parse(_originController.text.trim()),
+      backend: _backend,
       username: _usernameController.text.trim().isEmpty
           ? null
           : _usernameController.text.trim(),
@@ -133,11 +137,46 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Connect to your OpenCode server through WireGuard or Tailscale.',
+                              'Your agents. Your machine. Connect through WireGuard or Tailscale, without a public relay.',
                               style: theme.textTheme.bodyLarge,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 32),
+                            DropdownButtonFormField<AgentBackend>(
+                              key: ValueKey(_backend),
+                              isExpanded: true,
+                              itemHeight: null,
+                              initialValue: _backend,
+                              decoration: const InputDecoration(
+                                labelText: 'Agent connection',
+                              ),
+                              items: AgentBackend.values
+                                  .map(
+                                    (backend) => DropdownMenuItem(
+                                      value: backend,
+                                      child: Text(
+                                        backend.label,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: checking
+                                  ? null
+                                  : (backend) {
+                                      if (backend == null) return;
+                                      setState(() {
+                                        _backend = backend;
+                                        _editedAddress = true;
+                                        if (backend.isGateway &&
+                                            _usernameController.text.isEmpty) {
+                                          _usernameController.text = 'prompt';
+                                        }
+                                      });
+                                    },
+                            ),
+                            const SizedBox(height: 16),
                             TextFormField(
                               controller: _originController,
                               enabled: !checking,

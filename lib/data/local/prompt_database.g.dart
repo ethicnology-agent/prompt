@@ -38,6 +38,18 @@ class $ServerProfilesTable extends ServerProfiles
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _backendMeta = const VerificationMeta(
+    'backend',
+  );
+  @override
+  late final GeneratedColumn<String> backend = GeneratedColumn<String>(
+    'backend',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('directOpenCode'),
+  );
   static const VerificationMeta _lastAccessedAtMillisMeta =
       const VerificationMeta('lastAccessedAtMillis');
   @override
@@ -53,6 +65,7 @@ class $ServerProfilesTable extends ServerProfiles
     id,
     origin,
     username,
+    backend,
     lastAccessedAtMillis,
   ];
   @override
@@ -84,6 +97,12 @@ class $ServerProfilesTable extends ServerProfiles
       context.handle(
         _usernameMeta,
         username.isAcceptableOrUnknown(data['username']!, _usernameMeta),
+      );
+    }
+    if (data.containsKey('backend')) {
+      context.handle(
+        _backendMeta,
+        backend.isAcceptableOrUnknown(data['backend']!, _backendMeta),
       );
     }
     if (data.containsKey('last_accessed_at_millis')) {
@@ -118,6 +137,10 @@ class $ServerProfilesTable extends ServerProfiles
         DriftSqlType.string,
         data['${effectivePrefix}username'],
       ),
+      backend: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}backend'],
+      )!,
       lastAccessedAtMillis: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}last_accessed_at_millis'],
@@ -135,11 +158,13 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
   final String id;
   final String origin;
   final String? username;
+  final String backend;
   final int lastAccessedAtMillis;
   const ServerProfile({
     required this.id,
     required this.origin,
     this.username,
+    required this.backend,
     required this.lastAccessedAtMillis,
   });
   @override
@@ -150,6 +175,7 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
     if (!nullToAbsent || username != null) {
       map['username'] = Variable<String>(username);
     }
+    map['backend'] = Variable<String>(backend);
     map['last_accessed_at_millis'] = Variable<int>(lastAccessedAtMillis);
     return map;
   }
@@ -161,6 +187,7 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
       username: username == null && nullToAbsent
           ? const Value.absent()
           : Value(username),
+      backend: Value(backend),
       lastAccessedAtMillis: Value(lastAccessedAtMillis),
     );
   }
@@ -174,6 +201,7 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
       id: serializer.fromJson<String>(json['id']),
       origin: serializer.fromJson<String>(json['origin']),
       username: serializer.fromJson<String?>(json['username']),
+      backend: serializer.fromJson<String>(json['backend']),
       lastAccessedAtMillis: serializer.fromJson<int>(
         json['lastAccessedAtMillis'],
       ),
@@ -186,6 +214,7 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
       'id': serializer.toJson<String>(id),
       'origin': serializer.toJson<String>(origin),
       'username': serializer.toJson<String?>(username),
+      'backend': serializer.toJson<String>(backend),
       'lastAccessedAtMillis': serializer.toJson<int>(lastAccessedAtMillis),
     };
   }
@@ -194,11 +223,13 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
     String? id,
     String? origin,
     Value<String?> username = const Value.absent(),
+    String? backend,
     int? lastAccessedAtMillis,
   }) => ServerProfile(
     id: id ?? this.id,
     origin: origin ?? this.origin,
     username: username.present ? username.value : this.username,
+    backend: backend ?? this.backend,
     lastAccessedAtMillis: lastAccessedAtMillis ?? this.lastAccessedAtMillis,
   );
   ServerProfile copyWithCompanion(ServerProfilesCompanion data) {
@@ -206,6 +237,7 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
       id: data.id.present ? data.id.value : this.id,
       origin: data.origin.present ? data.origin.value : this.origin,
       username: data.username.present ? data.username.value : this.username,
+      backend: data.backend.present ? data.backend.value : this.backend,
       lastAccessedAtMillis: data.lastAccessedAtMillis.present
           ? data.lastAccessedAtMillis.value
           : this.lastAccessedAtMillis,
@@ -218,13 +250,15 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
           ..write('id: $id, ')
           ..write('origin: $origin, ')
           ..write('username: $username, ')
+          ..write('backend: $backend, ')
           ..write('lastAccessedAtMillis: $lastAccessedAtMillis')
           ..write(')'))
         .toString();
   }
 
   @override
-  int get hashCode => Object.hash(id, origin, username, lastAccessedAtMillis);
+  int get hashCode =>
+      Object.hash(id, origin, username, backend, lastAccessedAtMillis);
   @override
   bool operator ==(Object other) =>
       identical(this, other) ||
@@ -232,6 +266,7 @@ class ServerProfile extends DataClass implements Insertable<ServerProfile> {
           other.id == this.id &&
           other.origin == this.origin &&
           other.username == this.username &&
+          other.backend == this.backend &&
           other.lastAccessedAtMillis == this.lastAccessedAtMillis);
 }
 
@@ -239,12 +274,14 @@ class ServerProfilesCompanion extends UpdateCompanion<ServerProfile> {
   final Value<String> id;
   final Value<String> origin;
   final Value<String?> username;
+  final Value<String> backend;
   final Value<int> lastAccessedAtMillis;
   final Value<int> rowid;
   const ServerProfilesCompanion({
     this.id = const Value.absent(),
     this.origin = const Value.absent(),
     this.username = const Value.absent(),
+    this.backend = const Value.absent(),
     this.lastAccessedAtMillis = const Value.absent(),
     this.rowid = const Value.absent(),
   });
@@ -252,6 +289,7 @@ class ServerProfilesCompanion extends UpdateCompanion<ServerProfile> {
     required String id,
     required String origin,
     this.username = const Value.absent(),
+    this.backend = const Value.absent(),
     required int lastAccessedAtMillis,
     this.rowid = const Value.absent(),
   }) : id = Value(id),
@@ -261,6 +299,7 @@ class ServerProfilesCompanion extends UpdateCompanion<ServerProfile> {
     Expression<String>? id,
     Expression<String>? origin,
     Expression<String>? username,
+    Expression<String>? backend,
     Expression<int>? lastAccessedAtMillis,
     Expression<int>? rowid,
   }) {
@@ -268,6 +307,7 @@ class ServerProfilesCompanion extends UpdateCompanion<ServerProfile> {
       if (id != null) 'id': id,
       if (origin != null) 'origin': origin,
       if (username != null) 'username': username,
+      if (backend != null) 'backend': backend,
       if (lastAccessedAtMillis != null)
         'last_accessed_at_millis': lastAccessedAtMillis,
       if (rowid != null) 'rowid': rowid,
@@ -278,6 +318,7 @@ class ServerProfilesCompanion extends UpdateCompanion<ServerProfile> {
     Value<String>? id,
     Value<String>? origin,
     Value<String?>? username,
+    Value<String>? backend,
     Value<int>? lastAccessedAtMillis,
     Value<int>? rowid,
   }) {
@@ -285,6 +326,7 @@ class ServerProfilesCompanion extends UpdateCompanion<ServerProfile> {
       id: id ?? this.id,
       origin: origin ?? this.origin,
       username: username ?? this.username,
+      backend: backend ?? this.backend,
       lastAccessedAtMillis: lastAccessedAtMillis ?? this.lastAccessedAtMillis,
       rowid: rowid ?? this.rowid,
     );
@@ -301,6 +343,9 @@ class ServerProfilesCompanion extends UpdateCompanion<ServerProfile> {
     }
     if (username.present) {
       map['username'] = Variable<String>(username.value);
+    }
+    if (backend.present) {
+      map['backend'] = Variable<String>(backend.value);
     }
     if (lastAccessedAtMillis.present) {
       map['last_accessed_at_millis'] = Variable<int>(
@@ -319,6 +364,7 @@ class ServerProfilesCompanion extends UpdateCompanion<ServerProfile> {
           ..write('id: $id, ')
           ..write('origin: $origin, ')
           ..write('username: $username, ')
+          ..write('backend: $backend, ')
           ..write('lastAccessedAtMillis: $lastAccessedAtMillis, ')
           ..write('rowid: $rowid')
           ..write(')'))
@@ -6282,6 +6328,7 @@ typedef $$ServerProfilesTableCreateCompanionBuilder =
       required String id,
       required String origin,
       Value<String?> username,
+      Value<String> backend,
       required int lastAccessedAtMillis,
       Value<int> rowid,
     });
@@ -6290,6 +6337,7 @@ typedef $$ServerProfilesTableUpdateCompanionBuilder =
       Value<String> id,
       Value<String> origin,
       Value<String?> username,
+      Value<String> backend,
       Value<int> lastAccessedAtMillis,
       Value<int> rowid,
     });
@@ -6342,6 +6390,11 @@ class $$ServerProfilesTableFilterComposer
 
   ColumnFilters<String> get username => $composableBuilder(
     column: $table.username,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get backend => $composableBuilder(
+    column: $table.backend,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6400,6 +6453,11 @@ class $$ServerProfilesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get backend => $composableBuilder(
+    column: $table.backend,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get lastAccessedAtMillis => $composableBuilder(
     column: $table.lastAccessedAtMillis,
     builder: (column) => ColumnOrderings(column),
@@ -6423,6 +6481,9 @@ class $$ServerProfilesTableAnnotationComposer
 
   GeneratedColumn<String> get username =>
       $composableBuilder(column: $table.username, builder: (column) => column);
+
+  GeneratedColumn<String> get backend =>
+      $composableBuilder(column: $table.backend, builder: (column) => column);
 
   GeneratedColumn<int> get lastAccessedAtMillis => $composableBuilder(
     column: $table.lastAccessedAtMillis,
@@ -6488,12 +6549,14 @@ class $$ServerProfilesTableTableManager
                 Value<String> id = const Value.absent(),
                 Value<String> origin = const Value.absent(),
                 Value<String?> username = const Value.absent(),
+                Value<String> backend = const Value.absent(),
                 Value<int> lastAccessedAtMillis = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ServerProfilesCompanion(
                 id: id,
                 origin: origin,
                 username: username,
+                backend: backend,
                 lastAccessedAtMillis: lastAccessedAtMillis,
                 rowid: rowid,
               ),
@@ -6502,12 +6565,14 @@ class $$ServerProfilesTableTableManager
                 required String id,
                 required String origin,
                 Value<String?> username = const Value.absent(),
+                Value<String> backend = const Value.absent(),
                 required int lastAccessedAtMillis,
                 Value<int> rowid = const Value.absent(),
               }) => ServerProfilesCompanion.insert(
                 id: id,
                 origin: origin,
                 username: username,
+                backend: backend,
                 lastAccessedAtMillis: lastAccessedAtMillis,
                 rowid: rowid,
               ),

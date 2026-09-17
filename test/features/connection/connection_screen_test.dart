@@ -10,10 +10,57 @@ import 'package:prompt/features/connection/data/connection_repository.dart';
 import 'package:prompt/features/connection/data/opencode_health_service.dart';
 import 'package:prompt/features/connection/data/server_profile_store.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/connection/presentation/connection_screen.dart';
 import 'package:prompt/features/connection/presentation/connection_view_model.dart';
 
 void main() {
+  for (final width in [320.0, 393.0]) {
+    testWidgets('agent picker fits $width pixels at 200% text scale', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final viewModel = _viewModel();
+      addTearDown(viewModel.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: ConnectionScreen(
+            viewModel: viewModel,
+            profileLoader: () async => null,
+            onConnected: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final picker = find.byType(DropdownButtonFormField<AgentBackend>);
+      await tester.ensureVisible(picker);
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final choice = find.text(AgentBackend.gatewayClaude.label).last;
+      await tester.ensureVisible(choice);
+      await tester.tap(choice);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        tester
+            .widget<DropdownButtonFormField<AgentBackend>>(picker)
+            .initialValue,
+        AgentBackend.gatewayClaude,
+      );
+    });
+  }
+
   testWidgets('restored profile populates the address and username', (
     tester,
   ) async {
@@ -59,6 +106,7 @@ void main() {
       find.byType(TextFormField).first,
       'http://198.51.100.1:4096',
     );
+    await tester.ensureVisible(find.text('Test private connection'));
     await tester.tap(find.text('Test private connection'));
     await tester.pump();
 
@@ -93,6 +141,7 @@ void main() {
         find.byType(TextFormField).at(2),
         'temporary-input',
       );
+      await tester.ensureVisible(find.text('Test private connection'));
       await tester.tap(find.text('Test private connection'));
       await tester.pumpAndSettle();
 
@@ -117,6 +166,7 @@ void main() {
       find.byType(TextFormField).first,
       'http://10.0.0.7:4096',
     );
+    await tester.ensureVisible(find.text('Test private connection'));
     await tester.tap(find.text('Test private connection'));
     await tester.pump();
 

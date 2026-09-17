@@ -294,6 +294,42 @@ void main() {
     expect((result as ChatLoadFailed).failure, ChatFailure.unauthorized);
   });
 
+  test(
+    'superseded load waits for newer snapshot instead of returning empty',
+    () async {
+      final first = Completer<http.Response>();
+      final second = Completer<http.Response>();
+      var requests = 0;
+      final repository = ChatRepository(
+        OpenCodeChatService(
+          OpenCodeTransport(
+            MockClient((_) {
+              requests++;
+              return requests == 1 ? first.future : second.future;
+            }),
+          ),
+        ),
+        const _PasswordStore('secret'),
+      );
+      var olderFinished = false;
+      final older = repository.load(profile, session).then((result) {
+        olderFinished = true;
+        return result;
+      });
+      final newer = repository.load(profile, session);
+      await _waitFor(() => requests == 2);
+      first.complete(_messageResponse('obsolete'));
+      for (var tick = 0; tick < 10; tick++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      expect(olderFinished, isFalse);
+      second.complete(_messageResponse('current'));
+      final result = await older;
+      await newer;
+      expect((result as ChatLoaded).messages.single.text, 'current');
+    },
+  );
+
   test('maps structured tool payloads before generic bodies are bounded', () async {
     final client = MockClient((request) async {
       return http.Response(
