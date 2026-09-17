@@ -204,7 +204,10 @@ class Composer extends StatelessWidget {
                             hintText: command == null
                                 ? 'Message this session…'
                                 : command!.description ?? 'Command arguments…',
-                            border: const OutlineInputBorder(),
+                            border: InputBorder.none,
+                            enabledBorder: InputBorder.none,
+                            focusedBorder: InputBorder.none,
+                            filled: false,
                           ),
                         ),
                       ),

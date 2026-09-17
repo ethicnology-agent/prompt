@@ -30,6 +30,11 @@ android {
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
         applicationId = "me.ethicnology.prompt"
+        // A separate sandbox on test devices: never replace the user's app,
+        // credentials, voice packs, or encrypted queue during UI validation.
+        if (providers.gradleProperty("promptPreview").orNull == "true") {
+            applicationIdSuffix = ".preview"
+        }
         // You can update the following values to match your application needs.
         // For more information, see: https://flutter.dev/to/review-gradle-config.
         minSdk = flutter.minSdkVersion

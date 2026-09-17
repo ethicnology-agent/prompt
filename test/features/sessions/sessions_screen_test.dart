@@ -579,6 +579,8 @@ void main() {
     expect(find.text('Parent session'), findsOneWidget);
     expect(find.text('Child session'), findsNothing);
 
+    await tester.tap(find.byTooltip('Filter sessions'));
+    await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'child-session');
     await tester.pump();
 
@@ -653,6 +655,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.byTooltip('Filter sessions'));
+    await tester.pumpAndSettle();
     final chips = find.byType(ChoiceChip);
     expect(chips, findsNWidgets(2));
     for (final chip in chips.evaluate()) {

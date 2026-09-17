@@ -135,9 +135,22 @@ class _HomeShellState extends State<HomeShell> {
               _openConversation(context, session);
             }
           },
+          onOpenSessionWithDraft: (session, draft) {
+            widget.conversationViewModel.rememberDraft(
+              widget.profile,
+              session,
+              draft,
+            );
+            if (desktop) {
+              setState(() => _selectedSession = session);
+            } else {
+              _openConversation(context, session);
+            }
+          },
           onOpenWorkspace: (projects) => _openWorkspace(context, projects),
           onOpenTerminal: () => _openTerminal(context),
           onOpenDiagnostics: () => _openDiagnostics(context),
+          onOpenSettings: () => _openSettings(context),
           onOpenVoiceSettings: () => _openVoiceSettings(context),
         );
         if (!desktop) return sessions;
@@ -207,6 +220,44 @@ class _HomeShellState extends State<HomeShell> {
           onReconnect: widget.onReconnect,
           onDisconnect: widget.onDisconnect,
           onReloadReconciled: _reconcileAfterReload,
+        ),
+      ),
+    );
+  }
+
+  void _openSettings(BuildContext context) {
+    final sessionState = widget.sessionsViewModel.value;
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (settingsContext) => SettingsScreen(
+          serverLabel:
+              '${widget.profile.backend.label}\n${widget.profile.displayOrigin}',
+          themeViewModel: widget.themeViewModel,
+          onOpenWorkspace:
+              widget.profile.capabilities.supports(BackendFeature.workspace) &&
+                  sessionState is SessionsReady
+              ? () => _openWorkspace(settingsContext, sessionState.projects)
+              : null,
+          onOpenTerminal:
+              widget.profile.capabilities.supports(BackendFeature.terminal)
+              ? () => _openTerminal(settingsContext)
+              : null,
+          onOpenServer:
+              widget.profile.capabilities.supports(BackendFeature.configuration)
+              ? () => _openDiagnostics(settingsContext)
+              : null,
+          onOpenVoice: () => _openVoiceSettings(settingsContext),
+          onOpenNotifications: () => Navigator.of(settingsContext).push(
+            MaterialPageRoute<void>(
+              builder: (_) => NotificationSettingsScreen(
+                service: widget.localNotificationService,
+              ),
+            ),
+          ),
+          onDisconnect: () {
+            Navigator.of(settingsContext).pop();
+            widget.onDisconnect();
+          },
         ),
       ),
     );

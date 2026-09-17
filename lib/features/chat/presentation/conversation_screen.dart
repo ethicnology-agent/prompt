@@ -605,6 +605,14 @@ class _ConversationScreenState extends State<ConversationScreen>
                   messages: messages,
                   onRefresh: widget.viewModel.refreshFromUserAction,
                   onRevert: _confirmRevert,
+                  canRevert: widget.profile.capabilities.supports(
+                    BackendFeature.sessionRevert,
+                  ),
+                  assistantLabel: switch (widget.profile.backend) {
+                    AgentBackend.gatewayClaude => 'Claude',
+                    AgentBackend.gatewayCodex => 'Codex',
+                    _ => 'OpenCode',
+                  },
                   onLoadOlder: () => widget.viewModel.loadOlderFromUserAction(),
                   hasMore: history.hasMore,
                   loadingOlder: history.loadingOlder,
@@ -676,8 +684,10 @@ class _ConversationScreenState extends State<ConversationScreen>
 
   Widget _composerActionColumn() {
     final capabilitiesViewModel = widget.capabilitiesViewModel;
-    Widget buildActions(List<OpenCodeSlashCommand> commands) => Column(
+    Widget buildActions(List<OpenCodeSlashCommand> commands) => Row(
+      key: const ValueKey('composer-action-toolbar'),
       mainAxisSize: MainAxisSize.min,
+      mainAxisAlignment: MainAxisAlignment.end,
       children: [
         if (widget.voiceViewModel case final voiceViewModel?)
           ValueListenableBuilder<VoiceUiState>(
@@ -689,7 +699,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                   return const SizedBox.shrink();
                 }
                 return Padding(
-                  padding: const EdgeInsets.only(bottom: 8),
+                  padding: const EdgeInsets.only(right: 8),
                   child: FloatingActionButton.small(
                     heroTag: 'start-voice-mode',
                     onPressed: _enterVoiceMode,
@@ -700,18 +710,20 @@ class _ConversationScreenState extends State<ConversationScreen>
               },
             ),
           ),
-        Padding(
-          padding: EdgeInsets.only(bottom: commands.isEmpty ? 0 : 8),
-          child: FloatingActionButton.small(
-            heroTag: 'add-attachment',
-            onPressed: _pickAttachments,
-            tooltip: 'Add attachment',
-            child: const Icon(Icons.attach_file_rounded),
-          ),
-        ),
-        if (commands.isNotEmpty)
+        if (widget.profile.capabilities.supports(BackendFeature.attachments))
           Padding(
-            padding: const EdgeInsets.only(bottom: 8),
+            padding: const EdgeInsets.only(right: 8),
+            child: FloatingActionButton.small(
+              heroTag: 'add-attachment',
+              onPressed: _pickAttachments,
+              tooltip: 'Add attachment',
+              child: const Icon(Icons.attach_file_rounded),
+            ),
+          ),
+        if (commands.isNotEmpty &&
+            widget.profile.capabilities.supports(BackendFeature.commands))
+          Padding(
+            padding: const EdgeInsets.only(right: 8),
             child: FloatingActionButton.small(
               heroTag: 'choose-slash-command',
               onPressed: () => _selectCommand(commands),
@@ -737,7 +749,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                     tooltip: _selectedCommand == null
                         ? 'Queue this prompt'
                         : 'Queue command',
-                    child: const Icon(Icons.send),
+                    child: const Icon(Icons.arrow_upward_rounded),
                   );
                 },
               ),
@@ -913,6 +925,9 @@ class _ConversationScreenState extends State<ConversationScreen>
                         ApprovalDock(
                           key: ValueKey(_approvalKey(approval)),
                           approval: approval,
+                          allowAlways: widget.profile.capabilities.supports(
+                            BackendFeature.permissionAlways,
+                          ),
                           onRespondToPermission:
                               widget.viewModel.respondToPermission,
                           onReplyToQuestion: widget.viewModel.replyToQuestion,
@@ -952,18 +967,38 @@ class _ConversationScreenState extends State<ConversationScreen>
         constraints: BoxConstraints(
           maxWidth: constrainWidth ? 960 : double.infinity,
         ),
-        child: Composer(
-          controller: _composerController,
-          command: _selectedCommand,
-          attachments: widget.viewModel.attachments,
-          onRemoveAttachment: widget.viewModel.removeAttachment,
-          onSubmit: _submitComposer,
-          voiceState: widget.voiceViewModel?.state,
-          onVoiceHoldStart: widget.voiceViewModel == null
-              ? null
-              : _startVoiceCapture,
-          onVoiceHoldEnd: widget.voiceViewModel?.finishSegmentFromUserAction,
-          onVoiceStop: widget.voiceViewModel?.stopModeFromUserAction,
+        child: Container(
+          margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+          decoration: BoxDecoration(
+            color: Theme.of(context).colorScheme.surfaceContainerLow,
+            borderRadius: BorderRadius.circular(24),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.outlineVariant,
+            ),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Composer(
+                controller: _composerController,
+                command: _selectedCommand,
+                attachments: widget.viewModel.attachments,
+                onRemoveAttachment: widget.viewModel.removeAttachment,
+                onSubmit: _submitComposer,
+                voiceState: widget.voiceViewModel?.state,
+                onVoiceHoldStart: widget.voiceViewModel == null
+                    ? null
+                    : _startVoiceCapture,
+                onVoiceHoldEnd:
+                    widget.voiceViewModel?.finishSegmentFromUserAction,
+                onVoiceStop: widget.voiceViewModel?.stopModeFromUserAction,
+              ),
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
+                child: _composerActionColumn(),
+              ),
+            ],
+          ),
         ),
       ),
     ),
@@ -1013,35 +1048,46 @@ class _ConversationScreenState extends State<ConversationScreen>
     return LayoutBuilder(
       builder: (context, constraints) {
         final isDesktop = constraints.maxWidth >= PromptBreakpoints.desktop;
-        final showArtifactsPanel = _artifactsPanelOverride ?? isDesktop;
+        final showArtifactsPanel =
+            widget.profile.capabilities.supports(BackendFeature.workspace) &&
+            (_artifactsPanelOverride ?? isDesktop);
         return Scaffold(
           appBar: AppBar(
             toolbarHeight: 68,
             titleSpacing: 4,
-            title: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+            title: Row(
               children: [
-                Text(
-                  widget.session.title.isEmpty
-                      ? 'Untitled session'
-                      : widget.session.title,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-                const SizedBox(height: 2),
-                Text(
-                  directoryName(widget.session.directory),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                    color: Theme.of(context).colorScheme.primary,
+                IdentityAvatar(identifier: widget.session.id, size: 34),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        widget.session.title.isEmpty
+                            ? 'Untitled session'
+                            : widget.session.title,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        directoryName(widget.session.directory),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
             actions: [
-              if (widget.reviewViewModelFactory != null &&
+              if (widget.profile.capabilities.supports(BackendFeature.review) &&
+                  widget.reviewViewModelFactory != null &&
                   widget.capabilitiesViewModel != null)
                 IconButton(
                   onPressed: _openReview,
@@ -1059,18 +1105,21 @@ class _ConversationScreenState extends State<ConversationScreen>
                 builder: (context, state, _) =>
                     Center(child: _ExecutionIndicator(state: state)),
               ),
-              IconButton(
-                onPressed: () => _toggleArtifactsPanel(
-                  isDesktop: isDesktop,
-                  showing: showArtifactsPanel,
+              if (widget.profile.capabilities.supports(
+                BackendFeature.workspace,
+              ))
+                IconButton(
+                  onPressed: () => _toggleArtifactsPanel(
+                    isDesktop: isDesktop,
+                    showing: showArtifactsPanel,
+                  ),
+                  icon: const Icon(Icons.assignment_outlined),
+                  tooltip: isDesktop
+                      ? showArtifactsPanel
+                            ? 'Hide session details'
+                            : 'Show session details'
+                      : 'Session artifacts',
                 ),
-                icon: const Icon(Icons.assignment_outlined),
-                tooltip: isDesktop
-                    ? showArtifactsPanel
-                          ? 'Hide session details'
-                          : 'Show session details'
-                    : 'Session artifacts',
-              ),
               const SizedBox(width: 8),
             ],
           ),
@@ -1116,21 +1165,6 @@ class _ConversationScreenState extends State<ConversationScreen>
                                     ],
                                   ),
                                 ),
-                                SizedBox(
-                                  key: const ValueKey(
-                                    'desktop-composer-action-rail',
-                                  ),
-                                  width: 64,
-                                  child: Align(
-                                    alignment: Alignment.bottomCenter,
-                                    child: Padding(
-                                      padding: const EdgeInsets.only(
-                                        bottom: 16,
-                                      ),
-                                      child: _composerActionColumn(),
-                                    ),
-                                  ),
-                                ),
                               ],
                             ),
                           ),
@@ -1161,7 +1195,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                           ],
                         ],
                       )
-                    : _transcriptPanel(),
+                    : _transcriptPanel(showComposerActions: false),
               ),
               if (!isDesktop)
                 _activityPanel(

@@ -23,10 +23,12 @@ class ApprovalDock extends StatefulWidget {
     required this.onRespondToPermission,
     required this.onReplyToQuestion,
     required this.onRejectQuestion,
+    this.allowAlways = true,
     super.key,
   });
 
   final PendingApproval approval;
+  final bool allowAlways;
   final Future<bool> Function(String permissionId, PermissionResponse response)
   onRespondToPermission;
   final Future<bool> Function(String requestId, List<List<String>> answers)
@@ -144,15 +146,16 @@ class ApprovalDockState extends State<ApprovalDock> {
                     ),
               child: const Text('Allow once'),
             ),
-            OutlinedButton(
-              onPressed: _submitting
-                  ? null
-                  : () => _respondToPermission(
-                      approval.permissionId,
-                      PermissionResponse.always,
-                    ),
-              child: const Text('Always allow'),
-            ),
+            if (widget.allowAlways)
+              OutlinedButton(
+                onPressed: _submitting
+                    ? null
+                    : () => _respondToPermission(
+                        approval.permissionId,
+                        PermissionResponse.always,
+                      ),
+                child: const Text('Always allow'),
+              ),
             TextButton(
               onPressed: _submitting
                   ? null
