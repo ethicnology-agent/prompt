@@ -6,8 +6,95 @@ import 'package:prompt/core/security/credentials_store.dart';
 import 'package:prompt/data/remote/opencode_transport.dart';
 import 'package:prompt/features/connection/connection.dart';
 import 'package:prompt/features/sessions/sessions.dart';
+import 'package:prompt/features/sessions/presentation/new_session_dock.dart';
 
 void main() {
+  for (final (size, keyboardHeight) in [
+    (const Size(393, 851), 300.0),
+    (const Size(851, 393), 150.0),
+    (const Size(851, 393), 300.0),
+  ]) {
+    testWidgets('home draft stays above $keyboardHeight keyboard at $size', (
+      tester,
+    ) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = size;
+      tester.view.padding = const FakeViewPadding(top: 24);
+      addTearDown(tester.view.resetPadding);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetViewInsets);
+      final client = MockClient((_) async => http.Response('[]', 200));
+      final model = SessionsViewModel(
+        SessionsRepository(
+          OpenCodeSessionsService(OpenCodeTransport(client)),
+          _NoCredentials(),
+        ),
+      );
+      addTearDown(model.dispose);
+      addTearDown(client.close);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionsScreen(
+            profile: ServerProfile(origin: Uri.parse('http://10.23.42.1:4096')),
+            viewModel: model,
+            onOpenSession: (_) {},
+            onOpenSessionWithDraft: (_, _) {},
+            onOpenWorkspace: (_) {},
+            onOpenTerminal: () {},
+            onOpenDiagnostics: () {},
+            onOpenVoiceSettings: () {},
+            onDisconnect: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      final draft = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.hintText == 'What would you like to do?',
+      );
+      final create = find.byTooltip('New session from draft');
+      const text = 'A draft kept through keyboard changes';
+      await tester.enterText(draft, text);
+      await tester.pumpAndSettle();
+      final initialBottom = tester.getBottomRight(create).dy;
+      expect(
+        tester.getBottomRight(find.byType(NewSessionDock)).dy,
+        closeTo(size.height - 12, 1),
+      );
+      for (var cycle = 0; cycle < 2; cycle++) {
+        tester.view.viewInsets = FakeViewPadding(bottom: keyboardHeight);
+        await tester.pumpAndSettle();
+        if (size.height - keyboardHeight >= 200) {
+          expect(
+            tester.getBottomRight(find.byType(NewSessionDock)).dy,
+            closeTo(size.height - keyboardHeight - 12, 1),
+          );
+        }
+        expect(
+          tester.getBottomRight(create).dy,
+          lessThanOrEqualTo(size.height - keyboardHeight),
+          reason: 'The draft creation action must not be hidden by the IME.',
+        );
+        expect(
+          tester.getBottomRight(draft).dy,
+          lessThanOrEqualTo(size.height - keyboardHeight),
+        );
+        expect(tester.getTopLeft(draft).dy, greaterThanOrEqualTo(0));
+        expect(tester.widget<TextField>(draft).controller!.text, text);
+        expect(tester.takeException(), isNull);
+
+        tester.view.viewInsets = const FakeViewPadding();
+        await tester.pumpAndSettle();
+        expect(tester.getBottomRight(create).dy, closeTo(initialBottom, 1));
+        expect(tester.widget<TextField>(draft).controller!.text, text);
+        expect(tester.takeException(), isNull);
+      }
+      await tester.pumpWidget(const SizedBox.shrink());
+    });
+  }
+
   testWidgets('home draft transfers only after explicit session creation', (
     tester,
   ) async {
@@ -62,7 +149,7 @@ void main() {
     await tester.enterText(draft, 'An unsent synthetic draft');
     expect(created, 0);
     expect(submitted, 0);
-    await tester.tap(find.byTooltip('New session'));
+    await tester.tap(find.byTooltip('New session from draft'));
     await tester.pumpAndSettle();
     final path = find.byWidgetPredicate(
       (widget) =>

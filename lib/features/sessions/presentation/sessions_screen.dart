@@ -15,6 +15,8 @@ import 'sessions_view_model.dart';
 import 'new_session_dock.dart';
 
 enum _CatalogAction {
+  filters,
+  settings,
   workspace,
   terminal,
   diagnostics,
@@ -65,6 +67,9 @@ const _focusRefreshCooldown = Duration(seconds: 15);
 class _SessionsScreenState extends State<SessionsScreen> {
   final _searchController = TextEditingController();
   final _newDraftController = TextEditingController();
+  final _searchFocus = FocusNode();
+  final _draftFocus = FocusNode();
+  final _draftDockKey = GlobalKey();
   String? _selectedProjectId;
   late final AppLifecycleListener _lifecycleListener;
   Timer? _focusCooldown;
@@ -74,12 +79,20 @@ class _SessionsScreenState extends State<SessionsScreen> {
   void initState() {
     super.initState();
     _searchController.addListener(_onSearchChanged);
+    _searchFocus.addListener(_onSearchChanged);
+    _draftFocus.addListener(_onSearchChanged);
     _lifecycleListener = AppLifecycleListener(onResume: _refreshOnResume);
     unawaited(_load());
   }
 
   @override
   void dispose() {
+    _searchFocus
+      ..removeListener(_onSearchChanged)
+      ..dispose();
+    _draftFocus
+      ..removeListener(_onSearchChanged)
+      ..dispose();
     _newDraftController.dispose();
     _focusCooldown?.cancel();
     _lifecycleListener.dispose();
@@ -111,6 +124,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
   @override
   Widget build(BuildContext context) {
     final body = _buildBody();
+    final media = MediaQuery.of(context);
+    final compactKeyboard =
+        media.viewInsets.bottom > 0 &&
+        media.size.height - media.viewInsets.bottom - media.padding.top < 200;
+    final prioritizeSearch = _showFilters && !_draftFocus.hasFocus;
     if (widget.embedded) {
       return Column(
         children: [
@@ -120,75 +138,65 @@ class _SessionsScreenState extends State<SessionsScreen> {
       );
     }
     return Scaffold(
-      appBar: AppBar(
-        toolbarHeight: 60,
-        titleSpacing: 20,
-        title: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Prompt', style: Theme.of(context).textTheme.titleLarge),
-            const SizedBox(height: 2),
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const _OnlineDot(),
-                const SizedBox(width: 7),
-                Flexible(
-                  child: Text(
-                    '${widget.profile.backend.label} · ${widget.profile.displayOrigin}',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: Theme.of(context).textTheme.labelSmall,
+      appBar: compactKeyboard
+          ? null
+          : AppBar(
+              toolbarHeight: 60,
+              centerTitle: true,
+              leading: _buildCatalogMenu(brand: true),
+              title: const Text('Sessions'),
+              actions: [
+                if (widget.onOpenSettings != null)
+                  AppIconButton(
+                    icon: Icons.settings_outlined,
+                    tooltip: 'Settings',
+                    onPressed: widget.onOpenSettings,
                   ),
-                ),
+                const SizedBox(width: 4),
               ],
             ),
+      // Keep the draft inside the body that Scaffold resizes for the keyboard.
+      // A bottomNavigationBar stays behind the IME instead of moving above it.
+      body: SafeArea(
+        top: compactKeyboard,
+        bottom: false,
+        child: Column(
+          children: [
+            if (!compactKeyboard || prioritizeSearch) Expanded(child: body),
+            if (!compactKeyboard || !prioritizeSearch)
+              if (compactKeyboard)
+                Expanded(child: SingleChildScrollView(child: _buildDraftDock()))
+              else
+                _buildDraftDock(),
           ],
-        ),
-        actions: [
-          // No refresh action here: the session list is pull-to-refresh.
-          // Secondary destinations live in one menu so a phone-width app bar
-          // keeps a single, reachable primary action.
-          AppIconButton(
-            tooltip: 'Filter sessions',
-            isSelected: _showFilters,
-            onPressed: () => setState(() => _showFilters = !_showFilters),
-            icon: Icons.tune_rounded,
-          ),
-          if (widget.onOpenSettings != null)
-            AppIconButton(
-              icon: Icons.settings_outlined,
-              tooltip: 'Settings',
-              onPressed: widget.onOpenSettings,
-            ),
-          if (widget.onOpenSettings == null) _buildCatalogMenu(),
-          const SizedBox(width: 4),
-        ],
-      ),
-      body: body,
-      bottomNavigationBar: SafeArea(
-        top: false,
-        minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-        child: ValueListenableBuilder<SessionsUiState>(
-          valueListenable: widget.viewModel,
-          builder: (context, state, _) => NewSessionDock(
-            draftController: widget.onOpenSessionWithDraft == null
-                ? null
-                : _newDraftController,
-            onCreate: state is SessionsReady || state is SessionsEmpty
-                ? () => _createSession(
-                    state is SessionsReady ? state.projects : const [],
-                  )
-                : null,
-            onTerminal:
-                widget.profile.capabilities.supports(BackendFeature.terminal)
-                ? widget.onOpenTerminal
-                : null,
-          ),
         ),
       ),
     );
   }
+
+  Widget _buildDraftDock() => SafeArea(
+    key: _draftDockKey,
+    top: false,
+    minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+    child: ValueListenableBuilder<SessionsUiState>(
+      valueListenable: widget.viewModel,
+      builder: (context, state, _) => NewSessionDock(
+        focusNode: _draftFocus,
+        draftController: widget.onOpenSessionWithDraft == null
+            ? null
+            : _newDraftController,
+        onCreate: state is SessionsReady || state is SessionsEmpty
+            ? () => _createSession(
+                state is SessionsReady ? state.projects : const [],
+              )
+            : null,
+        onTerminal:
+            widget.profile.capabilities.supports(BackendFeature.terminal)
+            ? widget.onOpenTerminal
+            : null,
+      ),
+    ),
+  );
 
   Widget _buildEmbeddedHeader(BuildContext context) {
     return Material(
@@ -226,6 +234,10 @@ class _SessionsScreenState extends State<SessionsScreen> {
 
   void _onCatalogAction(_CatalogAction action) {
     switch (action) {
+      case _CatalogAction.filters:
+        setState(() => _showFilters = !_showFilters);
+      case _CatalogAction.settings:
+        widget.onOpenSettings?.call();
       case _CatalogAction.workspace:
         final state = widget.viewModel.value;
         if (state case SessionsReady(:final projects)) {
@@ -242,11 +254,30 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }
   }
 
-  PopupMenuButton<_CatalogAction> _buildCatalogMenu() {
+  PopupMenuButton<_CatalogAction> _buildCatalogMenu({bool brand = false}) {
     return PopupMenuButton<_CatalogAction>(
       tooltip: 'More actions',
+      icon: brand
+          ? Semantics(
+              label: 'Prompt',
+              child: const Icon(Icons.code_rounded, size: 22),
+            )
+          : null,
       onSelected: _onCatalogAction,
       itemBuilder: (context) => [
+        CheckedPopupMenuItem(
+          value: _CatalogAction.filters,
+          checked: _showFilters,
+          child: const Text('Filter sessions'),
+        ),
+        if (widget.onOpenSettings != null)
+          const PopupMenuItem(
+            value: _CatalogAction.settings,
+            child: ListTile(
+              leading: Icon(Icons.settings_outlined),
+              title: Text('Settings'),
+            ),
+          ),
         if (widget.profile.capabilities.supports(BackendFeature.workspace))
           PopupMenuItem(
             value: _CatalogAction.workspace,
@@ -363,64 +394,72 @@ class _SessionsScreenState extends State<SessionsScreen> {
       }
     }
 
-    return Column(
-      children: [
-        if (widget.embedded || _showFilters)
-          _CatalogControls(
-            searchController: _searchController,
-            projects: filterProjects,
-            selectedProjectId: selectedProjectId,
-            onSelectProject: (id) => setState(() => _selectedProjectId = id),
-            onCreate: () => _createSession(projects),
-            onRefresh: _load,
-          ),
-        Expanded(
-          child: visibleSessions.isEmpty
-              ? _NoMatchingSessions(
-                  hasQuery: query.isNotEmpty || selectedProjectId != null,
-                  onClear: () {
-                    _searchController.clear();
-                    setState(() => _selectedProjectId = null);
-                  },
-                  onCreate: () => _createSession(projects),
-                )
-              : RefreshIndicator(
-                  onRefresh: _load,
-                  child: ListView.separated(
-                    keyboardDismissBehavior:
-                        ScrollViewKeyboardDismissBehavior.onDrag,
-                    padding: const EdgeInsets.only(bottom: 16),
-                    itemCount: visibleSessions.length,
-                    separatorBuilder: (_, _) => const Padding(
-                      padding: EdgeInsets.only(left: 88),
-                      child: Divider(height: 1, thickness: 0.5),
-                    ),
-                    itemBuilder: (context, index) {
-                      final session = visibleSessions[index];
-                      return _SessionCard(
-                        session: session,
-                        activity:
-                            activities[session.id] ??
-                            (unavailableDirectories.contains(session.directory)
-                                ? SessionActivity.unavailable
-                                : SessionActivity.unknown),
-                        childCount: childrenByParent[session.id] ?? 0,
-                        onTap: () => widget.onOpenSession(session),
-                        onCopyId: () => _copySessionId(session),
-                        onRename: () => _renameSession(session),
-                        onDelete: () => _deleteSession(session),
-                        canRename: widget.profile.capabilities.supports(
-                          BackendFeature.sessionRename,
-                        ),
-                        canDelete: widget.profile.capabilities.supports(
-                          BackendFeature.sessionDelete,
-                        ),
-                      );
-                    },
-                  ),
+    return RefreshIndicator(
+      onRefresh: _load,
+      child: CustomScrollView(
+        keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+        physics: const AlwaysScrollableScrollPhysics(),
+        slivers: [
+          if (widget.embedded || _showFilters)
+            SliverToBoxAdapter(
+              child: _CatalogControls(
+                searchController: _searchController,
+                searchFocus: _searchFocus,
+                projects: filterProjects,
+                selectedProjectId: selectedProjectId,
+                onSelectProject: (id) =>
+                    setState(() => _selectedProjectId = id),
+                onCreate: () => _createSession(projects),
+                onRefresh: _load,
+              ),
+            ),
+          if (visibleSessions.isEmpty)
+            SliverFillRemaining(
+              hasScrollBody: false,
+              child: _NoMatchingSessions(
+                hasQuery: query.isNotEmpty || selectedProjectId != null,
+                onClear: () {
+                  _searchController.clear();
+                  setState(() => _selectedProjectId = null);
+                },
+                onCreate: () => _createSession(projects),
+              ),
+            )
+          else
+            SliverPadding(
+              padding: const EdgeInsets.only(bottom: 16),
+              sliver: SliverList.separated(
+                itemCount: visibleSessions.length,
+                separatorBuilder: (_, _) => const Padding(
+                  padding: EdgeInsets.only(left: 88),
+                  child: Divider(height: 1, thickness: 0.5),
                 ),
-        ),
-      ],
+                itemBuilder: (context, index) {
+                  final session = visibleSessions[index];
+                  return _SessionCard(
+                    session: session,
+                    activity:
+                        activities[session.id] ??
+                        (unavailableDirectories.contains(session.directory)
+                            ? SessionActivity.unavailable
+                            : SessionActivity.unknown),
+                    childCount: childrenByParent[session.id] ?? 0,
+                    onTap: () => widget.onOpenSession(session),
+                    onCopyId: () => _copySessionId(session),
+                    onRename: () => _renameSession(session),
+                    onDelete: () => _deleteSession(session),
+                    canRename: widget.profile.capabilities.supports(
+                      BackendFeature.sessionRename,
+                    ),
+                    canDelete: widget.profile.capabilities.supports(
+                      BackendFeature.sessionDelete,
+                    ),
+                  );
+                },
+              ),
+            ),
+        ],
+      ),
     );
   }
 
@@ -429,7 +468,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
         await showModalBottomSheet<({String directory, String title})>(
           context: context,
           isScrollControlled: true,
-          showDragHandle: true,
+          showDragHandle: false,
           builder: (context) => _NewSessionSheet(
             profile: widget.profile,
             viewModel: widget.viewModel,
@@ -696,6 +735,9 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
+              const ExcludeSemantics(
+                child: Center(child: Icon(Icons.drag_handle_rounded)),
+              ),
               Text(
                 'New session',
                 style: Theme.of(context).textTheme.headlineSmall,
@@ -804,6 +846,7 @@ bool _isAbsoluteServerPath(String value) =>
 class _CatalogControls extends StatelessWidget {
   const _CatalogControls({
     required this.searchController,
+    required this.searchFocus,
     required this.projects,
     required this.selectedProjectId,
     required this.onSelectProject,
@@ -812,6 +855,7 @@ class _CatalogControls extends StatelessWidget {
   });
 
   final TextEditingController searchController;
+  final FocusNode searchFocus;
   final List<OpenCodeProject> projects;
   final String? selectedProjectId;
   final ValueChanged<String?> onSelectProject;
@@ -838,6 +882,7 @@ class _CatalogControls extends StatelessWidget {
                 Expanded(
                   child: AppTextField(
                     controller: searchController,
+                    focusNode: searchFocus,
                     textInputAction: TextInputAction.search,
                     hint: 'Search sessions, projects, IDs',
                     prefixIcon: Icons.search_rounded,
@@ -930,185 +975,75 @@ class _SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.scaffoldBackgroundColor,
-      child: InkWell(
-        onTap: onTap,
-        child: Padding(
-          padding: const EdgeInsets.fromLTRB(16, 10, 8, 10),
-          child: Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              IdentityAvatar(identifier: session.id),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      session.title.isEmpty
-                          ? 'Untitled session'
-                          : session.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.titleMedium,
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      _directoryName(session.directory),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: theme.textTheme.labelMedium?.copyWith(
-                        color: theme.colorScheme.onSurfaceVariant,
-                      ),
-                    ),
-                    _SessionActivityLabel(activity: activity),
-                    const SizedBox(height: 3),
-                    Wrap(
-                      spacing: 10,
-                      runSpacing: 6,
-                      children: [
-                        _MetaLabel(
-                          icon: Icons.schedule_rounded,
-                          text: _relativeTime(session.updatedAt),
-                        ),
-                        if (session.changedFiles != null)
-                          _MetaLabel(
-                            icon: Icons.difference_outlined,
-                            text:
-                                '${session.changedFiles} files  '
-                                '+${session.additions ?? 0} '
-                                '-${session.deletions ?? 0}',
-                          ),
-                        if (childCount > 0)
-                          _MetaLabel(
-                            icon: Icons.account_tree_outlined,
-                            text: '$childCount subagents',
-                          ),
-                      ],
-                    ),
-                  ],
-                ),
-              ),
-              PopupMenuButton<_SessionAction>(
-                tooltip: 'Session actions',
-                onSelected: (action) {
-                  switch (action) {
-                    case _SessionAction.copyId:
-                      onCopyId();
-                    case _SessionAction.rename:
-                      onRename();
-                    case _SessionAction.delete:
-                      onDelete();
-                  }
-                },
-                itemBuilder: (context) => [
-                  const PopupMenuItem(
-                    value: _SessionAction.copyId,
-                    child: ListTile(
-                      leading: Icon(Icons.content_copy_outlined),
-                      title: Text('Copy session ID'),
-                      contentPadding: EdgeInsets.zero,
-                    ),
-                  ),
-                  if (canRename)
-                    const PopupMenuItem(
-                      value: _SessionAction.rename,
-                      child: ListTile(
-                        leading: Icon(Icons.edit_outlined),
-                        title: Text('Rename'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                  if (canDelete)
-                    const PopupMenuItem(
-                      value: _SessionAction.delete,
-                      child: ListTile(
-                        leading: Icon(Icons.delete_outline),
-                        title: Text('Delete'),
-                        contentPadding: EdgeInsets.zero,
-                      ),
-                    ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-    );
-  }
-}
-
-class _SessionActivityLabel extends StatelessWidget {
-  const _SessionActivityLabel({required this.activity});
-
-  final SessionActivity activity;
-
-  @override
-  Widget build(BuildContext context) {
-    final (label, icon) = switch (activity) {
+    final (status, icon) = switch (activity) {
       SessionActivity.working => ('Working', Icons.sync_rounded),
       SessionActivity.idle => ('Idle', Icons.check_circle_outline_rounded),
       SessionActivity.retrying => ('Retrying', Icons.replay_rounded),
       SessionActivity.unknown => ('Activity unknown', Icons.help_outline),
       SessionActivity.unavailable => ('Status unavailable', Icons.sync_problem),
     };
-    return Semantics(
-      label: 'Session activity: $label',
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // A session working in the list turns just as it does once opened:
-          // the same signal should not depend on which screen you are on.
-          SpinningIcon(
-            key: const ValueKey('session-activity-spin'),
-            icon: icon,
-            size: 16,
-            spinning:
-                activity == SessionActivity.working ||
-                activity == SessionActivity.retrying,
-          ),
-          const SizedBox(width: 5),
-          Flexible(
-            child: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
-          ),
-        ],
+    final project = _directoryName(session.directory);
+    return SessionListTile(
+      identifier: session.id,
+      title: session.title.isEmpty ? 'Untitled session' : session.title,
+      project: childCount > 0 ? '$project · $childCount subagents' : project,
+      status: status,
+      statusIcon: icon,
+      inProgress:
+          activity == SessionActivity.working ||
+          activity == SessionActivity.retrying,
+      timestamp: _relativeTime(session.updatedAt),
+      nested: session.parentId?.isNotEmpty == true,
+      showDivider: false,
+      onTap: onTap,
+      onLongPress: () => _showActions(context),
+    );
+  }
+
+  Future<void> _showActions(BuildContext context) async {
+    final action = await showModalBottomSheet<_SessionAction>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.content_copy_outlined),
+              title: const Text('Copy session ID'),
+              onTap: () => Navigator.pop(context, _SessionAction.copyId),
+            ),
+            if (canRename)
+              ListTile(
+                leading: const Icon(Icons.edit_outlined),
+                title: const Text('Rename'),
+                onTap: () => Navigator.pop(context, _SessionAction.rename),
+              ),
+            if (canDelete)
+              ListTile(
+                leading: const Icon(Icons.delete_outline),
+                title: const Text('Delete'),
+                onTap: () => Navigator.pop(context, _SessionAction.delete),
+              ),
+          ],
+        ),
       ),
     );
+    switch (action) {
+      case _SessionAction.copyId:
+        onCopyId();
+      case _SessionAction.rename:
+        onRename();
+      case _SessionAction.delete:
+        onDelete();
+      case null:
+        break;
+    }
   }
 }
 
 enum _SessionAction { copyId, rename, delete }
-
-class _MetaLabel extends StatelessWidget {
-  const _MetaLabel({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    final color = Theme.of(context).colorScheme.onSurfaceVariant;
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(icon, size: 14, color: color),
-        const SizedBox(width: 4),
-        Flexible(
-          child: Text(
-            text,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: Theme.of(
-              context,
-            ).textTheme.labelSmall?.copyWith(color: color),
-          ),
-        ),
-      ],
-    );
-  }
-}
 
 class _OnlineDot extends StatelessWidget {
   const _OnlineDot();

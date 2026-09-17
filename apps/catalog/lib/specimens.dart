@@ -9,6 +9,90 @@ class Specimen {
 }
 
 final specimens = <Specimen>[
+  Specimen(
+    'Composer actions',
+    (_) => ComposerActionBar(
+      leading: [
+        AppIconButton(
+          icon: Icons.attach_file,
+          tooltip: 'Attach files',
+          onPressed: () {},
+        ),
+      ],
+      controls: AppButton(
+        label: 'Model and agent',
+        variant: AppButtonVariant.tertiary,
+        onPressed: () {},
+      ),
+      trailing: AppIconButton(
+        icon: Icons.arrow_upward,
+        tooltip: 'Send message',
+        variant: AppIconButtonVariant.filled,
+        onPressed: () {},
+      ),
+    ),
+  ),
+  Specimen(
+    'Settings group',
+    (context) => ColoredBox(
+      color: SettingsGroup.pageColor(Theme.of(context)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: SettingsGroup(
+          title: 'PREFERENCES',
+          children: [
+            ListTile(
+              leading: const Icon(Icons.contrast_rounded),
+              title: const Text('Appearance'),
+              subtitle: const Text('Follow the system theme'),
+              trailing: const Icon(Icons.chevron_right),
+              onTap: () {},
+            ),
+            const ListTile(
+              leading: Icon(Icons.shield_outlined),
+              title: Text('Private connection'),
+              subtitle: Text('Your infrastructure, without a public relay'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  ),
+  Specimen(
+    'Session list',
+    (_) => Column(
+      children: [
+        SessionListTile(
+          identifier: 'example-idle',
+          title: 'Build a private coding companion',
+          project: 'example-project',
+          status: 'Idle',
+          timestamp: '12m',
+          onTap: () {},
+          onLongPress: () {},
+        ),
+        SessionListTile(
+          identifier: 'example-active',
+          title: 'A long title that must remain readable at larger text scales',
+          project: 'workspace / feature-branch',
+          status: 'Working',
+          timestamp: 'Now',
+          selected: true,
+          inProgress: true,
+          statusIcon: Icons.sync,
+          onTap: () {},
+        ),
+        const SessionListTile(
+          identifier: 'example-offline',
+          title: 'Unavailable session',
+          project: 'another-project',
+          status: 'Offline',
+          timestamp: '2h',
+          onTap: null,
+        ),
+      ],
+    ),
+  ),
   for (final variant in AppButtonVariant.values)
     Specimen(
       'Button - ${variant.name}',
