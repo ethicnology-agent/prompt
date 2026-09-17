@@ -1,5 +1,11 @@
+import 'package:flutter/foundation.dart';
+
 class ConnectionOriginPolicy {
   const ConnectionOriginPolicy._();
+
+  // USB forwarding is an explicit native debug preview, never a release route.
+  static const _usbPreviewEnabled =
+      kDebugMode && !kIsWeb && bool.fromEnvironment('PROMPT_USB_PREVIEW');
 
   static bool supports(Uri origin) {
     if (origin.host.isEmpty) {
@@ -12,7 +18,8 @@ class ConnectionOriginPolicy {
       return false;
     }
     return (origin.scheme == 'http' || origin.scheme == 'https') &&
-        isPrivateNetworkAddress(origin.host);
+        (isPrivateNetworkAddress(origin.host) ||
+            (_usbPreviewEnabled && origin.host == '127.0.0.1'));
   }
 
   static bool isPrivateNetworkAddress(String host) {
