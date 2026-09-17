@@ -1,7 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:prompt/core/ui/adaptive_layout.dart';
+import 'package:design_system/design_system.dart';
 
 void main() {
   test('size classes use width thresholds', () {
