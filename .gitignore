@@ -11,3 +11,6 @@ build/
 # Local IDE state
 .idea/
 *.iml
+
+# Local Python architecture-check bytecode
+__pycache__/

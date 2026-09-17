@@ -21,6 +21,22 @@ version: 1.0.0+1
 environment:
   sdk: ^3.12.2
 
+workspace:
+  - packages/design_system
+
+melos:
+  useRootAsPackage: true
+  scripts:
+    check:
+      run: flutter analyze
+    test:all:
+      exec:
+        command: flutter test
+        concurrency: 1
+        failFast: true
+      packageFilters:
+        dirExists: test
+
 # Dependencies specify other packages that your package needs in order to work.
 # To automatically upgrade your package dependencies to the latest versions
 # consider running `flutter pub upgrade --major-versions`. Alternatively,
@@ -28,6 +44,7 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
+  design_system: ^0.1.0
   flutter:
     sdk: flutter
 
@@ -70,6 +87,7 @@ dependencies:
   cupertino_icons: ^1.0.9
 
 dev_dependencies:
+  melos: ^8.7.0
   flutter_test:
     sdk: flutter
 

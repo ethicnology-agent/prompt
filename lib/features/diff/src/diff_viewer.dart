@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/semantics.dart';
-import 'package:prompt/core/ui/prompt_color_tokens.dart';
+import 'package:design_system/design_system.dart';
 
 import 'diff_model.dart';
 import 'syntax_highlighter.dart';
