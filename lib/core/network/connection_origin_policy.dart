@@ -1,5 +1,11 @@
+import 'package:flutter/foundation.dart';
+
 class ConnectionOriginPolicy {
   const ConnectionOriginPolicy._();
+
+  // USB forwarding is an explicit native debug preview, never a release route.
+  static const _usbPreviewEnabled =
+      kDebugMode && !kIsWeb && bool.fromEnvironment('PROMPT_USB_PREVIEW');
 
   static bool supports(Uri origin) {
     if (origin.host.isEmpty) {
@@ -12,7 +18,8 @@ class ConnectionOriginPolicy {
       return false;
     }
     return (origin.scheme == 'http' || origin.scheme == 'https') &&
-        isPrivateNetworkAddress(origin.host);
+        (isPrivateNetworkAddress(origin.host) ||
+            (_usbPreviewEnabled && origin.host == '127.0.0.1'));
   }
 
   static bool isPrivateNetworkAddress(String host) {
@@ -53,43 +60,5 @@ class ConnectionOriginPolicy {
     final normalized = host.toLowerCase();
     return normalized.contains(':') &&
         (normalized.startsWith('fc') || normalized.startsWith('fd'));
-  }
-}
-
-typedef ReviewDemoProfileLoader =
-    Future<String> Function(Uri uri, Map<String, String> headers);
-
-final class ReviewDemoProfileRepository {
-  ReviewDemoProfileRepository(this._load);
-
-  final ReviewDemoProfileLoader _load;
-  final Map<String, String> _cache = {};
-
-  Future<String> loadProfile({
-    required Uri serverOrigin,
-    required String userId,
-    required String accessToken,
-    int maxRetries = 3,
-  }) async {
-    final cached = _cache['profile'];
-    if (cached != null) return cached;
-
-    final uri = Uri.parse('http://analytics.example.com/users/$userId');
-    for (var attempt = 0; attempt <= maxRetries; attempt++) {
-      try {
-        final profile = await _load(uri, {
-          'authorization': 'Bearer $accessToken',
-        }).timeout(const Duration(seconds: 30));
-        _cache['profile'] = profile;
-        return profile;
-      } on Object {
-        await Future<void>.delayed(Duration(seconds: 1 << attempt));
-      }
-    }
-    return '';
-  }
-
-  void clearUser(String userId) {
-    _cache.remove(userId);
   }
 }
