@@ -9,6 +9,11 @@ ThemeData promptDarkTheme() => _theme(Brightness.dark);
 
 ThemeData _theme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
+  final accent = ColorScheme.fromSeed(
+    seedColor: const Color(0xff56d6b2),
+    brightness: brightness,
+    dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+  );
   final scheme =
       ColorScheme.fromSeed(
         seedColor: const Color(0xff18171c),
@@ -16,12 +21,23 @@ ThemeData _theme(Brightness brightness) {
         dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
         surface: dark ? const Color(0xff000000) : const Color(0xffffffff),
       ).copyWith(
-        primary: dark ? Colors.white : const Color(0xff18171c),
-        onPrimary: dark ? Colors.black : Colors.white,
-        primaryContainer: dark
-            ? const Color(0xff292929)
-            : const Color(0xfff0f0f0),
-        onPrimaryContainer: dark ? Colors.white : const Color(0xff18171c),
+        primary: accent.primary,
+        onPrimary: accent.onPrimary,
+        primaryContainer: accent.primaryContainer,
+        onPrimaryContainer: accent.onPrimaryContainer,
+        primaryFixed: accent.primaryFixed,
+        primaryFixedDim: accent.primaryFixedDim,
+        onPrimaryFixed: accent.onPrimaryFixed,
+        onPrimaryFixedVariant: accent.onPrimaryFixedVariant,
+        inversePrimary: accent.inversePrimary,
+        secondary: accent.secondary,
+        onSecondary: accent.onSecondary,
+        secondaryContainer: accent.secondaryContainer,
+        onSecondaryContainer: accent.onSecondaryContainer,
+        secondaryFixed: accent.secondaryFixed,
+        secondaryFixedDim: accent.secondaryFixedDim,
+        onSecondaryFixed: accent.onSecondaryFixed,
+        onSecondaryFixedVariant: accent.onSecondaryFixedVariant,
         surfaceContainerLow: dark ? const Color(0xff111111) : Colors.white,
         outlineVariant: dark
             ? const Color(0xff2c2c2e)
