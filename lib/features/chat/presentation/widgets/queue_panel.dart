@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/ui/ui.dart';
+
 import '../../../queue/queue.dart';
 
 /// Lists the prompts and commands waiting to be dispatched for the session.
@@ -111,21 +113,21 @@ class _QueueRow extends StatelessWidget {
           spacing: 4,
           children: [
             if (canSendNow)
-              IconButton(
-                onPressed: onSendNow,
-                icon: const Icon(Icons.bolt),
+              AppIconButton(
+                icon: Icons.bolt,
                 tooltip: 'Send now (aborts current generation)',
+                onPressed: onSendNow,
               ),
             if (canMerge)
-              IconButton(
-                onPressed: onMergeIntoPrevious,
-                icon: const Icon(Icons.arrow_upward_rounded),
+              AppIconButton(
+                icon: Icons.arrow_upward_rounded,
                 tooltip: 'Merge into the prompt above',
+                onPressed: onMergeIntoPrevious,
               ),
-            IconButton(
-              onPressed: canRemove ? onRemove : null,
-              icon: const Icon(Icons.delete_outline),
+            AppIconButton(
+              icon: Icons.delete_outline,
               tooltip: 'Remove from queue',
+              onPressed: canRemove ? onRemove : null,
             ),
           ],
         ),

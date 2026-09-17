@@ -61,7 +61,7 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   Future<void> _reload() async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('Reload OpenCode?'),
         content: const Text(
           'Active generations across this server will stop. All project '
@@ -70,13 +70,14 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
           'process itself will not be restarted.',
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.tertiary,
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
           ),
-          FilledButton(
+          AppButton(
+            label: 'Reload OpenCode',
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Reload OpenCode'),
           ),
         ],
       ),
@@ -258,21 +259,18 @@ class _ConnectionCard extends StatelessWidget {
               spacing: 12,
               runSpacing: 8,
               children: [
-                OutlinedButton.icon(
+                AppButton(
+                  variant: AppButtonVariant.secondary,
+                  loading: reconnecting,
                   onPressed: onReconnect,
-                  icon: reconnecting
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        )
-                      : const Icon(Icons.refresh_rounded),
-                  label: const Text('Reconnect'),
+                  icon: Icons.refresh_rounded,
+                  label: 'Reconnect',
                 ),
-                TextButton.icon(
+                AppButton(
+                  label: 'Disconnect',
+                  variant: AppButtonVariant.tertiary,
+                  icon: Icons.power_settings_new_rounded,
                   onPressed: onDisconnect,
-                  icon: const Icon(Icons.power_settings_new_rounded),
-                  label: const Text('Disconnect'),
                 ),
               ],
             ),
@@ -322,7 +320,7 @@ class _DiagnosticsUnavailable extends StatelessWidget {
               'The server did not provide a safe diagnostics summary.',
             ),
             const SizedBox(height: 12),
-            FilledButton(onPressed: onRetry, child: const Text('Try again')),
+            AppButton(label: 'Try again', onPressed: onRetry),
           ],
         ),
       ),

@@ -149,17 +149,17 @@ class _SessionsScreenState extends State<SessionsScreen> {
           // No refresh action here: the session list is pull-to-refresh.
           // Secondary destinations live in one menu so a phone-width app bar
           // keeps a single, reachable primary action.
-          IconButton(
+          AppIconButton(
             tooltip: 'Filter sessions',
             isSelected: _showFilters,
             onPressed: () => setState(() => _showFilters = !_showFilters),
-            icon: const Icon(Icons.tune_rounded),
+            icon: Icons.tune_rounded,
           ),
           if (widget.onOpenSettings != null)
-            IconButton(
+            AppIconButton(
+              icon: Icons.settings_outlined,
               tooltip: 'Settings',
               onPressed: widget.onOpenSettings,
-              icon: const Icon(Icons.settings_outlined),
             ),
           if (widget.onOpenSettings == null) _buildCatalogMenu(),
           const SizedBox(width: 4),
@@ -493,19 +493,20 @@ class _SessionsScreenState extends State<SessionsScreen> {
   Future<void> _deleteSession(OpenCodeSession session) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('Delete session?'),
         content: Text(
           'Delete "${session.title}" from OpenCode? This cannot be undone.',
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.tertiary,
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
           ),
-          FilledButton(
+          AppButton(
+            label: 'Delete',
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Delete'),
           ),
         ],
       ),
@@ -548,23 +549,24 @@ class _RenameSessionDialogState extends State<_RenameSessionDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return AlertDialog(
+    return AppDialog(
       title: const Text('Rename session'),
-      content: TextField(
+      content: AppTextField(
         controller: _controller,
         autofocus: true,
         textInputAction: TextInputAction.done,
         onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-        decoration: const InputDecoration(labelText: 'Title'),
+        label: 'Title',
       ),
       actions: [
-        TextButton(
+        AppButton(
+          label: 'Cancel',
+          variant: AppButtonVariant.tertiary,
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
         ),
-        FilledButton(
+        AppButton(
+          label: 'Rename',
           onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
-          child: const Text('Rename'),
         ),
       ],
     );
@@ -709,26 +711,24 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 16),
-              TextField(
+              AppTextField(
                 controller: _directoryController,
                 autofocus: true,
-                decoration: InputDecoration(
-                  labelText: 'Server project path',
-                  hintText: '/srv/projects/my-app',
-                  suffixIcon: _searching
-                      ? const Padding(
-                          padding: EdgeInsets.all(14),
-                          child: SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          ),
-                        )
-                      : null,
-                  errorText: directory.isNotEmpty && !valid
-                      ? 'Use an absolute Unix or Windows path.'
-                      : null,
-                ),
+                label: 'Server project path',
+                hint: '/srv/projects/my-app',
+                suffix: _searching
+                    ? const Padding(
+                        padding: EdgeInsets.all(14),
+                        child: SizedBox(
+                          width: 16,
+                          height: 16,
+                          child: CircularProgressIndicator(strokeWidth: 2),
+                        ),
+                      )
+                    : null,
+                errorText: directory.isNotEmpty && !valid
+                    ? 'Use an absolute Unix or Windows path.'
+                    : null,
               ),
               if (_suggestionFailure != null)
                 Padding(
@@ -771,24 +771,22 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
                 ),
               ],
               const SizedBox(height: 8),
-              TextField(
+              AppTextField(
                 controller: _titleController,
                 textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(
-                  labelText: 'Title (optional)',
-                  hintText: 'What are we working on?',
-                ),
+                label: 'Title (optional)',
+                hint: 'What are we working on?',
               ),
               const SizedBox(height: 16),
-              FilledButton.icon(
+              AppButton(
+                label: 'Create and open',
+                icon: Icons.add_comment_outlined,
                 onPressed: valid
                     ? () => Navigator.of(context).pop((
                         directory: directory,
                         title: _titleController.text,
                       ))
                     : null,
-                icon: const Icon(Icons.add_comment_outlined),
-                label: const Text('Create and open'),
               ),
             ],
           ),
@@ -838,33 +836,32 @@ class _CatalogControls extends StatelessWidget {
             Row(
               children: [
                 Expanded(
-                  child: TextField(
+                  child: AppTextField(
                     controller: searchController,
                     textInputAction: TextInputAction.search,
-                    decoration: InputDecoration(
-                      hintText: 'Search sessions, projects, IDs',
-                      prefixIcon: const Icon(Icons.search_rounded),
-                      suffixIcon: searchController.text.isEmpty
-                          ? null
-                          : IconButton(
-                              onPressed: searchController.clear,
-                              icon: const Icon(Icons.close_rounded),
-                              tooltip: 'Clear search',
-                            ),
-                    ),
+                    hint: 'Search sessions, projects, IDs',
+                    prefixIcon: Icons.search_rounded,
+                    suffix: searchController.text.isEmpty
+                        ? null
+                        : AppIconButton(
+                            icon: Icons.close_rounded,
+                            tooltip: 'Clear search',
+                            onPressed: searchController.clear,
+                          ),
                   ),
                 ),
                 const SizedBox(width: 10),
-                IconButton.filled(
+                AppIconButton(
+                  variant: AppIconButtonVariant.filled,
                   onPressed: onCreate,
-                  icon: const Icon(Icons.add_rounded),
+                  icon: Icons.add_rounded,
                   tooltip: 'New session',
                 ),
                 const SizedBox(width: 4),
-                IconButton(
-                  onPressed: onRefresh,
-                  icon: const Icon(Icons.refresh_rounded),
+                AppIconButton(
+                  icon: Icons.refresh_rounded,
                   tooltip: 'Refresh sessions',
+                  onPressed: onRefresh,
                 ),
               ],
             ),
@@ -1249,7 +1246,7 @@ class _CenteredState extends StatelessWidget {
               ),
               if (action.$2 != null) ...[
                 const SizedBox(height: 20),
-                FilledButton(onPressed: action.$2, child: Text(action.$1)),
+                AppButton(label: action.$1, onPressed: action.$2),
               ],
             ],
           ),

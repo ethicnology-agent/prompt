@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../../core/ui/ui.dart';
+
 /// A slim, non-dismissible banner announcing [text] above the transcript.
 /// `liveRegion: true` makes a screen reader announce a status change (for
 /// example connected -> reconnecting) without the user having to find and
@@ -43,7 +45,11 @@ class ConnectionStatusBanner extends StatelessWidget {
                 ),
               ),
               if (onRetry != null)
-                TextButton(onPressed: onRetry, child: const Text('Retry')),
+                AppButton(
+                  label: 'Retry',
+                  variant: AppButtonVariant.tertiary,
+                  onPressed: onRetry,
+                ),
             ],
           ),
         ),

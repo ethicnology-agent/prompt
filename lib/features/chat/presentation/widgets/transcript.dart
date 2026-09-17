@@ -92,10 +92,11 @@ class Transcript extends StatelessWidget {
                     : Semantics(
                         button: true,
                         label: 'Load earlier messages',
-                        child: OutlinedButton.icon(
+                        child: AppButton(
+                          label: 'Load earlier messages',
+                          variant: AppButtonVariant.secondary,
+                          icon: Icons.history,
                           onPressed: onLoadOlder,
-                          icon: const Icon(Icons.history),
-                          label: const Text('Load earlier messages'),
                         ),
                       ),
               ),
@@ -302,11 +303,12 @@ class _MessageBubble extends StatelessWidget {
                 alignment: Alignment.centerRight,
                 child: Tooltip(
                   message: 'Revert to this message',
-                  child: TextButton.icon(
+                  child: AppButton(
+                    variant: AppButtonVariant.tertiary,
+                    tone: AppButtonTone.userMessage,
                     onPressed: onRevert,
-                    style: TextButton.styleFrom(foregroundColor: foreground),
-                    icon: const Icon(Icons.undo_rounded, size: 17),
-                    label: const Text('Revert'),
+                    icon: Icons.undo_rounded,
+                    label: 'Revert',
                   ),
                 ),
               ),

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/ui.dart';
 import '../../../core/platform/local_notification_service.dart';
 import '../../../core/platform/local_notification_types.dart';
 
@@ -66,15 +67,10 @@ class _NotificationSettingsScreenState
             ),
           ),
           const SizedBox(height: 12),
-          FilledButton(
+          AppButton(
+            label: 'Enable notifications',
+            busy: _requesting,
             onPressed: _requesting ? null : _enableNotifications,
-            child: _requesting
-                ? const SizedBox(
-                    width: 18,
-                    height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2),
-                  )
-                : const Text('Enable notifications'),
           ),
         ],
       ),

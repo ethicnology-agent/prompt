@@ -137,33 +137,35 @@ class ApprovalDockState extends State<ApprovalDock> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            FilledButton(
+            AppButton(
+              label: 'Allow once',
               onPressed: _submitting
                   ? null
                   : () => _respondToPermission(
                       approval.permissionId,
                       PermissionResponse.once,
                     ),
-              child: const Text('Allow once'),
             ),
             if (widget.allowAlways)
-              OutlinedButton(
+              AppButton(
+                label: 'Always allow',
+                variant: AppButtonVariant.secondary,
                 onPressed: _submitting
                     ? null
                     : () => _respondToPermission(
                         approval.permissionId,
                         PermissionResponse.always,
                       ),
-                child: const Text('Always allow'),
               ),
-            TextButton(
+            AppButton(
+              label: 'Deny',
+              variant: AppButtonVariant.tertiary,
               onPressed: _submitting
                   ? null
                   : () => _respondToPermission(
                       approval.permissionId,
                       PermissionResponse.reject,
                     ),
-              child: const Text('Deny'),
             ),
           ],
         ),
@@ -217,13 +219,14 @@ class ApprovalDockState extends State<ApprovalDock> {
           spacing: 8,
           runSpacing: 8,
           children: [
-            FilledButton(
+            AppButton(
+              label: 'Submit answers',
               onPressed: canSubmit ? () => _submitAnswers(approval) : null,
-              child: const Text('Submit answers'),
             ),
-            TextButton(
+            AppButton(
+              label: 'Reject',
+              variant: AppButtonVariant.tertiary,
               onPressed: _submitting ? null : () => _reject(approval.requestId),
-              child: const Text('Reject'),
             ),
           ],
         ),
@@ -340,13 +343,10 @@ class _QuestionCard extends StatelessWidget {
             const SizedBox(height: 8),
             Semantics(
               label: 'Custom answer for ${prompt.header}',
-              child: TextField(
+              child: AppTextField(
                 controller: customController,
-                decoration: const InputDecoration(
-                  hintText: 'Or type your own answer',
-                  border: OutlineInputBorder(),
-                  isDense: true,
-                ),
+                hint: 'Or type your own answer',
+                dense: true,
               ),
             ),
           ],

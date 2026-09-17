@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/ui.dart';
+
 import '../../connection/connection.dart';
 import '../domain/remote_terminal.dart';
 import 'terminal_view_model.dart';
@@ -49,10 +51,10 @@ class _TerminalScreenState extends State<TerminalScreen>
     appBar: AppBar(
       title: const Text('Remote terminal'),
       actions: [
-        IconButton(
-          onPressed: _load,
-          icon: const Icon(Icons.refresh_rounded),
+        AppIconButton(
+          icon: Icons.refresh_rounded,
           tooltip: 'Refresh terminals',
+          onPressed: _load,
         ),
       ],
     ),
@@ -64,15 +66,13 @@ class _TerminalScreenState extends State<TerminalScreen>
             'Experimental: commands run on the selected server directory. Output stays only in memory and is limited to 100 KiB.',
           ),
           const SizedBox(height: 12),
-          TextField(
+          AppTextField(
             controller: _directory,
             textInputAction: TextInputAction.search,
             onSubmitted: (_) => _load(),
-            decoration: const InputDecoration(
-              labelText: 'Server directory',
-              hintText: '/path/on/server',
-              prefixIcon: Icon(Icons.folder_outlined),
-            ),
+            label: 'Server directory',
+            hint: '/path/on/server',
+            prefixIcon: Icons.folder_outlined,
           ),
           const SizedBox(height: 12),
           Expanded(
@@ -131,7 +131,11 @@ class _Unavailable extends StatelessWidget {
         const SizedBox(height: 8),
         Text(failure.message, textAlign: TextAlign.center),
         const SizedBox(height: 16),
-        OutlinedButton(onPressed: onRetry, child: const Text('Try again')),
+        AppButton(
+          label: 'Try again',
+          variant: AppButtonVariant.secondary,
+          onPressed: onRetry,
+        ),
       ],
     ),
   );
@@ -160,10 +164,10 @@ class _Ready extends StatelessWidget {
         children: [
           Text('Terminals', style: Theme.of(context).textTheme.titleMedium),
           const Spacer(),
-          FilledButton.icon(
+          AppButton(
+            label: 'New terminal',
+            icon: Icons.add,
             onPressed: onCreate,
-            icon: const Icon(Icons.add),
-            label: const Text('New terminal'),
           ),
         ],
       ),
@@ -196,10 +200,10 @@ class _Ready extends StatelessWidget {
                           ? 'Running in ${terminal.cwd}'
                           : 'Exited',
                     ),
-                    trailing: IconButton(
-                      onPressed: () => onClose(terminal.id),
+                    trailing: AppIconButton(
+                      icon: Icons.close,
                       tooltip: 'Close terminal',
-                      icon: const Icon(Icons.close),
+                      onPressed: () => onClose(terminal.id),
                     ),
                     selected: state.activeId == terminal.id,
                     onTap: terminal.isRunning
@@ -234,19 +238,15 @@ class _Ready extends StatelessWidget {
         ),
       ),
       const SizedBox(height: 8),
-      TextField(
+      AppTextField(
         controller: input,
         enabled: state.activeId != null && !state.connecting,
         onSubmitted: (_) => onSend(),
-        decoration: InputDecoration(
-          labelText: 'Terminal input',
-          suffixIcon: IconButton(
-            onPressed: state.activeId == null || state.connecting
-                ? null
-                : onSend,
-            icon: const Icon(Icons.send),
-            tooltip: 'Send terminal input',
-          ),
+        label: 'Terminal input',
+        suffix: AppIconButton(
+          icon: Icons.send,
+          tooltip: 'Send terminal input',
+          onPressed: state.activeId == null || state.connecting ? null : onSend,
         ),
       ),
     ],

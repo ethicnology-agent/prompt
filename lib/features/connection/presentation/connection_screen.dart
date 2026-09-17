@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/ui/ui.dart';
 import '../domain/connection_result.dart';
 import '../domain/connection_origin_policy.dart';
 import '../domain/server_profile.dart';
@@ -177,7 +178,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                     },
                             ),
                             const SizedBox(height: 16),
-                            TextFormField(
+                            AppTextFormField(
+                              label: 'Private server address',
+                              hint: 'http://10.0.0.1:4096',
                               controller: _originController,
                               enabled: !checking,
                               autofocus: true,
@@ -186,35 +189,27 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               textInputAction: TextInputAction.next,
                               autofillHints: const [AutofillHints.url],
                               onChanged: (_) => _editedAddress = true,
-                              decoration: const InputDecoration(
-                                labelText: 'Private server address',
-                                hintText: 'http://10.0.0.1:4096',
-                              ),
                               validator: _validateOrigin,
                             ),
                             const SizedBox(height: 16),
-                            TextFormField(
+                            AppTextFormField(
+                              label: 'Username (optional)',
                               controller: _usernameController,
                               enabled: !checking,
                               autocorrect: false,
                               textInputAction: TextInputAction.next,
                               autofillHints: const [AutofillHints.username],
-                              decoration: const InputDecoration(
-                                labelText: 'Username (optional)',
-                              ),
                             ),
                             const SizedBox(height: 16),
-                            TextFormField(
+                            AppTextFormField(
+                              label: 'Password (optional)',
                               controller: _passwordController,
                               enabled: !checking,
                               obscureText: true,
                               enableSuggestions: false,
                               autocorrect: false,
                               autofillHints: const [AutofillHints.password],
-                              onFieldSubmitted: (_) => _connect(),
-                              decoration: const InputDecoration(
-                                labelText: 'Password (optional)',
-                              ),
+                              onSubmitted: (_) => _connect(),
                             ),
                             const SizedBox(height: 16),
                             Text(
@@ -236,17 +231,10 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               ),
                             ],
                             const SizedBox(height: 24),
-                            FilledButton(
+                            AppButton(
+                              label: 'Test private connection',
+                              busy: checking,
                               onPressed: checking ? null : _connect,
-                              child: checking
-                                  ? const SizedBox(
-                                      height: 20,
-                                      width: 20,
-                                      child: CircularProgressIndicator(
-                                        strokeWidth: 2,
-                                      ),
-                                    )
-                                  : const Text('Test private connection'),
                             ),
                           ],
                         ),

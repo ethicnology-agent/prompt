@@ -35,7 +35,7 @@ jobs:
           flutter-version: ${{ env.FLUTTER_VERSION }}
           cache: true
       - run: flutter pub get --enforce-lockfile
-      - run: dart format --set-exit-if-changed lib test tool packages
+      - run: dart format --set-exit-if-changed lib test tool packages apps
       - run: flutter analyze
       - run: python3 tool/check_architecture.py
       - run: python3 tool/test_architecture_checker.py
@@ -99,6 +99,8 @@ jobs:
           cache: true
       - run: flutter pub get --enforce-lockfile
       - run: flutter build web --release
+      - run: flutter build web --release --no-web-resources-cdn
+        working-directory: apps/catalog
 
   android-debug-apk:
     name: Android ARM64 debug APK

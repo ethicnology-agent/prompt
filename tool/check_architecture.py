@@ -13,6 +13,12 @@ PRESENTATION_FORBIDDEN = (
     "package:drift/",
 )
 
+MATERIAL_BUTTON = re.compile(
+    r'\b(?:FilledButton|OutlinedButton|TextButton|IconButton|ElevatedButton|RawMaterialButton|CupertinoButton)'
+    r'(?:\.(?:icon|filled|filledTonal|outlined|tonal|tonalIcon))?\s*\('
+)
+MATERIAL_INPUT_OR_DIALOG = re.compile(r'\b(?:TextField|TextFormField|AlertDialog)\s*\(')
+
 
 def feature_for(path: str) -> str | None:
     parts = Path(path).parts
@@ -34,6 +40,18 @@ def imported_feature(source: Path, import_path: str) -> str | None:
 
 def main() -> int:
     violations: list[str] = []
+    for source in sorted(Path('lib').glob('**/*.dart')):
+        for line_number, line in enumerate(source.read_text().splitlines(), 1):
+            match = IMPORT.match(line)
+            if match and match.group(1).startswith(('package:widgetbook/', 'package:catalog/')):
+                violations.append(f'{source}:{line_number}: catalog dependency in application')
+    for source in sorted(Path('apps/catalog/lib').glob('**/*.dart')):
+        for line_number, line in enumerate(source.read_text().splitlines(), 1):
+            match = IMPORT.match(line)
+            if match and match.group(1).startswith('package:'):
+                package = match.group(1).split(':', 1)[1].split('/')[0]
+                if package not in ('catalog', 'design_system', 'flutter', 'widgetbook'):
+                    violations.append(f'{source}:{line_number}: application service dependency in catalog')
     for source in sorted(Path('packages').glob('*/lib/**/*.dart')):
         package_name = source.parts[1]
         for line_number, line in enumerate(source.read_text().splitlines(), 1):
@@ -54,6 +72,11 @@ def main() -> int:
             elif package_name == 'design_system' and import_path in ('dart:io', 'dart:ffi', 'dart:js_interop'):
                 violations.append(f'{source}:{line_number}: design-system platform dependency {import_path}')
     for source in sorted(Path("lib/features").glob("**/*.dart")):
+        button_count = len(MATERIAL_BUTTON.findall(source.read_text()))
+        if button_count:
+            violations.append(f'{source}: use shared UI kit buttons; new Material button site detected')
+        if MATERIAL_INPUT_OR_DIALOG.search(source.read_text()):
+            violations.append(f'{source}: use shared UI kit fields and dialogs')
         source_feature = feature_for(str(source))
         is_presentation = "presentation" in source.parts
         for line_number, line in enumerate(source.read_text().splitlines(), 1):
