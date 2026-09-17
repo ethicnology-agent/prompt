@@ -1,0 +1,182 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { mkdtemp, mkdir, symlink, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { createServer } from 'node:http';
+import { createGateway } from '../src/server.js';
+import { Sessions } from '../src/sessions.js';
+import { allowedDirectory, privateAddress, resolveRoots } from '../src/security.js';
+import { childEnvironment } from '../src/process.js';
+import { CodexAdapter, ClaudeAdapter } from '../src/adapters.js';
+
+const token = 'test-only-token-with-at-least-32-characters';
+const authorization = `Basic ${Buffer.from(`prompt:${token}`).toString('base64')}`;
+
+async function fixture(t, adapter) {
+  const directory = await mkdtemp(join(tmpdir(), 'prompt-gateway-test-'));
+  const roots = await resolveRoots([directory]);
+  let runs = 0;
+  let finish;
+  const store = new Sessions('codex', adapter ?? { async open(_, sink) {
+    return { async run() { runs++; sink.delta('Test response'); await new Promise((resolve) => { finish = resolve; }); }, async abort() { finish?.(); }, close() { finish?.(); } };
+  } }, roots, { turnTimeout: 1000, approvalTimeout: 100 });
+  const gateway = createGateway({ token, roots, engines: { codex: store } });
+  const address = await gateway.listen(0);
+  t.after(async () => { await gateway.close(); await rm(directory, { recursive: true }); });
+  const request = async (path, method = 'GET', body, auth = authorization) => fetch(`http://127.0.0.1:${address.port}${path}`, { method, headers: { authorization: auth, 'content-type': 'application/json' }, body: body ? JSON.stringify(body) : undefined });
+  return { directory: roots[0], store, request, runs: () => runs, finish: () => finish?.() };
+}
+
+test('private literal bind, upstream and secrets fail closed', async () => {
+  for (const address of ['0.0.0.0', '::', '8.8.8.8', 'example.com', '::ffff:127.0.0.1']) assert.equal(privateAddress(address), false);
+  for (const address of ['127.0.0.1', '10.0.0.1', '192.168.1.1', '100.64.0.1', 'fd00::1']) assert.equal(privateAddress(address), true);
+  assert.throws(() => createGateway({ token, host: '0.0.0.0' }));
+  assert.throws(() => createGateway({ token: 'short' }));
+  assert.throws(() => createGateway({ token, openCode: { url: 'http://example.com' } }));
+  assert.deepEqual(childEnvironment({ HOME: '/test', PROMPT_GATEWAY_TOKEN: 'secret', NODE_OPTIONS: 'evil', ANTHROPIC_API_KEY: 'secret' }), { HOME: '/test' });
+});
+
+test('capabilities and all native routes require authentication', async (t) => {
+  const f = await fixture(t);
+  assert.equal((await f.request('/prompt/capabilities', 'GET', null, '')).status, 401);
+  const capabilities = await (await f.request('/prompt/capabilities')).json();
+  assert.equal(capabilities.protocolVersion, 1);
+  assert.equal(capabilities.engines.claude.available, false);
+  assert.equal(capabilities.engines.codex.available, true);
+  assert.equal(capabilities.engines.codex.features.includes('terminal'), false);
+  assert.equal((await f.request('/prompt/codex/session', 'GET', null, '')).status, 401);
+  assert.equal((await f.request('/prompt/codex/pty')).status, 404);
+});
+
+test('roots reject traversal, symlink escape and public prefix confusion', async (t) => {
+  const f = await fixture(t);
+  const inside = join(f.directory, 'inside');
+  await mkdir(inside);
+  await symlink(tmpdir(), join(f.directory, 'escape'));
+  assert.equal(await allowedDirectory(inside, [f.directory]), inside);
+  await assert.rejects(allowedDirectory(join(f.directory, '..'), [f.directory]));
+  await assert.rejects(allowedDirectory(join(f.directory, 'escape'), [f.directory]));
+  const response = await f.request(`/prompt/codex/session?directory=${encodeURIComponent(tmpdir())}`, 'POST', {});
+  assert.equal(response.status, 403);
+});
+
+test('session queue does not interrupt and duplicate acceptance never executes twice', async (t) => {
+  const f = await fixture(t);
+  const record = await (await f.request('/prompt/codex/session', 'POST', {})).json();
+  const path = `/prompt/codex/session/${record.id}`;
+  const body = { messageID: 'client-operation-1', parts: [{ type: 'text', text: 'A safe fixture' }] };
+  assert.equal((await f.request(`${path}/prompt_async`, 'POST', body)).status, 204);
+  assert.equal((await f.request(`${path}/prompt_async`, 'POST', body)).status, 204);
+  assert.equal((await f.request(`${path}/prompt_async`, 'POST', { ...body, parts: [{ type: 'text', text: 'changed' }] })).status, 409);
+  assert.equal((await f.request(`${path}/prompt_async`, 'POST', { parts: [{ type: 'text', text: 'queued' }] })).status, 409);
+  assert.equal(f.runs(), 1);
+  assert.equal((await f.request(path, 'DELETE')).status, 409);
+  assert.equal((await f.request(`${path}/abort`, 'POST')).status, 200);
+  await f.store.get(record.id).task;
+  assert.equal(f.store.get(record.id).status, 'idle');
+  const messages = await (await f.request(`${path}/message`)).json();
+  assert.equal(messages[1].parts[0].text, 'Test response');
+  assert.equal((await f.request('/prompt/codex/session/codex_previous-epoch/message')).status, 404);
+});
+
+test('permissions show exact arguments, reject always, and close denies pending requests', async (t) => {
+  const f = await fixture(t);
+  const record = await f.store.create(f.directory);
+  const session = f.store.get(record.id);
+  session.active = true;
+  const decision = f.store.permission(session, 'Bash', { command: 'echo fixture' });
+  const permission = [...f.store.permissions.values()][0].record;
+  assert.match(permission.title, /echo fixture/);
+  assert.throws(() => f.store.reply(permission.id, 'always'));
+  assert.throws(() => f.store.reply(permission.id, 'once', 'another-session'));
+  f.store.close();
+  assert.equal(await decision, false);
+});
+
+test('failed native context cannot silently restart or accept queued work', async (t) => {
+  const f = await fixture(t, { async open() { throw Error('private detail'); } });
+  const record = await f.store.create(f.directory);
+  const session = f.store.get(record.id);
+  const events = [];
+  f.store.on('event', (event) => events.push(event));
+  f.store.submit(session, { parts: [{ type: 'text', text: 'fixture' }] });
+  await session.task;
+  assert.equal(session.broken, true);
+  assert.equal(session.status, 'error');
+  assert.equal(events.some((event) => event.payload.type === 'session.idle'), false);
+  assert.match(session.messages[1].parts[0].text, /create a new session/);
+  assert.throws(() => f.store.submit(session, { parts: [{ type: 'text', text: 'next' }] }), /session_failed/);
+  assert.equal(JSON.stringify(session.messages).includes('private detail'), false);
+});
+
+test('Codex real subprocess fixture validates handshake, deltas and completion', async (t) => {
+  const f = await fixture(t);
+  // Node itself is the fake CLI; no provider or credential is contacted.
+  const { JsonProcess } = await import('../src/process.js');
+  const adapter = new CodexAdapter(process.execPath, (executable, args, cwd) => {
+    assert.deepEqual(args.slice(0, 3), ['app-server', '--listen', 'stdio://']);
+    return new JsonProcess(executable, [new URL('./fixtures/codex.mjs', import.meta.url).pathname], cwd);
+  });
+  let output = '';
+  const runner = await adapter.open({ directory: f.directory }, { delta: (text) => { output += text; }, permission: async () => false });
+  t.after(() => runner.close());
+  await runner.run('fixture');
+  assert.equal(output, 'fixture response');
+});
+
+test('Claude SDK hook gates every tool and resumes native context', async () => {
+  const options = [];
+  const adapter = new ClaudeAdapter(({ options: settings }) => {
+    options.push(settings);
+    return (async function* () {
+      const result = await settings.hooks.PreToolUse[0].hooks[0]({ tool_name: 'Bash', tool_input: { command: 'fixture' } });
+      assert.equal(result.hookSpecificOutput.permissionDecision, 'deny');
+      yield { type: 'system', subtype: 'init', session_id: 'native-session' };
+      yield { type: 'stream_event', event: { delta: { type: 'text_delta', text: 'fixture' } } };
+      yield { type: 'result', subtype: 'success', is_error: false };
+    })();
+  });
+  let text = '';
+  const runner = await adapter.open({ directory: '/fixture' }, { delta: (value) => { text += value; }, permission: async () => false });
+  await runner.run('first'); await runner.run('second');
+  assert.equal(options[1].resume, 'native-session');
+  assert.deepEqual(options[0].settingSources, []);
+  assert.equal(options[0].permissionMode, 'default');
+  assert.equal(text, 'fixturefixture');
+});
+
+test('SSE disconnect releases its subscription and snapshots reconcile deltas', async (t) => {
+  const f = await fixture(t);
+  const stream = await f.request('/prompt/codex/global/event');
+  const reader = stream.body.getReader();
+  assert.equal(f.store.listenerCount('event'), 1);
+  assert.match(new TextDecoder().decode((await reader.read()).value), /connected/);
+  const session = await f.store.create(f.directory);
+  f.store.submit(f.store.get(session.id), { parts: [{ type: 'text', text: 'fixture' }] });
+  const frame = new TextDecoder().decode((await reader.read()).value);
+  assert.match(frame, /message.updated/);
+  await reader.cancel();
+  f.finish();
+  await f.store.get(session.id).task;
+});
+
+test('OpenCode proxy authenticates separately, rejects redirects and unsafe routes', async (t) => {
+  let observedAuthorization;
+  const upstream = createServer((request, response) => {
+    observedAuthorization = request.headers.authorization;
+    if (request.url === '/provider') { response.writeHead(302, { location: 'http://example.com' }); response.end(); }
+    else { response.setHeader('content-type', 'application/json'); response.end(JSON.stringify({ healthy: true, version: 'fixture' })); }
+  });
+  await new Promise((resolve) => upstream.listen(0, '127.0.0.1', resolve));
+  const gateway = createGateway({ token, roots: [], engines: {}, openCode: { url: `http://127.0.0.1:${upstream.address().port}/`, password: 'upstream-fixture' } });
+  const address = await gateway.listen(0);
+  t.after(async () => { await gateway.close(); upstream.closeAllConnections(); await new Promise((resolve) => upstream.close(resolve)); });
+  const request = (path) => fetch(`http://127.0.0.1:${address.port}/prompt/opencode${path}`, { headers: { authorization } });
+  assert.equal((await request('/global/health')).status, 200);
+  assert.equal(observedAuthorization, `Basic ${Buffer.from('opencode:upstream-fixture').toString('base64')}`);
+  assert.notEqual(observedAuthorization, authorization);
+  assert.equal((await request('/provider')).status, 500);
+  assert.equal((await request('/global/dispose')).status, 404);
+  assert.equal((await request('/session/fixture/share')).status, 404);
+});

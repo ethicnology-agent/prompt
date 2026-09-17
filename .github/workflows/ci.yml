@@ -12,6 +12,19 @@ env:
   FLUTTER_VERSION: 3.44.9
 
 jobs:
+  gateway:
+    name: Private gateway contracts
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: '22'
+          package-manager-cache: false
+      # Built-in Node tests only: never install a CLI or use provider credentials.
+      - run: npm test
+        working-directory: gateway
+
   quick-checks:
     name: Quick checks
     runs-on: ubuntu-24.04
