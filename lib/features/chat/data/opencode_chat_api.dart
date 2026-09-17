@@ -126,6 +126,7 @@ class OpenCodeChatApi {
     String? password,
     OpenCodeSession session,
     String text, {
+    String? operationId,
     List<QueuedAttachment> attachments = const <QueuedAttachment>[],
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
   }) async {
@@ -136,6 +137,10 @@ class OpenCodeChatApi {
       '/session/${Uri.encodeComponent(session.id)}/prompt_async?$query',
       headers: const {'content-type': 'application/json'},
       body: jsonEncode({
+        if (operationId != null &&
+            profile.backend.isGateway &&
+            profile.backend.engine != 'opencode')
+          'messageID': operationId,
         'parts': [
           if (text.isNotEmpty) {'type': 'text', 'text': text},
           // OpenCode accepts file parts by URL; a `data:` URL carries the

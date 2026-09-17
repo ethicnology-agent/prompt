@@ -240,7 +240,7 @@ void main() {
     expect(
       (await database.customSelect('PRAGMA user_version').getSingle())
           .data['user_version'],
-      6,
+      7,
     );
     await database.close();
     await file.delete();

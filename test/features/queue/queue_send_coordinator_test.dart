@@ -19,6 +19,7 @@ import 'package:prompt/features/chat/domain/conversation_message.dart';
 import 'package:prompt/features/chat/domain/pending_approval.dart';
 import 'package:prompt/features/chat/domain/permission_response.dart';
 import 'package:prompt/features/chat/domain/session_block_reason.dart';
+import 'package:prompt/features/chat/domain/session_execution_state.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
 import 'package:prompt/features/queue/data/queue_prompts_dao.dart';
 import 'package:prompt/features/queue/data/queue_prompts_repository.dart';
@@ -96,6 +97,7 @@ class _ScriptedChatBackend {
 
   Future<http.Response> _handle(http.Request request) async {
     final path = request.url.path;
+    if (path.endsWith('/message')) return http.Response('[]', 200);
     if (path.endsWith('/prompt_async')) {
       promptAsyncCallCount++;
       lastPromptAsyncBody = jsonDecode(request.body) as Map<String, dynamic>;
@@ -180,12 +182,14 @@ class _ScriptedEventClient extends http.BaseClient {
   /// non-2xx value to simulate a reconnect attempt being rejected before
   /// any event ever streams.
   int nextConnectStatusCode = 200;
+  Completer<void>? headersGate;
 
   /// How many times [send] has been called, i.e. how many connection
   /// attempts (initial connect plus every reconnect) this client has
   /// served.
   int get connectionCount => _controllers.length;
   int subscriptionCount = 0;
+  int cancellationCount = 0;
 
   StreamController<List<int>> get _latest => _controllers.last;
 
@@ -193,8 +197,10 @@ class _ScriptedEventClient extends http.BaseClient {
   Future<http.StreamedResponse> send(http.BaseRequest request) async {
     final controller = StreamController<List<int>>(
       onListen: () => subscriptionCount++,
+      onCancel: () => cancellationCount++,
     );
     _controllers.add(controller);
+    await headersGate?.future;
     return http.StreamedResponse(controller.stream, nextConnectStatusCode);
   }
 
@@ -504,6 +510,152 @@ void main() {
   });
 
   group('SSE-gated dispatch', () {
+    test(
+      'late authenticated connection is closed after lifecycle suspension',
+      () async {
+        final headers = Completer<void>();
+        eventClient.headersGate = headers;
+        await coordinator.activate(profile: profile, session: session);
+        await enqueue('not in background');
+        await _settle();
+        coordinator.notifyAppInactive();
+        headers.complete();
+        await _settle();
+        expect(coordinator.connectionState.value, isA<SseSuspended>());
+        expect(eventClient.cancellationCount, 1);
+        expect(backend.promptAsyncCallCount, 0);
+      },
+    );
+
+    test('idle SSE closes raw transport immediately on suspension', () async {
+      await coordinator.activate(profile: profile, session: session);
+      await _settle();
+      expect(eventClient.cancellationCount, 0);
+      coordinator.notifyAppInactive();
+      await _settle();
+      expect(eventClient.cancellationCount, 1);
+    });
+    test(
+      'delayed SSE headers block dispatch and reconcile missed busy state',
+      () async {
+        final headers = Completer<void>();
+        eventClient.headersGate = headers;
+        await coordinator.activate(profile: profile, session: session);
+        await enqueue('wait for readiness');
+        await _settle();
+        expect(eventClient.connectionCount, 1);
+        expect(backend.promptAsyncCallCount, 0);
+        expect(coordinator.connectionState.value, isNot(isA<SseConnected>()));
+        backend.sessionStatusType = 'busy';
+        headers.complete();
+        await _settle();
+        expect(eventClient.subscriptionCount, 1);
+        expect(coordinator.currentSessionState, isA<SessionBusy>());
+        expect(backend.promptAsyncCallCount, 0);
+        eventClient.emit('session.idle', {'sessionID': session.id});
+        await _settle();
+        expect(backend.promptAsyncCallCount, 1);
+      },
+    );
+
+    test(
+      'events during post-handshake snapshot win over stale status',
+      () async {
+        final headers = Completer<void>();
+        eventClient.headersGate = headers;
+        await coordinator.activate(profile: profile, session: session);
+        await _settle();
+        final snapshot = Completer<void>();
+        backend.sessionStatusGate = snapshot;
+        headers.complete();
+        await _settle();
+        expect(eventClient.subscriptionCount, 1);
+        expect(coordinator.connectionState.value, isA<SseReconciling>());
+        eventClient.emit('session.status', {
+          'sessionID': session.id,
+          'status': {'type': 'busy'},
+        });
+        await enqueue('wait for actual idle');
+        await _settle();
+        snapshot.complete();
+        await _settle();
+        expect(coordinator.currentSessionState, isA<SessionBusy>());
+        expect(backend.promptAsyncCallCount, 0);
+        eventClient.emit('session.idle', {'sessionID': session.id});
+        await _settle();
+        expect(backend.promptAsyncCallCount, 1);
+      },
+    );
+    test(
+      'fast idle before acceptance response is not overwritten by busy',
+      () async {
+        final gate = Completer<void>();
+        backend.promptAsyncGate = gate;
+        await coordinator.activate(profile: profile, session: session);
+        await _settle();
+        await enqueue('first');
+        await enqueue('second');
+        await _settle();
+        expect(backend.promptAsyncCallCount, 1);
+        eventClient.emit('session.idle', {'sessionID': session.id});
+        await _settle();
+        gate.complete();
+        await _settle();
+        expect(backend.promptAsyncCallCount, 2);
+        expect(
+          (await currentQueue()).map((prompt) => prompt.state),
+          everyElement(QueuedPromptState.acknowledged),
+        );
+      },
+    );
+
+    test(
+      'gateway error before acceptance response stops queued dispatch',
+      () async {
+        final gate = Completer<void>();
+        backend.promptAsyncGate = gate;
+        await coordinator.activate(profile: profile, session: session);
+        await _settle();
+        await enqueue('first');
+        await enqueue('second');
+        await _settle();
+        eventClient.emit('session.status', {
+          'sessionID': session.id,
+          'status': {'type': 'error'},
+        });
+        await _settle();
+        gate.complete();
+        await _settle();
+        expect(coordinator.currentSessionState, isA<SessionExecutionUnknown>());
+        expect(backend.promptAsyncCallCount, 1);
+        expect((await currentQueue()).last.state, QueuedPromptState.queued);
+      },
+    );
+
+    test('permission before acceptance response remains blocked', () async {
+      final gate = Completer<void>();
+      backend.promptAsyncGate = gate;
+      await coordinator.activate(profile: profile, session: session);
+      await _settle();
+      await enqueue('first');
+      await enqueue('second');
+      await _settle();
+      eventClient.emit('permission.updated', {
+        'sessionID': session.id,
+        'id': 'approval-1',
+        'type': 'Bash',
+        'title': 'Explicit permission',
+      });
+      await _settle();
+      gate.complete();
+      await _settle();
+      expect(
+        coordinator.currentSessionBlockReason,
+        SessionBlockReason.permission,
+      );
+      expect(backend.promptAsyncCallCount, 1);
+      expect((await currentQueue()).last.state, QueuedPromptState.paused);
+    });
     test(
       'publishes global activity for another session without reducing chat',
       () async {

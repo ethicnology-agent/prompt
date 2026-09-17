@@ -10,10 +10,91 @@ import 'package:prompt/features/connection/data/connection_repository.dart';
 import 'package:prompt/features/connection/data/opencode_health_service.dart';
 import 'package:prompt/features/connection/data/server_profile_store.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/connection/presentation/connection_screen.dart';
 import 'package:prompt/features/connection/presentation/connection_view_model.dart';
 
 void main() {
+  for (final restore in [false, true]) {
+    test(
+      'reset invalidates an unfinished ${restore ? 'restore' : 'connect'}',
+      () async {
+        final health = _RecordingHealthService.pending();
+        final viewModel = _viewModel(health: health);
+        addTearDown(viewModel.dispose);
+        final pending = restore
+            ? viewModel.restore(_profile())
+            : viewModel.connect(_profile(), 'synthetic-password');
+        await Future<void>.delayed(Duration.zero);
+        viewModel.reset();
+        health.complete();
+        await pending;
+        expect(viewModel.value, isA<ConnectionIdle>());
+      },
+    );
+
+    test(
+      'dispose invalidates an unfinished ${restore ? 'restore' : 'connect'}',
+      () async {
+        final health = _RecordingHealthService.pending();
+        final viewModel = _viewModel(health: health);
+        final pending = restore
+            ? viewModel.restore(_profile())
+            : viewModel.connect(_profile(), 'synthetic-password');
+        await Future<void>.delayed(Duration.zero);
+        viewModel.dispose();
+        health.complete();
+        await expectLater(pending, completes);
+      },
+    );
+  }
+
+  for (final width in [320.0, 393.0]) {
+    testWidgets('agent picker fits $width pixels at 200% text scale', (
+      tester,
+    ) async {
+      tester.view.physicalSize = Size(width, 852);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.resetPhysicalSize);
+      addTearDown(tester.view.resetDevicePixelRatio);
+      final viewModel = _viewModel();
+      addTearDown(viewModel.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(2)),
+            child: child!,
+          ),
+          home: ConnectionScreen(
+            viewModel: viewModel,
+            profileLoader: () async => null,
+            onConnected: (_) {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final picker = find.byType(DropdownButtonFormField<AgentBackend>);
+      await tester.ensureVisible(picker);
+      await tester.tap(picker);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      final choice = find.text(AgentBackend.gatewayClaude.label).last;
+      await tester.ensureVisible(choice);
+      await tester.tap(choice);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(
+        tester
+            .widget<DropdownButtonFormField<AgentBackend>>(picker)
+            .initialValue,
+        AgentBackend.gatewayClaude,
+      );
+    });
+  }
+
   testWidgets('restored profile populates the address and username', (
     tester,
   ) async {
@@ -47,6 +128,36 @@ void main() {
     expect(find.text('late-user'), findsNothing);
   });
 
+  testWidgets('reset prevents a pending profile loader from reconnecting', (
+    tester,
+  ) async {
+    final restore = Completer<ServerProfile?>();
+    final health = _RecordingHealthService();
+    final viewModel = _viewModel(health: health);
+    addTearDown(viewModel.dispose);
+    await _pumpScreen(tester, viewModel, profileLoader: () => restore.future);
+    viewModel.reset();
+    restore.complete(_profile());
+    await tester.pumpAndSettle();
+    expect(health.calls, 0);
+    expect(viewModel.value, isA<ConnectionIdle>());
+  });
+
+  testWidgets('reset invalidates a ready post-frame navigation callback', (
+    tester,
+  ) async {
+    final viewModel = _viewModel();
+    addTearDown(viewModel.dispose);
+    var connections = 0;
+    await _pumpScreen(tester, viewModel, onConnected: (_) => connections++);
+    viewModel.value = ConnectionReady(_profile());
+    tester.binding.addPostFrameCallback((_) => viewModel.reset());
+    await tester.pump();
+    await tester.pump();
+    expect(connections, 0);
+    expect(viewModel.value, isA<ConnectionIdle>());
+  });
+
   testWidgets('rejects a public HTTP address without calling connect', (
     tester,
   ) async {
@@ -59,6 +170,7 @@ void main() {
       find.byType(TextFormField).first,
       'http://198.51.100.1:4096',
     );
+    await tester.ensureVisible(find.text('Test private connection'));
     await tester.tap(find.text('Test private connection'));
     await tester.pump();
 
@@ -93,6 +205,7 @@ void main() {
         find.byType(TextFormField).at(2),
         'temporary-input',
       );
+      await tester.ensureVisible(find.text('Test private connection'));
       await tester.tap(find.text('Test private connection'));
       await tester.pumpAndSettle();
 
@@ -117,6 +230,7 @@ void main() {
       find.byType(TextFormField).first,
       'http://10.0.0.7:4096',
     );
+    await tester.ensureVisible(find.text('Test private connection'));
     await tester.tap(find.text('Test private connection'));
     await tester.pump();
 

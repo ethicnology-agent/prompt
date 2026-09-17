@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import '../domain/connection_result.dart';
 import '../domain/connection_origin_policy.dart';
 import '../domain/server_profile.dart';
+import '../domain/agent_backend.dart';
 import 'connection_view_model.dart';
 
 class ConnectionScreen extends StatefulWidget {
@@ -12,12 +13,14 @@ class ConnectionScreen extends StatefulWidget {
     required this.viewModel,
     required this.profileLoader,
     required this.onConnected,
+    this.restoreAutomatically = true,
     super.key,
   });
 
   final ConnectionViewModel viewModel;
   final Future<ServerProfile?> Function() profileLoader;
   final ValueChanged<ServerProfile> onConnected;
+  final bool restoreAutomatically;
 
   @override
   State<ConnectionScreen> createState() => _ConnectionScreenState();
@@ -29,6 +32,9 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _editedAddress = false;
+  ServerProfile? _prefilledProfile;
+  ConnectionReady? _notifiedReady;
+  AgentBackend _backend = AgentBackend.directOpenCode;
 
   @override
   void initState() {
@@ -37,13 +43,19 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   }
 
   Future<void> _restoreLastProfile() async {
+    final generation = widget.viewModel.operationGeneration;
     final profile = await widget.profileLoader();
-    if (!mounted || profile == null || _editedAddress) {
+    if (!mounted ||
+        profile == null ||
+        _editedAddress ||
+        generation != widget.viewModel.operationGeneration) {
       return;
     }
     _originController.text = profile.origin.toString();
     _usernameController.text = profile.username ?? '';
-    await widget.viewModel.restore(profile);
+    _prefilledProfile = profile;
+    setState(() => _backend = profile.backend);
+    if (widget.restoreAutomatically) await widget.viewModel.restore(profile);
   }
 
   @override
@@ -61,6 +73,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
     final profile = ServerProfile(
       origin: Uri.parse(_originController.text.trim()),
+      backend: _backend,
       username: _usernameController.text.trim().isEmpty
           ? null
           : _usernameController.text.trim(),
@@ -68,7 +81,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     final password = _passwordController.text.isEmpty
         ? null
         : _passwordController.text;
-    await widget.viewModel.connect(profile, password);
+    if (password == null && _prefilledProfile?.id == profile.id) {
+      await widget.viewModel.restore(profile);
+    } else {
+      await widget.viewModel.connect(profile, password);
+    }
   }
 
   String? _validateOrigin(String? input) {
@@ -103,6 +120,12 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                   builder: (context, state, _) {
                     if (state case ConnectionReady(:final profile)) {
                       WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (!mounted ||
+                            !identical(widget.viewModel.value, state) ||
+                            identical(_notifiedReady, state)) {
+                          return;
+                        }
+                        _notifiedReady = state;
                         TextInput.finishAutofillContext(shouldSave: true);
                         widget.onConnected(profile);
                       });
@@ -133,11 +156,46 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Connect to your OpenCode server through WireGuard or Tailscale.',
+                              'Your agents. Your machine. Connect through WireGuard or Tailscale, without a public relay.',
                               style: theme.textTheme.bodyLarge,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 32),
+                            DropdownButtonFormField<AgentBackend>(
+                              key: ValueKey(_backend),
+                              isExpanded: true,
+                              itemHeight: null,
+                              initialValue: _backend,
+                              decoration: const InputDecoration(
+                                labelText: 'Agent connection',
+                              ),
+                              items: AgentBackend.values
+                                  .map(
+                                    (backend) => DropdownMenuItem(
+                                      value: backend,
+                                      child: Text(
+                                        backend.label,
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                      ),
+                                    ),
+                                  )
+                                  .toList(),
+                              onChanged: checking
+                                  ? null
+                                  : (backend) {
+                                      if (backend == null) return;
+                                      setState(() {
+                                        _backend = backend;
+                                        _editedAddress = true;
+                                        if (backend.isGateway &&
+                                            _usernameController.text.isEmpty) {
+                                          _usernameController.text = 'prompt';
+                                        }
+                                      });
+                                    },
+                            ),
+                            const SizedBox(height: 16),
                             TextFormField(
                               controller: _originController,
                               enabled: !checking,
@@ -177,6 +235,13 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                 labelText: 'Password (optional)',
                               ),
                             ),
+                            if (_prefilledProfile != null)
+                              const Padding(
+                                padding: EdgeInsets.only(top: 8),
+                                child: Text(
+                                  'Leave the password blank to use the saved credential.',
+                                ),
+                              ),
                             const SizedBox(height: 16),
                             Text(
                               'HTTP is permitted only on a private WireGuard or Tailscale address. Credentials stay on this device.',

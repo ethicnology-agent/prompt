@@ -6,6 +6,8 @@ class ServerProfiles extends Table {
   TextColumn get id => text()();
   TextColumn get origin => text()();
   TextColumn get username => text().nullable()();
+  TextColumn get backend =>
+      text().withDefault(const Constant('directOpenCode'))();
   IntColumn get lastAccessedAtMillis => integer()();
 
   @override
@@ -222,7 +224,7 @@ class PromptDatabase extends _$PromptDatabase {
   PromptDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 6;
+  int get schemaVersion => 7;
 
   @override
   MigrationStrategy get migration {
@@ -231,6 +233,9 @@ class PromptDatabase extends _$PromptDatabase {
         await migrator.createAll();
       },
       onUpgrade: (migrator, from, to) async {
+        if (from < 7) {
+          await migrator.addColumn(serverProfiles, serverProfiles.backend);
+        }
         if (from < 2) {
           await migrator.addColumn(
             queuedPrompts,

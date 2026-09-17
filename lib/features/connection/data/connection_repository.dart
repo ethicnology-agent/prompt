@@ -27,11 +27,20 @@ class ConnectionRepository {
     }
 
     try {
+      final capabilities = await _healthService.checkCapabilities(
+        profile,
+        password,
+      );
+      if (capabilities == null) {
+        return const ConnectionFailed(ConnectionFailure.unsupportedBackend);
+      }
       final statusCode = await _healthService.checkHealth(profile, password);
       if (statusCode >= 200 && statusCode < 300) {
         await _credentialsStore.savePassword(profile.id, password);
         await _profileStore.save(profile);
-        return const ConnectionSucceeded();
+        return ConnectionSucceeded(
+          profile: profile.withCapabilities(capabilities),
+        );
       }
       if (statusCode == 401 || statusCode == 403) {
         return const ConnectionFailed(ConnectionFailure.unauthorized);
@@ -39,6 +48,12 @@ class ConnectionRepository {
       return const ConnectionFailed(ConnectionFailure.unexpectedResponse);
     } on TimeoutException {
       return const ConnectionFailed(ConnectionFailure.unavailable);
+    } on OpenCodeHttpFailure catch (failure) {
+      return ConnectionFailed(
+        failure.statusCode == 401 || failure.statusCode == 403
+            ? ConnectionFailure.unauthorized
+            : ConnectionFailure.unexpectedResponse,
+      );
     } on InvalidOpenCodeOrigin {
       return const ConnectionFailed(ConnectionFailure.invalidAddress);
     } on http.ClientException {

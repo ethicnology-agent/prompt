@@ -2,6 +2,7 @@ import 'package:drift/drift.dart';
 
 import '../../../data/local/prompt_database.dart' as db;
 import '../domain/server_profile.dart';
+import '../domain/agent_backend.dart';
 
 abstract interface class ServerProfileStore {
   Future<void> save(ServerProfile profile);
@@ -67,6 +68,7 @@ class DriftServerProfileStore implements ServerProfileStore {
             id: profile.id,
             origin: profile.origin.toString(),
             username: Value(profile.username),
+            backend: Value(profile.backend.name),
             lastAccessedAtMillis: DateTime.now().millisecondsSinceEpoch,
           ),
         );
@@ -88,7 +90,14 @@ class DriftServerProfileStore implements ServerProfileStore {
     if (origin == null) {
       return null;
     }
-    return ServerProfile(origin: origin, username: row.username);
+    final backend = AgentBackend.fromStorage(row.backend);
+    return backend == null
+        ? null
+        : ServerProfile(
+            origin: origin,
+            username: row.username,
+            backend: backend,
+          );
   }
 
   @override
@@ -98,8 +107,13 @@ class DriftServerProfileStore implements ServerProfileStore {
     )..where((table) => table.id.equals(id))).getSingleOrNull();
     if (row == null) return null;
     final origin = Uri.tryParse(row.origin);
-    return origin == null
+    final backend = AgentBackend.fromStorage(row.backend);
+    return origin == null || backend == null
         ? null
-        : ServerProfile(origin: origin, username: row.username);
+        : ServerProfile(
+            origin: origin,
+            username: row.username,
+            backend: backend,
+          );
   }
 }

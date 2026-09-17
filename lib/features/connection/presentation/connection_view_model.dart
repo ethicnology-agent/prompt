@@ -32,31 +32,51 @@ class ConnectionViewModel extends ValueNotifier<ConnectionUiState> {
   ConnectionViewModel(this._repository) : super(const ConnectionIdle());
 
   final ConnectionRepository _repository;
+  int _operationGeneration = 0;
+  bool _disposed = false;
+
+  /// Invalidates pending screen/profile-loader callbacks as well as requests.
+  int get operationGeneration => _operationGeneration;
 
   Future<void> connect(ServerProfile profile, String? password) async {
+    if (_disposed) return;
+    final generation = ++_operationGeneration;
     value = const ConnectionChecking();
     final result = await _repository.test(profile, password);
+    if (_disposed || generation != _operationGeneration) return;
 
     switch (result) {
-      case ConnectionSucceeded():
-        value = ConnectionReady(profile);
+      case ConnectionSucceeded(profile: final verified):
+        value = ConnectionReady(verified ?? profile);
       case ConnectionFailed(:final failure):
         value = ConnectionError(failure);
     }
   }
 
   Future<void> restore(ServerProfile profile) async {
+    if (_disposed) return;
+    final generation = ++_operationGeneration;
     value = const ConnectionChecking();
     final result = await _repository.restore(profile);
+    if (_disposed || generation != _operationGeneration) return;
     switch (result) {
-      case ConnectionSucceeded():
-        value = ConnectionReady(profile);
+      case ConnectionSucceeded(profile: final verified):
+        value = ConnectionReady(verified ?? profile);
       case ConnectionFailed(:final failure):
         value = ConnectionError(failure);
     }
   }
 
   void reset() {
+    if (_disposed) return;
+    _operationGeneration++;
     value = const ConnectionIdle();
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    _operationGeneration++;
+    super.dispose();
   }
 }

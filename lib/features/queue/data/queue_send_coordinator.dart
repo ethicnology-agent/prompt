@@ -125,6 +125,7 @@ class QueueSendCoordinator {
 
   StreamSubscription<List<QueuedPrompt>>? _queueSubscription;
   StreamSubscription<OpenCodeEventEnvelope>? _sseSubscription;
+  OpenCodeEventConnection? _eventConnection;
 
   List<QueuedPrompt> _queue = const <QueuedPrompt>[];
 
@@ -154,6 +155,7 @@ class QueueSendCoordinator {
       _liveStatuses;
 
   bool _dispatchInProgress = false;
+  int _executionRevision = 0;
   String? _pendingSendNowPromptId;
   Future<void> _blockTransitionTail = Future<void>.value();
   final Set<String> _blockPausedPromptIds = <String>{};
@@ -336,9 +338,8 @@ class QueueSendCoordinator {
           _maybeDispatch();
         });
 
-    // The initial connect trusts the status just fetched above, so it
-    // skips the reconciliation window a reconnect goes through; see
-    // `_connectAsync`.
+    // Reconcile again after HTTP readiness and stream subscription to close
+    // the gap since the initial status snapshot; see `_connectAsync`.
     _connect(token: token, attempt: 0);
 
     _maybeDispatch();
@@ -361,6 +362,8 @@ class QueueSendCoordinator {
     // subscription a no-op, so dropping the future here is safe.
     unawaited(_sseSubscription?.cancel());
     _sseSubscription = null;
+    unawaited(_eventConnection?.close());
+    _eventConnection = null;
     _reconnectTimer?.cancel();
     _reconnectTimer = null;
     _reconnectAttempt = 0;
@@ -391,6 +394,8 @@ class QueueSendCoordinator {
     // resumes, which must not block this call.
     unawaited(_sseSubscription?.cancel());
     _sseSubscription = null;
+    unawaited(_eventConnection?.close());
+    _eventConnection = null;
     if (hasActiveSession) {
       _setConnectionState(const SseSuspended());
     }
@@ -419,8 +424,8 @@ class QueueSendCoordinator {
 
   /// Starts an SSE (re)connection attempt for the currently active
   /// session. [attempt] `0` is the very first connection of an [activate]
-  /// call; any other value is a reconnect and goes through
-  /// [SseReconciling] before [connectionState] reports [SseConnected]. See
+  /// call; every attempt goes through [SseReconciling] after authenticated
+  /// HTTP readiness before [connectionState] reports [SseConnected]. See
   /// `_connectAsync`, which does the actual work once the credentials
   /// store resolves.
   void _connect({required int token, required int attempt}) {
@@ -462,33 +467,42 @@ class QueueSendCoordinator {
     }
 
     unawaited(_sseSubscription?.cancel());
-    _sseSubscription = _eventService
-        .connect(profile, password)
-        .listen(
-          (envelope) => _handleEnvelope(envelope, session, token),
-          onError: (Object _) => _handleSseDrop(token, connectToken),
-          onDone: () => _handleSseDrop(token, connectToken),
-        );
-
-    if (attempt == 0) {
-      // `activate` already fetched an authoritative session status
-      // moments before calling this; the initial connection can be
-      // trusted immediately.
-      _reconnectAttempt = 0;
-      _setConnectionState(const SseConnected());
-      _maybeDispatch();
+    unawaited(_eventConnection?.close());
+    _sseSubscription = null;
+    _eventConnection = null;
+    final OpenCodeEventConnection connection;
+    try {
+      connection = await _eventService.open(profile, password);
+    } on Exception {
+      _handleSseDrop(token, connectToken);
       return;
     }
+    if (_isStale(token) ||
+        !_appForeground ||
+        _isSupersededConnect(connectToken)) {
+      await connection.close();
+      return;
+    }
+    _eventConnection = connection;
+    _sseSubscription = connection.events.listen(
+      (envelope) => _handleEnvelope(envelope, session, token),
+      onError: (Object _) => _handleSseDrop(token, connectToken),
+      onDone: () => _handleSseDrop(token, connectToken),
+    );
 
-    // A reconnect: events may have been missed while the connection was
-    // down (or the app was inactive), so nothing from it is trusted, and
-    // dispatch stays blocked (`_maybeDispatch` checks `connectionState`),
-    // until a fresh authoritative status is fetched.
+    // Initial connection and reconnect both require a snapshot after the
+    // authenticated stream opens. Events between the earlier REST request
+    // and HTTP readiness may have been missed; no queued work can run yet.
     _setConnectionState(const SseReconciling());
     // The repository owns the REST/SSE merge. The SSE subscription is already
     // live, so events emitted while this snapshot is in flight are journaled
     // and replayed only after the snapshot boundary.
-    await _chatRepository.load(profile, session);
+    final loadResult = await _chatRepository.load(profile, session);
+    if (loadResult is ChatLoadFailed) {
+      _handleSseDrop(token, connectToken);
+      return;
+    }
+    final snapshotRevision = _executionRevision;
     final statusResult = await _chatRepository.sessionStatus(profile, session);
     if (_isStale(token) ||
         !_appForeground ||
@@ -498,12 +512,17 @@ class QueueSendCoordinator {
     if (statusResult case Ok<SessionExecutionState, ChatFailure>(
       value: final state,
     )) {
-      await _applySessionState(session.id, state);
+      if (_executionRevision == snapshotRevision) {
+        await _applySessionState(session.id, state);
+      }
       if (_isStale(token) ||
           !_appForeground ||
           _isSupersededConnect(connectToken)) {
         return;
       }
+    } else {
+      _handleSseDrop(token, connectToken);
+      return;
     }
     await _reconcilePendingApprovals(profile, session, token);
     if (_isStale(token) ||
@@ -540,6 +559,10 @@ class QueueSendCoordinator {
     _chatRepository.applyEnvelope(envelope, session);
     final nextState = _chatRepository.conversationStateUpdates.value;
     if (identical(previousState, nextState)) return;
+    if (!identical(previousState.sessionStates, nextState.sessionStates) ||
+        !identical(previousState.sessionBlocks, nextState.sessionBlocks)) {
+      _executionRevision++;
+    }
     unawaited(
       _serializeBlockTransition(
         () =>
@@ -568,6 +591,9 @@ class QueueSendCoordinator {
       return;
     }
     _connectAttemptToken++;
+    unawaited(_sseSubscription?.cancel());
+    unawaited(_eventConnection?.close());
+    _eventConnection = null;
     _sseSubscription = null;
     if (_isStale(token) || !_appForeground) {
       // Already superseded by a newer activation, torn down, or the app
@@ -791,6 +817,7 @@ class QueueSendCoordinator {
     String sessionId,
     SessionExecutionState state,
   ) async {
+    _executionRevision++;
     _publishLiveStatus(sessionId, _toOpenCodeStatus(state));
     final previousState = _chatRepository.conversationStateUpdates.value;
     _chatRepository.applySessionState(sessionId, state);
@@ -1047,11 +1074,13 @@ class QueueSendCoordinator {
       return;
     }
 
+    final dispatchRevision = _executionRevision;
     final sendResult = await switch (prompt.operationType) {
       QueuedOperationType.prompt => _chatRepository.sendPrompt(
         profile,
         session,
         prompt.promptText,
+        operationId: prompt.id,
         attachments: prompt.attachments,
         executionOptions: prompt.executionOptions,
       ),
@@ -1071,9 +1100,13 @@ class QueueSendCoordinator {
       // A 2xx response from `prompt_async` is the server's definitive
       // acceptance across supported OpenCode server versions.
       await _queueRepository.markAcknowledged(prompt.id);
-      // Do not dispatch the next queue entry until the server reports an
-      // explicit terminal state. The busy event may arrive after this 204.
-      await _applySessionState(session.id, const SessionBusy());
+      if (_isStale(token)) return;
+      // Acceptance is not an execution status. A fast turn can finish (or
+      // request approval/fail) before the HTTP response reaches this device.
+      // Only synthesize busy when no newer authoritative state was observed.
+      if (_executionRevision == dispatchRevision) {
+        await _applySessionState(session.id, const SessionBusy());
+      }
     } else {
       // Any other outcome leaves acceptance genuinely unknown; Prompt
       // never retries automatically.

@@ -478,6 +478,10 @@ class ConversationViewModel {
     if (profile == null || session == null) {
       return;
     }
+    if (!profile.capabilities.supports(BackendFeature.workspace)) {
+      artifacts.value = const SessionArtifactsReady(todos: [], diffs: []);
+      return;
+    }
     final generation = ++_artifactGeneration;
     artifacts.value = const SessionArtifactsLoading();
     final result = await _chatRepository.loadArtifacts(

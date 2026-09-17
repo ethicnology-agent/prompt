@@ -53,6 +53,13 @@ void main() {
     );
     final sqlite = sqlite3lib.sqlite3.open(file.path);
     sqlite.execute('''
+      CREATE TABLE server_profiles (
+        id TEXT NOT NULL PRIMARY KEY,
+        origin TEXT NOT NULL,
+        username TEXT NULL,
+        last_accessed_at_millis INTEGER NOT NULL
+      );
+      INSERT INTO server_profiles VALUES ('profile', 'http://10.0.0.1:4096', NULL, 1);
       CREATE TABLE queued_prompts (
         id TEXT NOT NULL PRIMARY KEY,
         server_profile_id TEXT NOT NULL,
