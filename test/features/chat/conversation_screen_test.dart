@@ -8,7 +8,6 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
-import 'package:prompt/app/prompt_theme.dart';
 import 'package:prompt/core/ui/ui.dart';
 import 'package:prompt/core/async/result.dart';
 import 'package:prompt/core/security/credentials_store.dart';

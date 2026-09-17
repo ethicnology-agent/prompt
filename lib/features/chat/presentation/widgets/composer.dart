@@ -192,23 +192,16 @@ class Composer extends StatelessWidget {
                           desktopShortcuts,
                           event,
                         ),
-                        child: TextField(
+                        child: AppTextField(
                           controller: controller,
                           minLines: 1,
                           maxLines: 6,
                           textInputAction: TextInputAction.newline,
-                          decoration: InputDecoration(
-                            labelText: command == null
-                                ? null
-                                : '/${command!.name}',
-                            hintText: command == null
-                                ? 'Message this session…'
-                                : command!.description ?? 'Command arguments…',
-                            border: InputBorder.none,
-                            enabledBorder: InputBorder.none,
-                            focusedBorder: InputBorder.none,
-                            filled: false,
-                          ),
+                          label: command == null ? null : '/${command!.name}',
+                          hint: command == null
+                              ? 'Message this session…'
+                              : command!.description ?? 'Command arguments…',
+                          variant: AppTextFieldVariant.borderless,
                         ),
                       ),
                     ),
@@ -426,17 +419,15 @@ class _VoiceModeBarState extends State<_VoiceModeBar> {
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  IconButton.filledTonal(
+                  AppIconButton(
+                    variant: AppIconButtonVariant.tonal,
+                    tone: recording
+                        ? AppIconButtonTone.recording
+                        : AppIconButtonTone.standard,
                     onPressed: widget.onStop == null
                         ? null
                         : () => unawaited(_stopVoiceMode()),
-                    style: recording
-                        ? IconButton.styleFrom(
-                            backgroundColor: recordingForeground,
-                            foregroundColor: recordingBackground,
-                          )
-                        : null,
-                    icon: const Icon(Icons.stop_rounded),
+                    icon: Icons.stop_rounded,
                     tooltip: 'Stop voice mode',
                   ),
                   Text(

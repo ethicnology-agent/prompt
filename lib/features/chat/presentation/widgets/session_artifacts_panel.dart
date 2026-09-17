@@ -1,4 +1,6 @@
 import 'package:flutter/material.dart';
+
+import '../../../../core/ui/ui.dart';
 import 'package:flutter/foundation.dart';
 
 import '../../domain/session_artifacts.dart';
@@ -56,7 +58,11 @@ class SessionArtifactsPanel extends StatelessWidget {
               SessionArtifactsError(:final failure) => Row(
                 children: [
                   Expanded(child: Text(failure.message)),
-                  TextButton(onPressed: onRefresh, child: const Text('Retry')),
+                  AppButton(
+                    label: 'Retry',
+                    variant: AppButtonVariant.tertiary,
+                    onPressed: onRefresh,
+                  ),
                 ],
               ),
               SessionArtifactsReady(:final todos, :final diffs) =>
@@ -79,10 +85,10 @@ class SessionArtifactsPanel extends StatelessWidget {
                                   style: Theme.of(context).textTheme.labelLarge,
                                 ),
                               ),
-                              IconButton(
-                                onPressed: onRefresh,
+                              AppIconButton(
+                                icon: Icons.refresh_rounded,
                                 tooltip: 'Refresh session artifacts',
-                                icon: const Icon(Icons.refresh_rounded),
+                                onPressed: onRefresh,
                               ),
                             ],
                           ),
@@ -143,10 +149,10 @@ class _LazyArtifactList extends StatelessWidget {
                   style: Theme.of(context).textTheme.labelLarge,
                 ),
               ),
-              IconButton(
-                onPressed: onRefresh,
+              AppIconButton(
+                icon: Icons.refresh_rounded,
                 tooltip: 'Refresh session artifacts',
-                icon: const Icon(Icons.refresh_rounded),
+                onPressed: onRefresh,
               ),
             ],
           );
@@ -246,15 +252,12 @@ class _DiffRowState extends State<_DiffRow> {
           if (diff.patch.split('\n').length > _previewLines)
             Align(
               alignment: Alignment.centerLeft,
-              child: TextButton.icon(
+              child: AppButton(
+                label: 'Load full patch',
+                variant: AppButtonVariant.tertiary,
+                busy: _loading,
+                icon: Icons.unfold_more,
                 onPressed: _loading ? null : _expand,
-                icon: _loading
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const Icon(Icons.unfold_more),
-                label: const Text('Load full patch'),
               ),
             ),
         ],

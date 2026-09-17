@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/ui.dart';
+
 /// Presentation-only entry point; creation still goes through SessionsViewModel.
 class NewSessionDock extends StatelessWidget {
   const NewSessionDock({
@@ -27,41 +29,35 @@ class NewSessionDock extends StatelessWidget {
         child: Row(
           children: [
             if (onTerminal != null)
-              IconButton(
+              AppIconButton(
+                icon: Icons.terminal_rounded,
                 tooltip: 'Remote terminal',
                 onPressed: onTerminal,
-                icon: const Icon(Icons.terminal_rounded),
               ),
             Expanded(
               child: draftController != null
-                  ? TextField(
+                  ? AppTextField(
                       controller: draftController,
                       enabled: onCreate != null,
                       minLines: 1,
                       maxLines: 4,
                       textInputAction: TextInputAction.newline,
-                      decoration: const InputDecoration(
-                        hintText: 'What would you like to do?',
-                        filled: false,
-                        border: InputBorder.none,
-                        enabledBorder: InputBorder.none,
-                        focusedBorder: InputBorder.none,
-                      ),
+                      hint: 'What would you like to do?',
+                      variant: AppTextFieldVariant.borderless,
                     )
-                  : TextButton(
+                  : AppButton(
+                      variant: AppButtonVariant.tertiary,
+                      tone: AppButtonTone.subtle,
+                      leftAligned: true,
                       onPressed: onCreate,
-                      style: TextButton.styleFrom(
-                        alignment: Alignment.centerLeft,
-                        minimumSize: const Size(48, 48),
-                        foregroundColor: theme.colorScheme.onSurfaceVariant,
-                      ),
-                      child: const Text('What would you like to do?'),
+                      label: 'What would you like to do?',
                     ),
             ),
-            IconButton.filled(
+            AppIconButton(
+              variant: AppIconButtonVariant.filled,
               tooltip: 'New session',
               onPressed: onCreate,
-              icon: const Icon(Icons.add_rounded),
+              icon: Icons.add_rounded,
             ),
           ],
         ),

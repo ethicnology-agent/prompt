@@ -41,15 +41,15 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
       appBar: AppBar(
         title: const Text('Workspace'),
         actions: [
-          IconButton(
-            onPressed: () => widget.viewModel.goUp(widget.profile),
-            icon: const Icon(Icons.drive_folder_upload_outlined),
+          AppIconButton(
+            icon: Icons.drive_folder_upload_outlined,
             tooltip: 'Parent directory',
+            onPressed: () => widget.viewModel.goUp(widget.profile),
           ),
-          IconButton(
-            onPressed: () => widget.viewModel.refresh(widget.profile),
-            icon: const Icon(Icons.refresh_rounded),
+          AppIconButton(
+            icon: Icons.refresh_rounded,
             tooltip: 'Refresh workspace',
+            onPressed: () => widget.viewModel.refresh(widget.profile),
           ),
         ],
       ),
@@ -157,7 +157,7 @@ class _WorkspaceError extends StatelessWidget {
           const SizedBox(height: 8),
           Text(message, textAlign: TextAlign.center),
           const SizedBox(height: 16),
-          FilledButton(onPressed: onRetry, child: const Text('Try again')),
+          AppButton(label: 'Try again', onPressed: onRetry),
         ],
       ),
     ),
@@ -264,24 +264,22 @@ class _WorkspaceBrowser extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            TextField(
+            AppTextField(
               controller: controller,
               onChanged: onQueryChanged,
-              decoration: InputDecoration(
-                labelText: 'Search workspace',
-                hintText: _hintFor(kind),
-                prefixIcon: const Icon(Icons.search),
-                suffixIcon: controller.text.isEmpty
-                    ? null
-                    : IconButton(
-                        tooltip: 'Clear workspace search',
-                        icon: const Icon(Icons.clear),
-                        onPressed: () {
-                          controller.clear();
-                          onQueryChanged('');
-                        },
-                      ),
-              ),
+              label: 'Search workspace',
+              hint: _hintFor(kind),
+              prefixIcon: Icons.search,
+              suffix: controller.text.isEmpty
+                  ? null
+                  : AppIconButton(
+                      icon: Icons.clear,
+                      tooltip: 'Clear workspace search',
+                      onPressed: () {
+                        controller.clear();
+                        onQueryChanged('');
+                      },
+                    ),
             ),
             const SizedBox(height: 8),
             Wrap(

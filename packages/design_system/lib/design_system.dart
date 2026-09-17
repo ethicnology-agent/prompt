@@ -1,4 +1,8 @@
 export 'src/adaptive_layout.dart';
+export 'src/app_theme.dart';
+export 'src/components/app_button.dart';
+export 'src/components/app_dialog.dart';
+export 'src/components/app_text_field.dart';
 export 'src/components/identity_avatar.dart';
 export 'src/components/prompt_panel.dart';
 export 'src/prompt_color_tokens.dart';

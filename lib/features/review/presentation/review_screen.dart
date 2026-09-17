@@ -2,6 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/ui.dart';
+
 import '../../capabilities/capabilities.dart';
 import '../../diff/diff.dart';
 import '../domain/review_entities.dart';
@@ -204,9 +206,9 @@ class _ReviewScreenState extends State<ReviewScreen> {
       Text(text, textAlign: TextAlign.center),
       if (retry) ...[
         const SizedBox(height: 12),
-        FilledButton(
+        AppButton(
+          label: 'Retry',
           onPressed: () => widget.viewModel.loadSnapshot(widget.target),
-          child: const Text('Retry'),
         ),
       ],
     ],
@@ -257,31 +259,32 @@ class _ReviewScreenState extends State<ReviewScreen> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        IconButton(
-                          icon: const Icon(Icons.open_in_new),
+                        AppIconButton(
+                          icon: Icons.open_in_new,
                           tooltip: 'Open stored review',
                           onPressed: () =>
                               widget.viewModel.loadHistory(summary.id),
                         ),
-                        IconButton(
-                          icon: const Icon(Icons.delete_outline),
+                        AppIconButton(
+                          icon: Icons.delete_outline,
                           tooltip: 'Delete stored review',
                           onPressed: () async {
                             if (!context.mounted) return;
                             final confirmed = await showDialog<bool>(
                               context: context,
-                              builder: (context) => AlertDialog(
+                              builder: (context) => AppDialog(
                                 title: const Text('Delete review?'),
                                 actions: [
-                                  TextButton(
+                                  AppButton(
+                                    label: 'Cancel',
+                                    variant: AppButtonVariant.tertiary,
                                     onPressed: () =>
                                         Navigator.pop(context, false),
-                                    child: const Text('Cancel'),
                                   ),
-                                  FilledButton(
+                                  AppButton(
+                                    label: 'Delete',
                                     onPressed: () =>
                                         Navigator.pop(context, true),
-                                    child: const Text('Delete'),
                                   ),
                                 ],
                               ),
@@ -334,9 +337,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
                   'Connected models unavailable: ${capabilityState.failure.message}',
                 ),
               ),
-              TextButton(
+              AppButton(
+                label: 'Retry',
+                variant: AppButtonVariant.tertiary,
                 onPressed: widget.capabilitiesViewModel.retry,
-                child: const Text('Retry'),
               ),
             ],
           ),
@@ -369,11 +373,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 ),
                 if (_roles.length > 2) ...[
                   const SizedBox(width: 4),
-                  IconButton(
+                  AppIconButton(
                     key: ValueKey('remove-reviewer-${role.name}'),
+                    icon: Icons.remove_circle_outline,
                     tooltip: 'Remove ${_role(role)} reviewer',
                     onPressed: () => _removeReviewer(role),
-                    icon: const Icon(Icons.remove_circle_outline),
                   ),
                 ],
               ],
@@ -382,10 +386,11 @@ class _ReviewScreenState extends State<ReviewScreen> {
         if (_roles.length < ReviewRole.values.length)
           Align(
             alignment: Alignment.centerLeft,
-            child: OutlinedButton.icon(
+            child: AppButton(
+              label: 'Add reviewer',
+              variant: AppButtonVariant.secondary,
+              icon: Icons.add,
               onPressed: models.length > _roles.length ? _addReviewer : null,
-              icon: const Icon(Icons.add),
-              label: const Text('Add reviewer'),
             ),
           ),
         if (_roles.length < ReviewRole.values.length)
@@ -397,10 +402,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
         if (models.length >= _roles.length && !_valid)
           const Text('Select a distinct connected model for each reviewer.'),
         const SizedBox(height: 8),
-        FilledButton.icon(
+        AppButton(
+          label: 'Start review',
+          icon: Icons.play_arrow,
           onPressed: _valid ? _start : null,
-          icon: const Icon(Icons.play_arrow),
-          label: const Text('Start review'),
         ),
         if (_valid) _costCard(snapshot, models),
         const SizedBox(height: 24),
@@ -490,14 +495,16 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 ),
               ),
               if (run.state == ReviewRunState.running)
-                OutlinedButton(
+                AppButton(
+                  label: 'Cancel',
+                  variant: AppButtonVariant.secondary,
                   onPressed: widget.viewModel.cancel,
-                  child: const Text('Cancel'),
                 ),
               if (run.state != ReviewRunState.running)
-                TextButton(
+                AppButton(
+                  label: 'New review',
+                  variant: AppButtonVariant.tertiary,
                   onPressed: () => widget.viewModel.loadSnapshot(widget.target),
-                  child: const Text('New review'),
                 ),
             ],
           ),

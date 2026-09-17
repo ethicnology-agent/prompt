@@ -318,11 +318,13 @@ class _ConversationScreenState extends State<ConversationScreen>
               Row(
                 mainAxisAlignment: MainAxisAlignment.end,
                 children: [
-                  TextButton(
+                  AppButton(
+                    label: 'Cancel',
+                    variant: AppButtonVariant.tertiary,
                     onPressed: () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
                   ),
-                  FilledButton(
+                  AppButton(
+                    label: 'Apply',
                     onPressed: () => Navigator.of(context).pop(
                       _Selection(
                         PromptExecutionOptions(
@@ -332,7 +334,6 @@ class _ConversationScreenState extends State<ConversationScreen>
                         ),
                       ),
                     ),
-                    child: const Text('Apply'),
                   ),
                 ],
               ),
@@ -401,7 +402,7 @@ class _ConversationScreenState extends State<ConversationScreen>
             MediaQuery.sizeOf(dialogContext).height -
             MediaQuery.viewInsetsOf(dialogContext).bottom;
         final contentMaxHeight = (usableHeight - 180).clamp(120.0, 560.0);
-        return AlertDialog(
+        return AppDialog(
           title: Text(title),
           content: SizedBox(
             width: 420,
@@ -486,7 +487,7 @@ class _ConversationScreenState extends State<ConversationScreen>
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) {
-        return AlertDialog(
+        return AppDialog(
           title: const Text('Abort current generation and send now?'),
           content: const Text(
             'This cancels whatever the session is currently generating, '
@@ -494,13 +495,14 @@ class _ConversationScreenState extends State<ConversationScreen>
             'of the queue.',
           ),
           actions: [
-            TextButton(
+            AppButton(
+              label: 'Cancel',
+              variant: AppButtonVariant.tertiary,
               onPressed: () => Navigator.of(context).pop(false),
-              child: const Text('Cancel'),
             ),
-            FilledButton(
+            AppButton(
+              label: 'Abort & send now',
               onPressed: () => Navigator.of(context).pop(true),
-              child: const Text('Abort & send now'),
             ),
           ],
         );
@@ -514,20 +516,21 @@ class _ConversationScreenState extends State<ConversationScreen>
   Future<void> _confirmRevert(ChatMessage message) async {
     final confirmed = await showDialog<bool>(
       context: context,
-      builder: (context) => AlertDialog(
+      builder: (context) => AppDialog(
         title: const Text('Revert this message?'),
         content: const Text(
           'OpenCode will revert the session to this message. Later messages '
           'and session changes may be removed.',
         ),
         actions: [
-          TextButton(
+          AppButton(
+            label: 'Cancel',
+            variant: AppButtonVariant.tertiary,
             onPressed: () => Navigator.of(context).pop(false),
-            child: const Text('Cancel'),
           ),
-          FilledButton(
+          AppButton(
+            label: 'Revert message',
             onPressed: () => Navigator.of(context).pop(true),
-            child: const Text('Revert message'),
           ),
         ],
       ),
@@ -593,10 +596,11 @@ class _ConversationScreenState extends State<ConversationScreen>
                     'Earlier messages unavailable: ${failure.message}',
                   ),
                   actions: [
-                    TextButton(
+                    AppButton(
+                      label: 'Retry',
+                      variant: AppButtonVariant.tertiary,
                       onPressed: () =>
                           widget.viewModel.loadOlderFromUserAction(),
-                      child: const Text('Retry'),
                     ),
                   ],
                 ),
@@ -1025,10 +1029,10 @@ class _ConversationScreenState extends State<ConversationScreen>
               children: [
                 Text(failure.message, textAlign: TextAlign.center),
                 const SizedBox(height: 16),
-                FilledButton.icon(
+                AppButton(
+                  label: 'Try again',
+                  icon: Icons.refresh,
                   onPressed: widget.viewModel.reload,
-                  icon: const Icon(Icons.refresh),
-                  label: const Text('Try again'),
                 ),
               ],
             ),
@@ -1089,16 +1093,16 @@ class _ConversationScreenState extends State<ConversationScreen>
               if (widget.profile.capabilities.supports(BackendFeature.review) &&
                   widget.reviewViewModelFactory != null &&
                   widget.capabilitiesViewModel != null)
-                IconButton(
-                  onPressed: _openReview,
+                AppIconButton(
+                  icon: Icons.rate_review_outlined,
                   tooltip: 'Review diff',
-                  icon: const Icon(Icons.rate_review_outlined),
+                  onPressed: _openReview,
                 ),
               if (isDesktop)
-                IconButton(
-                  onPressed: widget.viewModel.refreshFromUserAction,
+                AppIconButton(
+                  icon: Icons.refresh_rounded,
                   tooltip: 'Refresh transcript',
-                  icon: const Icon(Icons.refresh_rounded),
+                  onPressed: widget.viewModel.refreshFromUserAction,
                 ),
               ValueListenableBuilder<SessionExecutionState>(
                 valueListenable: widget.viewModel.executionState,
@@ -1108,17 +1112,17 @@ class _ConversationScreenState extends State<ConversationScreen>
               if (widget.profile.capabilities.supports(
                 BackendFeature.workspace,
               ))
-                IconButton(
-                  onPressed: () => _toggleArtifactsPanel(
-                    isDesktop: isDesktop,
-                    showing: showArtifactsPanel,
-                  ),
-                  icon: const Icon(Icons.assignment_outlined),
+                AppIconButton(
+                  icon: Icons.assignment_outlined,
                   tooltip: isDesktop
                       ? showArtifactsPanel
                             ? 'Hide session details'
                             : 'Show session details'
                       : 'Session artifacts',
+                  onPressed: () => _toggleArtifactsPanel(
+                    isDesktop: isDesktop,
+                    showing: showArtifactsPanel,
+                  ),
                 ),
               const SizedBox(width: 8),
             ],
@@ -1338,11 +1342,12 @@ class _ExecutionPanel extends StatelessWidget {
               child: Row(
                 children: [
                   Expanded(child: Text(failure)),
-                  TextButton(
+                  AppButton(
+                    label: 'Retry',
+                    variant: AppButtonVariant.tertiary,
                     onPressed: onRetry == null
                         ? null
                         : () => unawaited(onRetry!()),
-                    child: const Text('Retry'),
                   ),
                 ],
               ),

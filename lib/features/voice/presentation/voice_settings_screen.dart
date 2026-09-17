@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/ui.dart';
+
 import '../domain/voice_language.dart';
 import '../domain/voice_failure.dart';
 import 'voice_view_model.dart';
@@ -166,25 +168,26 @@ class _ModelCard extends StatelessWidget {
               LinearProgressIndicator(value: progress),
             ],
             const SizedBox(height: 8),
-            FilledButton.icon(
+            AppButton(
+              label:
+                  '${selected ? 'Reinstall' : 'Install'} ${language.label} model',
+              icon: Icons.download_outlined,
               onPressed: installing ? null : onInstall,
-              icon: const Icon(Icons.download_outlined),
-              label: Text(
-                '${selected ? 'Reinstall' : 'Install'} ${language.label} model',
-              ),
             ),
             if (selected) ...[
               const SizedBox(height: 8),
-              OutlinedButton.icon(
+              AppButton(
+                label: 'Remove ${language.label} model',
+                variant: AppButtonVariant.secondary,
+                icon: Icons.delete_outline,
                 onPressed: installing ? null : onRemove,
-                icon: const Icon(Icons.delete_outline),
-                label: Text('Remove ${language.label} model'),
               ),
             ],
             const SizedBox(height: 4),
-            TextButton(
+            AppButton(
+              label: 'Choose existing ${language.label} model files',
+              variant: AppButtonVariant.tertiary,
               onPressed: installing ? null : onSelectExisting,
-              child: Text('Choose existing ${language.label} model files'),
             ),
           ],
         ),
