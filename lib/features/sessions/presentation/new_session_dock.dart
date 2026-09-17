@@ -8,12 +8,14 @@ class NewSessionDock extends StatelessWidget {
     required this.onCreate,
     required this.onTerminal,
     this.draftController,
+    this.focusNode,
     super.key,
   });
 
   final VoidCallback? onCreate;
   final VoidCallback? onTerminal;
   final TextEditingController? draftController;
+  final FocusNode? focusNode;
 
   @override
   Widget build(BuildContext context) {
@@ -38,6 +40,7 @@ class NewSessionDock extends StatelessWidget {
               child: draftController != null
                   ? AppTextField(
                       controller: draftController,
+                      focusNode: focusNode,
                       enabled: onCreate != null,
                       minLines: 1,
                       maxLines: 4,
@@ -55,7 +58,7 @@ class NewSessionDock extends StatelessWidget {
             ),
             AppIconButton(
               variant: AppIconButtonVariant.filled,
-              tooltip: 'New session',
+              tooltip: 'New session from draft',
               onPressed: onCreate,
               icon: Icons.add_rounded,
             ),

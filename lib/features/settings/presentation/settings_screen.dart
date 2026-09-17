@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../../core/ui/ui.dart';
+import 'appearance_screen.dart';
 import 'theme_view_model.dart';
 
 /// The settings landing page contains navigation and local appearance only.
@@ -30,12 +32,12 @@ class SettingsScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     return Scaffold(
-      backgroundColor: theme.colorScheme.surfaceContainerLowest,
-      appBar: AppBar(title: const Text('Settings'), centerTitle: true),
+      backgroundColor: SettingsGroup.pageColor(theme),
+      appBar: AppBar(title: const Text('Settings'), centerTitle: false),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(16, 20, 16, 32),
         children: [
-          _Group(
+          SettingsGroup(
             title: 'CONNECTION',
             children: [
               ListTile(
@@ -69,34 +71,23 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          _Group(
+          SettingsGroup(
             title: 'PREFERENCES',
             children: [
-              ExpansionTile(
-                leading: const Icon(Icons.contrast_rounded),
-                title: const Text('Appearance'),
-                children: [
-                  ValueListenableBuilder<ThemeMode>(
-                    valueListenable: themeViewModel,
-                    builder: (context, mode, _) => Column(
-                      children: [
-                        for (final option in ThemeMode.values)
-                          ListTile(
-                            title: Text(switch (option) {
-                              ThemeMode.system => 'System',
-                              ThemeMode.light => 'Light',
-                              ThemeMode.dark => 'Dark',
-                            }),
-                            selected: mode == option,
-                            trailing: mode == option
-                                ? const Icon(Icons.check_rounded)
-                                : null,
-                            onTap: () => themeViewModel.select(option),
-                          ),
-                      ],
+              ValueListenableBuilder<ThemeMode>(
+                valueListenable: themeViewModel,
+                builder: (context, mode, _) => ListTile(
+                  leading: const Icon(Icons.contrast_rounded),
+                  title: const Text('Appearance'),
+                  subtitle: Text(appearanceLabel(mode)),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => Navigator.of(context).push<void>(
+                    MaterialPageRoute<void>(
+                      builder: (_) =>
+                          AppearanceScreen(themeViewModel: themeViewModel),
                     ),
                   ),
-                ],
+                ),
               ),
               ListTile(
                 leading: const Icon(Icons.mic_none_rounded),
@@ -115,7 +106,7 @@ class SettingsScreen extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 24),
-          _Group(
+          SettingsGroup(
             title: 'SESSION',
             children: [
               ListTile(
@@ -145,39 +136,4 @@ class SettingsScreen extends StatelessWidget {
       ),
     );
   }
-}
-
-class _Group extends StatelessWidget {
-  const _Group({required this.title, required this.children});
-
-  final String title;
-  final List<Widget> children;
-
-  @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    children: [
-      Padding(
-        padding: const EdgeInsets.only(left: 16, bottom: 8),
-        child: Text(title, style: Theme.of(context).textTheme.labelSmall),
-      ),
-      Material(
-        color: Theme.of(context).colorScheme.surfaceContainerLow,
-        borderRadius: BorderRadius.circular(14),
-        clipBehavior: Clip.antiAlias,
-        child: Column(
-          children: [
-            for (var index = 0; index < children.length; index++) ...[
-              if (index > 0)
-                const Padding(
-                  padding: EdgeInsets.only(left: 56),
-                  child: Divider(height: 1, thickness: 0.5),
-                ),
-              children[index],
-            ],
-          ],
-        ),
-      ),
-    ],
-  );
 }

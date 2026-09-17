@@ -16,6 +16,85 @@ import 'package:prompt/features/sessions/presentation/sessions_view_model.dart';
 
 void main() {
   testWidgets(
+    'phone catalog centers its title and opens compact session rows',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final client = MockClient((request) async {
+        if (request.url.path == '/session') {
+          return http.Response(_renameSessionJson, 200);
+        }
+        if (request.url.path == '/project') {
+          return http.Response(
+            '[{"id":"project","worktree":"/srv/project"}]',
+            200,
+          );
+        }
+        return http.Response('', 404);
+      });
+      final profile = ServerProfile(
+        origin: Uri.parse('http://10.80.0.1:4096'),
+        username: 'opencode',
+      );
+      final viewModel = SessionsViewModel(
+        SessionsRepository(
+          OpenCodeSessionsService(OpenCodeTransport(client)),
+          const _PasswordStore(),
+        ),
+      );
+      addTearDown(viewModel.dispose);
+      OpenCodeSession? opened;
+      var settingsOpened = 0;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionsScreen(
+            profile: profile,
+            viewModel: viewModel,
+            onOpenSession: (session) => opened = session,
+            onOpenWorkspace: (_) {},
+            onOpenTerminal: () {},
+            onOpenDiagnostics: () {},
+            onOpenVoiceSettings: () {},
+            onOpenSettings: () => settingsOpened++,
+            onDisconnect: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final header = find.byType(AppBar);
+      final title = find.descendant(
+        of: header,
+        matching: find.text('Sessions'),
+      );
+      expect(tester.getCenter(title).dx, closeTo(195, 1));
+      expect(
+        tester.getCenter(find.byTooltip('More actions')).dx,
+        lessThan(tester.getCenter(title).dx),
+      );
+      expect(
+        tester.getCenter(find.byTooltip('Settings')).dx,
+        greaterThan(tester.getCenter(title).dx),
+      );
+      final tile = find.byType(SessionListTile);
+      final row = tester.widget<SessionListTile>(tile);
+      expect(row.title, 'Prompt');
+      expect(row.project, 'project');
+      expect(row.timestamp, isNotEmpty);
+      expect(row.status, 'Status unavailable');
+      expect(tester.getSize(tile).height, lessThanOrEqualTo(100));
+      expect(find.byIcon(Icons.difference_outlined), findsNothing);
+      await tester.tap(tile);
+      expect(opened?.id, 'session-1');
+
+      await tester.tap(find.byTooltip('Settings'));
+      await tester.pumpAndSettle();
+      expect(settingsOpened, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'renames a session without disposing its dialog controller early',
     (tester) async {
       http.Request? renamed;
@@ -62,7 +141,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('Session actions'));
+      await tester.longPress(find.byType(SessionListTile));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Rename'));
       await tester.pumpAndSettle();
@@ -125,7 +204,7 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      await tester.tap(find.byTooltip('New session'));
+      await tester.tap(find.byTooltip('New session from draft'));
       await tester.pumpAndSettle();
 
       expect(find.text('Server project path'), findsOneWidget);
@@ -225,7 +304,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('New session'));
+    await tester.tap(find.byTooltip('New session from draft'));
     await tester.pumpAndSettle();
 
     final pathField = find.byWidgetPredicate(
@@ -526,7 +605,7 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    await tester.tap(find.byTooltip('New session'));
+    await tester.tap(find.byTooltip('New session from draft'));
     await tester.pumpAndSettle();
 
     expect(find.text('/srv/known-project'), findsWidgets);
@@ -579,7 +658,16 @@ void main() {
     expect(find.text('Parent session'), findsOneWidget);
     expect(find.text('Child session'), findsNothing);
 
-    await tester.tap(find.byTooltip('Filter sessions'));
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.ancestor(
+        of: find.text('Filter sessions'),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is CheckedPopupMenuItem,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'child-session');
     await tester.pump();
@@ -655,7 +743,16 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    await tester.tap(find.byTooltip('Filter sessions'));
+    await tester.tap(find.byTooltip('More actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.ancestor(
+        of: find.text('Filter sessions'),
+        matching: find.byWidgetPredicate(
+          (widget) => widget is CheckedPopupMenuItem,
+        ),
+      ),
+    );
     await tester.pumpAndSettle();
     final chips = find.byType(ChoiceChip);
     expect(chips, findsNWidgets(2));

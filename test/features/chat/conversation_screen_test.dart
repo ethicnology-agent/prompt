@@ -439,6 +439,122 @@ void main() {
     expect(viewModel.openCalled, isTrue);
   });
 
+  testWidgets(
+    'composer actions anchor attachment left and queue right at large text scale',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pumpScreen(tester, textScale: 2);
+      final toolbar = tester.getRect(find.byType(ComposerActionBar));
+      final attach = tester.getRect(find.byTooltip('Add attachment'));
+      final send = tester.getRect(find.byTooltip('Queue this prompt'));
+      expect(attach.left, toolbar.left);
+      expect(send.right, toolbar.right);
+      expect(attach.right, lessThan(send.left));
+      expect(attach.center.dy, send.center.dy);
+      final disabled = tester.widget<AppIconButton>(
+        find.ancestor(
+          of: find.byTooltip('Queue this prompt'),
+          matching: find.byType(AppIconButton),
+        ),
+      );
+      expect(disabled.onPressed, isNull);
+      await tester.enterText(find.byType(TextField), 'A queued message');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pump();
+      expect(viewModel.enqueueCallCount, 1);
+      expect(viewModel.enqueuedTexts, ['A queued message']);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'phone header keeps one avatar action and accessible session menu',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      viewModel.artifacts.value = const SessionArtifactsReady(
+        todos: [],
+        diffs: [],
+      );
+      await pumpScreen(tester);
+      final appBar = find.byType(AppBar);
+      expect(
+        find.descendant(of: appBar, matching: find.byType(IdentityAvatar)),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(of: appBar, matching: find.text('project')),
+        findsNothing,
+      );
+      expect(
+        find.descendant(of: appBar, matching: find.byType(AppIconButton)),
+        findsNothing,
+      );
+      expect(tester.widget<AppBar>(appBar).toolbarHeight, 56);
+      await tester.tap(find.byTooltip('Session details and actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('/workspace/project'), findsOneWidget);
+      expect(find.text('Execution status: Syncing activity'), findsOneWidget);
+      expect(find.text('Session artifacts'), findsOneWidget);
+      await tester.tap(find.text('Refresh transcript'));
+      await tester.pumpAndSettle();
+      expect(viewModel.refreshCallCount, 1);
+      await tester.tap(find.byTooltip('Session details and actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Session artifacts'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionArtifactsPanel), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'phone header menu hides unsupported review and workspace actions',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pumpScreen(
+        tester,
+        activeProfile: ServerProfile(
+          origin: profile.origin,
+          backend: AgentBackend.gatewayCodex,
+          capabilities: BackendCapabilities([
+            BackendFeature.sessions,
+            BackendFeature.text,
+          ]),
+        ),
+      );
+      await tester.tap(find.byTooltip('Session details and actions'));
+      await tester.pumpAndSettle();
+      expect(find.text('Review diff'), findsNothing);
+      expect(find.text('Session artifacts'), findsNothing);
+      expect(find.text('Refresh transcript'), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'phone header preserves long title at large text scale without extra controls',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final longTitleSession = OpenCodeSession(
+        id: session.id,
+        projectId: session.projectId,
+        directory: session.directory,
+        title: 'A long session title requiring all available header width',
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      );
+      await pumpScreen(tester, activeSession: longTitleSession, textScale: 2);
+      final title = tester.widget<Text>(find.text(longTitleSession.title));
+      expect(title.maxLines, 1);
+      expect(title.overflow, TextOverflow.ellipsis);
+      expect(find.byTooltip('Session details and actions'), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('native engine hides unavailable tools and persistent approval', (
     tester,
   ) async {
@@ -820,7 +936,7 @@ void main() {
     final voiceRect = tester.getRect(find.byTooltip('Start voice mode'));
     final attachmentRect = tester.getRect(find.byTooltip('Add attachment'));
     expect(voiceRect.center.dy, closeTo(attachmentRect.center.dy, 1));
-    expect(voiceRect.left, lessThan(attachmentRect.left));
+    expect(attachmentRect.right, lessThan(voiceRect.left));
     expect(
       attachmentRect.top,
       greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TextField)).dy),
@@ -2446,7 +2562,9 @@ void main() {
     capabilities.value = capabilityState;
     await tester.pump();
 
-    await tester.tap(find.byTooltip('Session artifacts'));
+    await tester.tap(find.byTooltip('Session details and actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Session artifacts'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Model').last);
     await tester.pumpAndSettle();

@@ -681,18 +681,51 @@ class _ConversationScreenState extends State<ConversationScreen>
             child: Center(child: _jumpButton()),
           ),
         if (showComposerActions)
-          Positioned(right: 16, bottom: 16, child: _composerActionColumn()),
+          Positioned(
+            left: 16,
+            right: 16,
+            bottom: 16,
+            child: _composerActionColumn(),
+          ),
       ],
     );
   }
 
   Widget _composerActionColumn() {
     final capabilitiesViewModel = widget.capabilitiesViewModel;
-    Widget buildActions(List<OpenCodeSlashCommand> commands) => Row(
+    Widget buildActions(
+      List<OpenCodeSlashCommand> commands, {
+      OpenCodeCapabilities? capabilities,
+    }) => ComposerActionBar(
       key: const ValueKey('composer-action-toolbar'),
-      mainAxisSize: MainAxisSize.min,
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
+      controls:
+          capabilities == null ||
+              (capabilities.models.isEmpty && capabilities.agents.isEmpty)
+          ? null
+          : ValueListenableBuilder<PromptExecutionOptions>(
+              valueListenable: _executionOptions,
+              builder: (context, options, _) => AppButton(
+                label: [
+                  if (capabilities.agents.isNotEmpty)
+                    _selectedAgent(capabilities.agents)?.name ??
+                        options.agentName ??
+                        'Agent default',
+                  if (capabilities.models.isNotEmpty)
+                    _selectedModel(capabilities.models)?.name ??
+                        options.modelId ??
+                        'Model default',
+                ].join(' · '),
+                variant: AppButtonVariant.tertiary,
+                onPressed: () => _selectExecutionOptions(capabilities),
+              ),
+            ),
+      leading: [
+        if (widget.profile.capabilities.supports(BackendFeature.attachments))
+          AppIconButton(
+            onPressed: _pickAttachments,
+            tooltip: 'Add attachment',
+            icon: Icons.add_rounded,
+          ),
         if (widget.voiceViewModel case final voiceViewModel?)
           ValueListenableBuilder<VoiceUiState>(
             valueListenable: voiceViewModel.state,
@@ -702,63 +735,45 @@ class _ConversationScreenState extends State<ConversationScreen>
                 if (!hasModel || state is! VoiceIdle) {
                   return const SizedBox.shrink();
                 }
-                return Padding(
-                  padding: const EdgeInsets.only(right: 8),
-                  child: FloatingActionButton.small(
-                    heroTag: 'start-voice-mode',
-                    onPressed: _enterVoiceMode,
-                    tooltip: 'Start voice mode',
-                    child: const Icon(Icons.mic_rounded),
-                  ),
+                return AppIconButton(
+                  onPressed: _enterVoiceMode,
+                  tooltip: 'Start voice mode',
+                  icon: Icons.mic_rounded,
                 );
               },
             ),
           ),
-        if (widget.profile.capabilities.supports(BackendFeature.attachments))
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FloatingActionButton.small(
-              heroTag: 'add-attachment',
-              onPressed: _pickAttachments,
-              tooltip: 'Add attachment',
-              child: const Icon(Icons.attach_file_rounded),
-            ),
-          ),
         if (commands.isNotEmpty &&
             widget.profile.capabilities.supports(BackendFeature.commands))
-          Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FloatingActionButton.small(
-              heroTag: 'choose-slash-command',
-              onPressed: () => _selectCommand(commands),
-              tooltip: 'Choose slash command',
-              child: const Icon(Icons.code_rounded),
-            ),
+          AppIconButton(
+            onPressed: () => _selectCommand(commands),
+            tooltip: 'Choose slash command',
+            icon: Icons.code_rounded,
           ),
-        ValueListenableBuilder<TextEditingValue>(
-          valueListenable: _composerController,
-          builder: (context, value, _) =>
-              ValueListenableBuilder<List<PromptAttachment>>(
-                valueListenable: widget.viewModel.attachments,
-                builder: (context, selected, _) {
-                  final enabled =
-                      value.text.trim().isNotEmpty ||
-                      _selectedCommand != null ||
-                      selected.isNotEmpty;
-                  return FloatingActionButton.small(
-                    heroTag: 'queue-prompt',
-                    onPressed: enabled
-                        ? () => unawaited(_submitComposer())
-                        : null,
-                    tooltip: _selectedCommand == null
-                        ? 'Queue this prompt'
-                        : 'Queue command',
-                    child: const Icon(Icons.arrow_upward_rounded),
-                  );
-                },
-              ),
-        ),
       ],
+      trailing: ValueListenableBuilder<TextEditingValue>(
+        valueListenable: _composerController,
+        builder: (context, value, _) =>
+            ValueListenableBuilder<List<PromptAttachment>>(
+              valueListenable: widget.viewModel.attachments,
+              builder: (context, selected, _) {
+                final enabled =
+                    value.text.trim().isNotEmpty ||
+                    _selectedCommand != null ||
+                    selected.isNotEmpty;
+                return AppIconButton(
+                  variant: AppIconButtonVariant.filled,
+                  onPressed: enabled
+                      ? () => unawaited(_submitComposer())
+                      : null,
+                  tooltip: _selectedCommand == null
+                      ? 'Queue this prompt'
+                      : 'Queue command',
+                  icon: Icons.arrow_upward_rounded,
+                );
+              },
+            ),
+      ),
     );
     if (capabilitiesViewModel == null) {
       return buildActions(const []);
@@ -767,6 +782,7 @@ class _ConversationScreenState extends State<ConversationScreen>
       valueListenable: capabilitiesViewModel,
       builder: (context, state, _) => buildActions(
         state is CapabilitiesReady ? state.capabilities.commands : const [],
+        capabilities: state is CapabilitiesReady ? state.capabilities : null,
       ),
     );
   }
@@ -1051,79 +1067,163 @@ class _ConversationScreenState extends State<ConversationScreen>
   Widget build(BuildContext context) {
     return LayoutBuilder(
       builder: (context, constraints) {
+        final isPhone = constraints.maxWidth < PromptBreakpoints.tablet;
         final isDesktop = constraints.maxWidth >= PromptBreakpoints.desktop;
         final showArtifactsPanel =
             widget.profile.capabilities.supports(BackendFeature.workspace) &&
             (_artifactsPanelOverride ?? isDesktop);
         return Scaffold(
           appBar: AppBar(
-            toolbarHeight: 68,
-            titleSpacing: 4,
-            title: Row(
-              children: [
-                IdentityAvatar(identifier: widget.session.id, size: 34),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+            toolbarHeight: isPhone ? 56 : 68,
+            titleSpacing: isPhone ? 8 : 4,
+            title: isPhone
+                ? Text(
+                    widget.session.title.isEmpty
+                        ? 'Untitled session'
+                        : widget.session.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: Theme.of(context).textTheme.titleMedium,
+                  )
+                : Row(
                     children: [
-                      Text(
-                        widget.session.title.isEmpty
-                            ? 'Untitled session'
-                            : widget.session.title,
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.titleMedium,
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        directoryName(widget.session.directory),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                        style: Theme.of(context).textTheme.labelSmall?.copyWith(
-                          color: Theme.of(context).colorScheme.primary,
+                      IdentityAvatar(identifier: widget.session.id, size: 34),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              widget.session.title.isEmpty
+                                  ? 'Untitled session'
+                                  : widget.session.title,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.titleMedium,
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              directoryName(widget.session.directory),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: Theme.of(context).textTheme.labelSmall
+                                  ?.copyWith(
+                                    color: Theme.of(
+                                      context,
+                                    ).colorScheme.primary,
+                                  ),
+                            ),
+                          ],
                         ),
                       ),
                     ],
                   ),
-                ),
-              ],
-            ),
             actions: [
-              if (widget.profile.capabilities.supports(BackendFeature.review) &&
-                  widget.reviewViewModelFactory != null &&
-                  widget.capabilitiesViewModel != null)
-                AppIconButton(
-                  icon: Icons.rate_review_outlined,
-                  tooltip: 'Review diff',
-                  onPressed: _openReview,
-                ),
-              if (isDesktop)
-                AppIconButton(
-                  icon: Icons.refresh_rounded,
-                  tooltip: 'Refresh transcript',
-                  onPressed: widget.viewModel.refreshFromUserAction,
-                ),
-              ValueListenableBuilder<SessionExecutionState>(
-                valueListenable: widget.viewModel.executionState,
-                builder: (context, state, _) =>
-                    Center(child: _ExecutionIndicator(state: state)),
-              ),
-              if (widget.profile.capabilities.supports(
-                BackendFeature.workspace,
-              ))
-                AppIconButton(
-                  icon: Icons.assignment_outlined,
-                  tooltip: isDesktop
-                      ? showArtifactsPanel
-                            ? 'Hide session details'
-                            : 'Show session details'
-                      : 'Session artifacts',
-                  onPressed: () => _toggleArtifactsPanel(
-                    isDesktop: isDesktop,
-                    showing: showArtifactsPanel,
+              if (isPhone)
+                ValueListenableBuilder<SessionExecutionState>(
+                  valueListenable: widget.viewModel.executionState,
+                  builder: (context, state, _) =>
+                      PopupMenuButton<_HeaderAction>(
+                        tooltip: 'Session details and actions',
+                        onSelected: (action) {
+                          switch (action) {
+                            case _HeaderAction.review:
+                              _openReview();
+                            case _HeaderAction.refresh:
+                              unawaited(
+                                widget.viewModel.refreshFromUserAction(),
+                              );
+                            case _HeaderAction.artifacts:
+                              _toggleArtifactsPanel(
+                                isDesktop: false,
+                                showing: false,
+                              );
+                          }
+                        },
+                        itemBuilder: (context) => [
+                          PopupMenuItem<_HeaderAction>(
+                            enabled: false,
+                            child: Text(widget.session.directory),
+                          ),
+                          PopupMenuItem<_HeaderAction>(
+                            enabled: false,
+                            child: Text(
+                              'Execution status: ${_executionLabel(state)}',
+                            ),
+                          ),
+                          const PopupMenuDivider(),
+                          if (widget.profile.capabilities.supports(
+                                BackendFeature.review,
+                              ) &&
+                              widget.reviewViewModelFactory != null &&
+                              widget.capabilitiesViewModel != null)
+                            const PopupMenuItem(
+                              value: _HeaderAction.review,
+                              child: Text('Review diff'),
+                            ),
+                          const PopupMenuItem(
+                            value: _HeaderAction.refresh,
+                            child: Text('Refresh transcript'),
+                          ),
+                          if (widget.profile.capabilities.supports(
+                            BackendFeature.workspace,
+                          ))
+                            const PopupMenuItem(
+                              value: _HeaderAction.artifacts,
+                              child: Text('Session artifacts'),
+                            ),
+                        ],
+                        child: Semantics(
+                          label: 'Session details and actions',
+                          value: 'Execution status: ${_executionLabel(state)}',
+                          child: Padding(
+                            padding: const EdgeInsets.all(8),
+                            child: IdentityAvatar(
+                              identifier: widget.session.id,
+                              size: 32,
+                            ),
+                          ),
+                        ),
+                      ),
+                )
+              else ...[
+                if (widget.profile.capabilities.supports(
+                      BackendFeature.review,
+                    ) &&
+                    widget.reviewViewModelFactory != null &&
+                    widget.capabilitiesViewModel != null)
+                  AppIconButton(
+                    icon: Icons.rate_review_outlined,
+                    tooltip: 'Review diff',
+                    onPressed: _openReview,
                   ),
+                if (isDesktop)
+                  AppIconButton(
+                    icon: Icons.refresh_rounded,
+                    tooltip: 'Refresh transcript',
+                    onPressed: widget.viewModel.refreshFromUserAction,
+                  ),
+                ValueListenableBuilder<SessionExecutionState>(
+                  valueListenable: widget.viewModel.executionState,
+                  builder: (context, state, _) =>
+                      Center(child: _ExecutionIndicator(state: state)),
                 ),
+                if (widget.profile.capabilities.supports(
+                  BackendFeature.workspace,
+                ))
+                  AppIconButton(
+                    icon: Icons.assignment_outlined,
+                    tooltip: isDesktop
+                        ? showArtifactsPanel
+                              ? 'Hide session details'
+                              : 'Show session details'
+                        : 'Session artifacts',
+                    onPressed: () => _toggleArtifactsPanel(
+                      isDesktop: isDesktop,
+                      showing: showArtifactsPanel,
+                    ),
+                  ),
+              ],
               const SizedBox(width: 8),
             ],
           ),
@@ -1214,6 +1314,15 @@ class _ConversationScreenState extends State<ConversationScreen>
     );
   }
 }
+
+enum _HeaderAction { review, refresh, artifacts }
+
+String _executionLabel(SessionExecutionState state) => switch (state) {
+  SessionBusy() => 'Working',
+  SessionIdle() => 'Idle',
+  SessionRetrying() => 'Retrying',
+  SessionExecutionUnknown() => 'Syncing activity',
+};
 
 class _ExecutionIndicator extends StatefulWidget {
   const _ExecutionIndicator({required this.state});
