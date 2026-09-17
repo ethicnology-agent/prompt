@@ -35,6 +35,7 @@ import 'package:prompt/features/capabilities/domain/open_code_model.dart';
 import 'package:prompt/features/capabilities/domain/open_code_slash_command.dart';
 import 'package:prompt/features/capabilities/presentation/capabilities_view_model.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/queue/domain/queued_prompt.dart';
 import 'package:prompt/features/queue/domain/prompt_execution_options.dart';
 import 'package:prompt/features/review/review.dart';
@@ -397,6 +398,7 @@ void main() {
     double viewInsetsBottom = 0,
     bool disableAnimations = false,
     OpenCodeSession? activeSession,
+    ServerProfile? activeProfile,
   }) async {
     // Default to a settled, empty transcript unless a test seeds its own:
     // the loading state renders an indeterminate `CircularProgressIndicator`,
@@ -418,7 +420,7 @@ void main() {
         ),
         home: ConversationScreen(
           key: ValueKey('conversation:${(activeSession ?? session).id}'),
-          profile: profile,
+          profile: activeProfile ?? profile,
           session: activeSession ?? session,
           viewModel: viewModel,
           capabilitiesViewModel: capabilitiesViewModel,
@@ -436,6 +438,39 @@ void main() {
     await pumpScreen(tester);
 
     expect(viewModel.openCalled, isTrue);
+  });
+
+  testWidgets('native engine hides unavailable tools and persistent approval', (
+    tester,
+  ) async {
+    viewModel.pendingApproval.value = const PendingPermissionApproval(
+      permissionId: 'native-permission',
+      sessionId: 'session-1',
+      toolType: 'Bash',
+      title: 'Synthetic tool requiring a decision',
+    );
+    await pumpScreen(
+      tester,
+      activeProfile: ServerProfile(
+        origin: profile.origin,
+        backend: AgentBackend.gatewayCodex,
+        capabilities: BackendCapabilities([
+          BackendFeature.sessions,
+          BackendFeature.text,
+          BackendFeature.abort,
+          BackendFeature.permissions,
+        ]),
+      ),
+    );
+    expect(find.byTooltip('Add attachment'), findsNothing);
+    expect(find.byTooltip('Session artifacts'), findsNothing);
+    expect(find.text('Always allow'), findsNothing);
+    expect(find.text('Allow once'), findsOneWidget);
+    expect(find.text('Deny'), findsOneWidget);
+    await tester.tap(find.text('Deny'));
+    await tester.pump();
+    expect(viewModel.lastPermissionResponse, PermissionResponse.reject);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets('Review diff action opens ReviewScreen through its factory', (
@@ -494,9 +529,7 @@ void main() {
             findsOneWidget,
           );
           expect(tester.takeException(), isNull);
-          final rail = find.byKey(
-            const ValueKey('desktop-composer-action-rail'),
-          );
+          final rail = find.byKey(const ValueKey('composer-action-toolbar'));
           if (width >= 900) {
             expect(rail, findsOneWidget);
             expect(find.text('Contextual detail'), findsOneWidget);
@@ -768,8 +801,8 @@ void main() {
     expect(jump, findsOneWidget);
     expect(tester.getCenter(jump).dx, closeTo(400, 2));
     expect(
-      tester.getCenter(jump).dx,
-      lessThan(tester.getCenter(find.byTooltip('Add attachment')).dx),
+      tester.getBottomLeft(jump).dy,
+      lessThan(tester.getTopLeft(find.byType(TextField)).dy),
     );
   });
 
@@ -787,16 +820,16 @@ void main() {
     expect(find.byTooltip('Start voice mode'), findsOneWidget);
     final voiceRect = tester.getRect(find.byTooltip('Start voice mode'));
     final attachmentRect = tester.getRect(find.byTooltip('Add attachment'));
-    expect(voiceRect.center.dx, closeTo(attachmentRect.center.dx, 1));
-    expect(voiceRect.top, lessThan(attachmentRect.top));
+    expect(voiceRect.center.dy, closeTo(attachmentRect.center.dy, 1));
+    expect(voiceRect.left, lessThan(attachmentRect.left));
     expect(
-      attachmentRect.bottom,
-      lessThan(tester.getTopLeft(find.byType(TextField)).dy),
+      attachmentRect.top,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TextField)).dy),
     );
     final inputRect = tester.getRect(find.byType(TextField));
     final sendRect = tester.getRect(find.byTooltip('Queue this prompt'));
-    expect(inputRect.right, closeTo(784, 2));
-    expect(sendRect.top, lessThan(inputRect.top));
+    expect(inputRect.right, lessThan(800));
+    expect(sendRect.top, greaterThanOrEqualTo(inputRect.bottom));
 
     await tester.enterText(find.byType(TextField), 'Existing draft');
     await tester.tap(find.byTooltip('Start voice mode'));
@@ -1192,11 +1225,11 @@ void main() {
 
     final attachmentRect = tester.getRect(find.byTooltip('Add attachment'));
     final commandRect = tester.getRect(find.byTooltip('Choose slash command'));
-    expect(attachmentRect.center.dx, closeTo(commandRect.center.dx, 1));
-    expect(attachmentRect.top, lessThan(commandRect.top));
+    expect(attachmentRect.center.dy, closeTo(commandRect.center.dy, 1));
+    expect(attachmentRect.left, lessThan(commandRect.left));
     expect(
-      attachmentRect.bottom,
-      lessThan(tester.getTopLeft(find.byType(TextField)).dy),
+      attachmentRect.top,
+      greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TextField)).dy),
     );
 
     await tester.tap(find.byTooltip('Choose slash command'));
@@ -2657,7 +2690,7 @@ void main() {
 
     final divider = tester.getRect(find.byType(VerticalDivider));
     final actionRail = tester.getRect(
-      find.byKey(const ValueKey('desktop-composer-action-rail')),
+      find.byKey(const ValueKey('composer-action-toolbar')),
     );
     final attachment = tester.getRect(find.byTooltip('Add attachment'));
     expect(attachment.right, lessThanOrEqualTo(divider.left));

@@ -13,6 +13,8 @@ class Transcript extends StatelessWidget {
     required this.onRefresh,
     required this.controller,
     required this.onRevert,
+    this.canRevert = true,
+    this.assistantLabel = 'OpenCode',
     required this.onLoadOlder,
     required this.hasMore,
     required this.loadingOlder,
@@ -25,6 +27,8 @@ class Transcript extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final ScrollController controller;
   final ValueChanged<ChatMessage> onRevert;
+  final bool canRevert;
+  final String assistantLabel;
   final VoidCallback onLoadOlder;
   final bool hasMore;
   final bool loadingOlder;
@@ -64,7 +68,8 @@ class Transcript extends StatelessWidget {
               final bubble = _MessageBubble(
                 key: ValueKey(message.id),
                 message: message,
-                showRevert: index == 0,
+                showRevert: canRevert && index == 0,
+                assistantLabel: assistantLabel,
                 onRevert: () => onRevert(message),
                 desktop: desktop,
               );
@@ -219,6 +224,7 @@ class _MessageBubble extends StatelessWidget {
     required this.showRevert,
     required this.onRevert,
     required this.desktop,
+    required this.assistantLabel,
     super.key,
   });
 
@@ -226,6 +232,7 @@ class _MessageBubble extends StatelessWidget {
   final bool showRevert;
   final VoidCallback onRevert;
   final bool desktop;
+  final String assistantLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -262,7 +269,7 @@ class _MessageBubble extends StatelessWidget {
                   ),
                   const SizedBox(width: 6),
                   Text(
-                    'OpenCode',
+                    assistantLabel,
                     style: theme.textTheme.labelMedium?.copyWith(
                       color: tokens.subtle,
                     ),

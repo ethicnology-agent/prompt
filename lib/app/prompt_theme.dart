@@ -8,12 +8,24 @@ ThemeData promptDarkTheme() => _theme(Brightness.dark);
 
 ThemeData _theme(Brightness brightness) {
   final dark = brightness == Brightness.dark;
-  final scheme = ColorScheme.fromSeed(
-    seedColor: const Color(0xff56d6b2),
-    brightness: brightness,
-    dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
-    surface: dark ? const Color(0xff0d1115) : const Color(0xfff5f7f6),
-  );
+  final scheme =
+      ColorScheme.fromSeed(
+        seedColor: const Color(0xff18171c),
+        brightness: brightness,
+        dynamicSchemeVariant: DynamicSchemeVariant.fidelity,
+        surface: dark ? const Color(0xff000000) : const Color(0xffffffff),
+      ).copyWith(
+        primary: dark ? Colors.white : const Color(0xff18171c),
+        onPrimary: dark ? Colors.black : Colors.white,
+        primaryContainer: dark
+            ? const Color(0xff292929)
+            : const Color(0xfff0f0f0),
+        onPrimaryContainer: dark ? Colors.white : const Color(0xff18171c),
+        surfaceContainerLow: dark ? const Color(0xff111111) : Colors.white,
+        outlineVariant: dark
+            ? const Color(0xff2c2c2e)
+            : const Color(0xffeaeaea),
+      );
   final textTheme = ThemeData(brightness: brightness).textTheme.copyWith(
     headlineSmall: const TextStyle(
       fontSize: 24,
@@ -24,8 +36,8 @@ ThemeData _theme(Brightness brightness) {
     titleLarge: const TextStyle(
       fontSize: 19,
       height: 1.15,
-      fontWeight: FontWeight.w800,
-      letterSpacing: 1.6,
+      fontWeight: FontWeight.w600,
+      letterSpacing: -0.4,
     ),
     titleMedium: const TextStyle(
       fontSize: 16,
@@ -44,21 +56,21 @@ ThemeData _theme(Brightness brightness) {
     borderSide: BorderSide(color: scheme.outlineVariant),
   );
   final tokens = PromptTokens(
-    panel: dark ? const Color(0xff12181d) : const Color(0xffffffff),
-    panelRaised: dark ? const Color(0xff1a2229) : const Color(0xfff0f3f1),
-    subtle: dark ? const Color(0xff93a2aa) : const Color(0xff59676c),
+    panel: dark ? const Color(0xff161618) : const Color(0xffffffff),
+    panelRaised: dark ? const Color(0xff242426) : const Color(0xfff5f5f5),
+    subtle: dark ? const Color(0xffaaaaaf) : const Color(0xff626267),
     success: dark ? const Color(0xff77d6b7) : const Color(0xff13795b),
     warning: dark ? const Color(0xffffc985) : const Color(0xff9a5600),
     danger: dark ? const Color(0xffffaaa5) : const Color(0xffb42318),
     diffAdd: dark ? const Color(0xff123d30) : const Color(0xffdcf8e9),
     diffDelete: dark ? const Color(0xff4a2225) : const Color(0xffffe5e4),
     userMessageBackground: dark
-        ? const Color(0xff173b35)
-        : const Color(0xffd7f7ed),
+        ? const Color(0xff242426)
+        : const Color(0xfff0eee6),
     userMessageForeground: dark
-        ? const Color(0xfff2fff9)
-        : const Color(0xff123a30),
-    userMessageBorder: dark ? const Color(0xff56d6b2) : const Color(0xff64bba2),
+        ? const Color(0xfffafafa)
+        : const Color(0xff18171c),
+    userMessageBorder: dark ? const Color(0xff39393b) : const Color(0xffe4e4e6),
   );
 
   return ThemeData(
@@ -70,6 +82,13 @@ ThemeData _theme(Brightness brightness) {
     textTheme: textTheme,
     materialTapTargetSize: MaterialTapTargetSize.padded,
     visualDensity: VisualDensity.standard,
+    floatingActionButtonTheme: FloatingActionButtonThemeData(
+      elevation: 0,
+      highlightElevation: 0,
+      shape: const CircleBorder(),
+      backgroundColor: scheme.primaryContainer,
+      foregroundColor: scheme.onPrimaryContainer,
+    ),
     appBarTheme: AppBarTheme(
       elevation: 0,
       scrolledUnderElevation: 0,
@@ -79,7 +98,7 @@ ThemeData _theme(Brightness brightness) {
     ),
     inputDecorationTheme: InputDecorationTheme(
       filled: true,
-      fillColor: dark ? const Color(0xff171d22) : const Color(0xffffffff),
+      fillColor: dark ? const Color(0xff1c1c1e) : const Color(0xfff5f5f5),
       border: rounded,
       enabledBorder: rounded,
       focusedBorder: rounded.copyWith(
@@ -132,11 +151,11 @@ ThemeData _theme(Brightness brightness) {
     ),
     dialogTheme: DialogThemeData(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      backgroundColor: dark ? const Color(0xff171d22) : Colors.white,
+      backgroundColor: dark ? const Color(0xff1c1c1e) : Colors.white,
     ),
     bottomSheetTheme: BottomSheetThemeData(
       showDragHandle: true,
-      backgroundColor: dark ? const Color(0xff171d22) : Colors.white,
+      backgroundColor: dark ? const Color(0xff1c1c1e) : Colors.white,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),

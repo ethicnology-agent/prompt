@@ -8,6 +8,7 @@ import '../features/home/presentation/home_shell.dart';
 import '../features/settings/settings.dart';
 import 'app_dependencies.dart';
 import 'prompt_theme.dart';
+import 'third_party_licenses.dart';
 
 class PromptApp extends StatefulWidget {
   const PromptApp({
@@ -33,6 +34,7 @@ class _PromptAppState extends State<PromptApp> {
   @override
   void initState() {
     super.initState();
+    registerThirdPartyLicenses();
     _dependencies =
         widget.dependencies ??
         AppDependencies.create(
