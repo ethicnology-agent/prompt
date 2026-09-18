@@ -8,6 +8,7 @@ library;
 
 import '../../../data/remote/opencode_event_service.dart';
 import '../../../data/remote/opencode_session_status_parser.dart';
+import '../../../data/remote/opencode_tool_file_path_parser.dart';
 import 'conversation_message.dart';
 import 'pending_approval.dart';
 import 'session_block_reason.dart';
@@ -287,6 +288,7 @@ MessagePart? _mapMessagePart(Map<String, dynamic> json) {
         tool: tool,
         status: status,
         summary: _toolSummary(tool, state['input']),
+        filePath: parseOpenCodeToolFilePath(tool, state['input']),
         error: state['error'] is String ? state['error'] as String : null,
       );
     default:

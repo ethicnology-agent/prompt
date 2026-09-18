@@ -10,6 +10,20 @@ class Specimen {
 
 final specimens = <Specimen>[
   Specimen(
+    'Code lines',
+    (_) => const SizedBox(
+      height: 320,
+      child: CodeLineViewer(
+        lines: [
+          '// Read-only local specimen',
+          'final greeting = "Hello";',
+          '',
+          'https://example.invalid is literal text',
+        ],
+      ),
+    ),
+  ),
+  Specimen(
     'Selection picker',
     (_) => SizedBox(
       height: 360,

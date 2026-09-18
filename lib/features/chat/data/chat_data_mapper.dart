@@ -27,6 +27,7 @@ ChatMessageDetail mapChatMessageDetail(OpenCodeMessageDetailRecord record) {
       :final output,
       :final error,
       :final presentation,
+      :final filePath,
     ) =>
       ChatToolDetail(
         id: id,
@@ -36,6 +37,7 @@ ChatMessageDetail mapChatMessageDetail(OpenCodeMessageDetailRecord record) {
         output: output,
         error: error,
         presentation: mapToolPresentation(presentation),
+        filePath: filePath,
       ),
   };
 }

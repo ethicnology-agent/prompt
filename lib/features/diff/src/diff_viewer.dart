@@ -6,8 +6,9 @@ import 'diff_model.dart';
 import 'syntax_highlighter.dart';
 
 class DiffViewer extends StatefulWidget {
-  const DiffViewer({required this.document, super.key});
+  const DiffViewer({required this.document, this.header, super.key});
   final DiffDocument document;
+  final Widget? header;
   @override
   State<DiffViewer> createState() => _DiffViewerState();
 }
@@ -29,6 +30,8 @@ class _DiffViewerState extends State<DiffViewer> {
           child: CustomScrollView(
             key: const ValueKey('diff-scroll'),
             slivers: [
+              if (widget.header != null)
+                SliverToBoxAdapter(child: widget.header),
               for (final file in widget.document.files) ...[
                 SliverToBoxAdapter(
                   child: _FileHeader(

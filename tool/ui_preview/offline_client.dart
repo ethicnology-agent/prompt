@@ -10,6 +10,11 @@ class OfflinePreviewClient extends http.BaseClient {
   static const directory = '/fixture/prompt';
   static const sessionId = 'fixture-session';
   static const sessionTitle = 'Build a private coding companion';
+  static const filePath = '/fixture/prompt/lib/example.dart';
+  static const fileContent =
+      '// Synthetic content, not a server file.\nfinal accent = "teal";\n';
+  static const filePatch =
+      '@@ -1 +1 @@\n-final accent = "blue";\n+final accent = "teal";\n';
   static const reply =
       'Fixture reply: your request stayed on this device. '
       'No CLI or remote model was executed.';
@@ -23,6 +28,7 @@ class OfflinePreviewClient extends http.BaseClient {
   var promptAttempts = 0;
   var aborts = 0;
   var permissionReplies = 0;
+  var fileReads = 0;
   String? lastPermissionResponse;
   Map<String, Object?>? _pendingPermission;
   Map<String, Object?>? _permissionAssistant;
@@ -60,6 +66,26 @@ class OfflinePreviewClient extends http.BaseClient {
       },
     });
     _messages.add(assistant);
+    final fileMessage = _message(
+      'fixture-file-message',
+      'assistant',
+      'Open the example file to inspect its read-only content.',
+    );
+    (fileMessage['parts']! as List<Object?>).add({
+      'id': 'fixture-file-tool',
+      'type': 'tool',
+      'tool': 'edit',
+      'state': {
+        'status': 'completed',
+        'input': {
+          'filePath': filePath,
+          'oldString': 'blue',
+          'newString': 'teal',
+        },
+        'output': 'SYNTHETIC: no real file was changed.',
+      },
+    });
+    _messages.add(fileMessage);
   }
 
   Map<String, Object?> _message(String id, String role, String text) => {
@@ -135,6 +161,20 @@ class OfflinePreviewClient extends http.BaseClient {
     }
     final path = request.url.path;
     if (request.method == 'GET') {
+      if (path == '/file/content') {
+        fileReads++;
+        if (request.url.queryParameters['directory'] != directory) {
+          return _json(403, {'error': 'Fixture directory only'});
+        }
+        return switch (request.url.queryParameters['path']) {
+          filePath || 'lib/example.dart' => _json(200, {
+            'type': 'text',
+            'content': fileContent,
+          }),
+          'assets/fixture.bin' => _json(200, {'type': 'binary'}),
+          _ => _json(404, {'error': 'Fixture file unavailable'}),
+        };
+      }
       if (path == '/global/event') {
         return http.StreamedResponse(
           _eventStream(),
@@ -165,7 +205,21 @@ class OfflinePreviewClient extends http.BaseClient {
             'priority': 'medium',
           },
         ]),
-        '/session/$sessionId/diff' => _json(200, []),
+        '/session/$sessionId/diff' => _json(200, [
+          {
+            'file': 'lib/example.dart',
+            'patch': filePatch,
+            'additions': 1,
+            'deletions': 1,
+          },
+          {
+            'file': 'assets/fixture.bin',
+            'patch': '',
+            'additions': 0,
+            'deletions': 0,
+          },
+          {'file': 'missing.txt', 'patch': '', 'additions': 0, 'deletions': 1},
+        ]),
         '/permission' => _json(200, [?_pendingPermission]),
         '/question' || '/command' => _json(200, []),
         '/provider' => _json(200, {

@@ -4,6 +4,7 @@ import 'package:http/http.dart' as http;
 
 import '../../../data/remote/opencode_transport.dart';
 import '../../../data/remote/opencode_session_status_parser.dart';
+import '../../../data/remote/opencode_tool_file_path_parser.dart';
 import '../../connection/connection.dart';
 import '../../sessions/sessions.dart';
 import '../../queue/queue.dart';
@@ -525,6 +526,7 @@ class OpenCodeMessageRecord {
                   ? state['status'] as String
                   : 'pending',
               input: _boundedJson(state['input'], 1600),
+              filePath: parseOpenCodeToolFilePath(tool, state['input']),
               output: _boundedText(state['output'], 6000),
               error: _boundedText(state['error'], 2400),
               presentation: _parseToolPresentation(tool, state),
@@ -958,6 +960,7 @@ class OpenCodeToolRecord extends OpenCodeMessageDetailRecord {
     this.output,
     this.error,
     this.presentation,
+    this.filePath,
   });
 
   final String tool;
@@ -966,6 +969,7 @@ class OpenCodeToolRecord extends OpenCodeMessageDetailRecord {
   final String? output;
   final String? error;
   final OpenCodeToolPresentationRecord? presentation;
+  final String? filePath;
 }
 
 sealed class OpenCodeToolPresentationRecord {

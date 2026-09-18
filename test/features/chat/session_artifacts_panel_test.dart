@@ -4,6 +4,43 @@ import 'package:prompt/features/chat/domain/session_artifacts.dart';
 import 'package:prompt/features/chat/presentation/widgets/session_artifacts_panel.dart';
 
 void main() {
+  for (final state in const <SessionArtifactsState>[
+    SessionArtifactsLoading(),
+    SessionArtifactsError(SessionArtifactsFailure.unavailable),
+  ]) {
+    testWidgets(
+      'lazy artifacts ${state.runtimeType} use the sheet scroll controller',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: DraggableScrollableSheet(
+                initialChildSize: .5,
+                maxChildSize: .95,
+                builder: (context, controller) => SessionArtifactsPanel(
+                  lazy: true,
+                  scrollController: controller,
+                  state: state,
+                  header: const SizedBox(height: 100, child: Text('Execution')),
+                  onRefresh: ({String? messageId}) async {},
+                ),
+              ),
+            ),
+          ),
+        );
+        final viewport = find.byType(CustomScrollView);
+        final initial = tester.getSize(viewport).height;
+        expect(find.byType(Scrollable), findsOneWidget);
+        await tester.drag(
+          find.text('Session artifacts'),
+          const Offset(0, -150),
+        );
+        await tester.pump(const Duration(milliseconds: 300));
+        expect(tester.getSize(viewport).height, greaterThan(initial + 80));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   for (final todoCount in [0, 1, 2]) {
     for (final diffCount in [0, 1, 2]) {
       testWidgets(
