@@ -20,7 +20,11 @@ class OpenCodeCapabilitiesService {
       _get(profile, password, '/command'),
     ]);
     return OpenCodeCapabilitiesRecord(
-      providers: _parseProviders(jsonDecode(responses[0].body)),
+      providers: _parseProviders(
+        jsonDecode(responses[0].body),
+        native:
+            profile.backend.isGateway && profile.backend.engine != 'opencode',
+      ),
       agents: _parseAgents(jsonDecode(responses[1].body)),
       commands: _parseCommandsBestEffort(jsonDecode(responses[2].body)),
     );
@@ -72,6 +76,7 @@ class OpenCodeModelRecord {
     this.releaseDate,
     this.status,
     this.capabilities = const [],
+    this.executionOptions,
   });
 
   final String id;
@@ -81,6 +86,60 @@ class OpenCodeModelRecord {
   final String? releaseDate;
   final String? status;
   final List<String> capabilities;
+  final ModelExecutionOptionsRecord? executionOptions;
+}
+
+class ModelExecutionOptionsRecord {
+  const ModelExecutionOptionsRecord(
+    this.reasoningEfforts,
+    this.defaultReasoningEffortId,
+  );
+  final List<ReasoningEffortChoiceRecord> reasoningEfforts;
+  final String? defaultReasoningEffortId;
+}
+
+class ReasoningEffortChoiceRecord {
+  const ReasoningEffortChoiceRecord(this.id, this.label, this.description);
+  final String id;
+  final String label;
+  final String? description;
+}
+
+ModelExecutionOptionsRecord? _parseExecutionOptions(Object? value) {
+  if (value is! Map<String, dynamic> ||
+      value['version'] != 1 ||
+      value['reasoningEfforts'] is! List) {
+    return null;
+  }
+  final entries = value['reasoningEfforts'] as List;
+  if (entries.isEmpty || entries.length > 32) return null;
+  bool valid(Object? candidate, int maximum) =>
+      candidate is String &&
+      candidate.isNotEmpty &&
+      candidate.length <= maximum &&
+      !RegExp(r'[\x00-\x1f\x7f]').hasMatch(candidate);
+  final choices = <String, ReasoningEffortChoiceRecord>{};
+  for (final entry in entries) {
+    if (entry is! Map<String, dynamic> ||
+        !valid(entry['id'], 128) ||
+        !valid(entry['label'], 128)) {
+      return null;
+    }
+    final description = entry['description'];
+    if (description != null && !valid(description, 512)) return null;
+    final id = entry['id'] as String;
+    if (choices.containsKey(id)) return null;
+    choices[id] = ReasoningEffortChoiceRecord(
+      id,
+      entry['label'] as String,
+      description as String?,
+    );
+  }
+  final defaultId = value['defaultReasoningEffortId'];
+  return ModelExecutionOptionsRecord(
+    List.unmodifiable(choices.values),
+    defaultId is String && choices.containsKey(defaultId) ? defaultId : null,
+  );
 }
 
 class OpenCodeModelPricingRecord {
@@ -148,7 +207,10 @@ class OpenCodeCommandRecord {
   final bool isSubtask;
 }
 
-List<OpenCodeProviderRecord> _parseProviders(Object? value) {
+List<OpenCodeProviderRecord> _parseProviders(
+  Object? value, {
+  required bool native,
+}) {
   if (value is! Map<String, dynamic> ||
       value['all'] is! List ||
       value['connected'] is! List) {
@@ -162,12 +224,16 @@ List<OpenCodeProviderRecord> _parseProviders(Object? value) {
   final providers = value['all'] as List;
   return providers
       .map<OpenCodeProviderRecord>(
-        (provider) => _parseProvider(provider, connectedIds),
+        (provider) => _parseProvider(provider, connectedIds, native: native),
       )
       .toList(growable: false);
 }
 
-OpenCodeProviderRecord _parseProvider(Object? value, Set<String> connectedIds) {
+OpenCodeProviderRecord _parseProvider(
+  Object? value,
+  Set<String> connectedIds, {
+  required bool native,
+}) {
   if (value is! Map<String, dynamic> ||
       value['id'] is! String ||
       value['models'] is! Map<String, dynamic>) {
@@ -179,12 +245,16 @@ OpenCodeProviderRecord _parseProvider(Object? value, Set<String> connectedIds) {
     id: id,
     isConnected: connectedIds.contains(id),
     models: models.entries
-        .map((entry) => _parseModel(entry.key, entry.value))
+        .map((entry) => _parseModel(entry.key, entry.value, native: native))
         .toList(growable: false),
   );
 }
 
-OpenCodeModelRecord _parseModel(String id, Object? value) {
+OpenCodeModelRecord _parseModel(
+  String id,
+  Object? value, {
+  required bool native,
+}) {
   if (value is! Map<String, dynamic> || value['name'] is! String) {
     throw const FormatException('Model is malformed.');
   }
@@ -198,6 +268,9 @@ OpenCodeModelRecord _parseModel(String id, Object? value) {
         : null,
     status: value['status'] is String ? value['status'] as String : null,
     capabilities: _parseStrings(value['capabilities']),
+    executionOptions: native && id != 'default'
+        ? _parseExecutionOptions(value['executionOptions'])
+        : null,
   );
 }
 

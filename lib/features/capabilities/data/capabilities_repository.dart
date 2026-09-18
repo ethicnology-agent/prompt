@@ -61,6 +61,21 @@ class CapabilitiesRepository {
                   releaseDate: model.releaseDate,
                   status: model.status,
                   capabilities: model.capabilities,
+                  executionOptions: model.executionOptions == null
+                      ? null
+                      : ModelExecutionOptions(
+                          reasoningEfforts: List.unmodifiable(
+                            model.executionOptions!.reasoningEfforts.map(
+                              (choice) => ReasoningEffortChoice(
+                                id: choice.id,
+                                label: choice.label,
+                                description: choice.description,
+                              ),
+                            ),
+                          ),
+                          defaultReasoningEffortId:
+                              model.executionOptions!.defaultReasoningEffortId,
+                        ),
                 ),
           ],
           agents: record.agents.map(_toAgent).toList(growable: false),

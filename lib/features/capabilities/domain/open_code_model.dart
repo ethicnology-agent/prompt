@@ -9,6 +9,7 @@ class OpenCodeModel {
     this.releaseDate,
     this.status,
     this.capabilities = const [],
+    this.executionOptions,
   });
 
   final String providerId;
@@ -20,6 +21,7 @@ class OpenCodeModel {
   final String? releaseDate;
   final String? status;
   final List<String> capabilities;
+  final ModelExecutionOptions? executionOptions;
 
   @override
   bool operator ==(Object other) =>
@@ -32,6 +34,7 @@ class OpenCodeModel {
       limits == other.limits &&
       releaseDate == other.releaseDate &&
       status == other.status &&
+      executionOptions == other.executionOptions &&
       _listEquals(capabilities, other.capabilities);
 
   @override
@@ -44,8 +47,47 @@ class OpenCodeModel {
     limits,
     releaseDate,
     status,
+    executionOptions,
     Object.hashAll(capabilities),
   );
+}
+
+/// Choices reported by the selected native engine, never a global enum.
+class ModelExecutionOptions {
+  const ModelExecutionOptions({
+    required this.reasoningEfforts,
+    this.defaultReasoningEffortId,
+  });
+  final List<ReasoningEffortChoice> reasoningEfforts;
+  final String? defaultReasoningEffortId;
+  bool supports(String id) => reasoningEfforts.any((choice) => choice.id == id);
+  @override
+  bool operator ==(Object other) =>
+      other is ModelExecutionOptions &&
+      defaultReasoningEffortId == other.defaultReasoningEffortId &&
+      _listEquals(reasoningEfforts, other.reasoningEfforts);
+  @override
+  int get hashCode =>
+      Object.hash(defaultReasoningEffortId, Object.hashAll(reasoningEfforts));
+}
+
+class ReasoningEffortChoice {
+  const ReasoningEffortChoice({
+    required this.id,
+    required this.label,
+    this.description,
+  });
+  final String id;
+  final String label;
+  final String? description;
+  @override
+  bool operator ==(Object other) =>
+      other is ReasoningEffortChoice &&
+      id == other.id &&
+      label == other.label &&
+      description == other.description;
+  @override
+  int get hashCode => Object.hash(id, label, description);
 }
 
 class OpenCodeModelPricing {

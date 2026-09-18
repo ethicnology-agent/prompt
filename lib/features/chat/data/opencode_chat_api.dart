@@ -131,6 +131,20 @@ class OpenCodeChatApi {
     List<QueuedAttachment> attachments = const <QueuedAttachment>[],
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
   }) async {
+    final effort = executionOptions.reasoningEffort;
+    if (effort != null &&
+        (!profile.backend.isGateway ||
+            profile.backend.engine == 'opencode' ||
+            executionOptions.modelProviderId != profile.backend.engine ||
+            executionOptions.modelId == null ||
+            executionOptions.modelId == 'default' ||
+            effort.isEmpty ||
+            effort.length > 128 ||
+            RegExp(r'[\x00-\x1f\x7f]').hasMatch(effort))) {
+      throw const FormatException(
+        'Reasoning effort requires an explicit native model.',
+      );
+    }
     final query = Uri(queryParameters: {'directory': session.directory}).query;
     final response = await _transport.post(
       profile,
@@ -163,6 +177,7 @@ class OpenCodeChatApi {
           },
         if (executionOptions.agentName != null)
           'agent': executionOptions.agentName,
+        'reasoningEffort': ?effort,
       }),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -179,6 +194,11 @@ class OpenCodeChatApi {
     String arguments, {
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
   }) async {
+    if (executionOptions.reasoningEffort != null) {
+      throw const FormatException(
+        'Native reasoning effort is not an OpenCode command variant.',
+      );
+    }
     final query = Uri(queryParameters: {'directory': session.directory}).query;
     final response = await _transport.post(
       profile,
