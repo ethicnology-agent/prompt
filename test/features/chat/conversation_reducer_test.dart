@@ -17,6 +17,75 @@ OpenCodeEventEnvelope _envelope(String type, Map<String, dynamic> properties) {
 void main() {
   const sessionId = 'ses_1';
 
+  test(
+    'permission reply clears only matching detail and preserves execution block',
+    () {
+      const state = ConversationState(
+        sessionStates: {sessionId: SessionBusy()},
+        sessionBlocks: {sessionId: SessionBlockReason.permission},
+        pendingApprovals: {
+          sessionId: PendingPermissionApproval(
+            sessionId: sessionId,
+            permissionId: 'request',
+            toolType: 'bash',
+            title: 'Approve',
+          ),
+        },
+      );
+      final event = mapConversationEvent(
+        _envelope('permission.replied', {
+          'sessionID': sessionId,
+          'requestID': 'request',
+        }),
+        sessionId: sessionId,
+      );
+      expect(event, isNotNull);
+      expect(event, isA<PermissionRepliedEvent>());
+      final next = reduceConversationEvent(state, event!);
+      expect(next.pendingApprovals, isEmpty);
+      expect(next.sessionBlocks, same(state.sessionBlocks));
+      expect(next.sessionStates, same(state.sessionStates));
+      final unrelated = mapConversationEvent(
+        _envelope('permission.replied', {
+          'sessionID': sessionId,
+          'requestID': 'other',
+        }),
+        sessionId: sessionId,
+      )!;
+      expect(reduceConversationEvent(state, unrelated), same(state));
+      final question = state.copyWith(
+        pendingApprovals: const {
+          sessionId: PendingQuestionApproval(
+            sessionId: sessionId,
+            requestId: 'request',
+            questions: [],
+          ),
+        },
+      );
+      expect(reduceConversationEvent(question, event), same(question));
+      expect(
+        mapConversationEvent(
+          _envelope('permission.replied', {
+            'sessionID': 'wrong',
+            'requestID': 'request',
+          }),
+          sessionId: sessionId,
+        ),
+        isNull,
+      );
+      expect(
+        mapConversationEvent(
+          _envelope('permission.replied', {
+            'sessionID': sessionId,
+            'requestID': '',
+          }),
+          sessionId: sessionId,
+        ),
+        isNull,
+      );
+    },
+  );
+
   group('message.updated', () {
     test('creates a new message with no parts', () {
       const state = ConversationState();

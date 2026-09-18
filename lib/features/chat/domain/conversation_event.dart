@@ -104,10 +104,8 @@ final class SessionIdleEvent extends ConversationEvent {
 /// must only ever show [detail] to the human being asked to approve it,
 /// never log or persist it.
 ///
-/// `permission.replied`/`question.replied`/`question.rejected` are
-/// intentionally not modeled here: resuming a blocked queue is only ever
-/// confirmed by an authoritative `session.status`/`session.idle` event,
-/// never by a reply alone.
+/// A permission reply retires its presentation detail only. Resuming a
+/// blocked queue still requires an authoritative session status/idle event.
 final class SessionBlockedEvent extends ConversationEvent {
   const SessionBlockedEvent({
     required this.sessionId,
@@ -119,6 +117,18 @@ final class SessionBlockedEvent extends ConversationEvent {
   final String sessionId;
   final SessionBlockReason reason;
   final PendingApproval? detail;
+}
+
+/// A decision or expiration resolved this specific permission. This is not
+/// evidence that the generation is idle or that queued work may resume.
+final class PermissionRepliedEvent extends ConversationEvent {
+  const PermissionRepliedEvent({
+    required this.sessionId,
+    required this.requestId,
+  });
+  @override
+  final String sessionId;
+  final String requestId;
 }
 
 /// Maps [envelope] to a [ConversationEvent] scoped to [sessionId].
@@ -157,6 +167,19 @@ ConversationEvent? mapConversationEvent(
       return _mapSessionIdle(properties, sessionId);
     case 'permission.updated':
       return _mapPermissionUpdated(properties, sessionId);
+    case 'permission.asked':
+      return _mapPermissionAsked(properties, sessionId);
+    case 'permission.replied':
+      final eventSession = properties['sessionID'];
+      final request = properties['requestID'];
+      if (eventSession != sessionId ||
+          request is! String ||
+          request.isEmpty ||
+          request.length > 256 ||
+          RegExp(r'[\x00-\x1f\x7f]').hasMatch(request)) {
+        return null;
+      }
+      return PermissionRepliedEvent(sessionId: sessionId, requestId: request);
     case 'question.asked':
       return _mapQuestionAsked(properties, sessionId);
     default:
@@ -171,8 +194,20 @@ PendingApproval? mapPendingPermission(
   Map<String, dynamic> json, {
   required String sessionId,
 }) {
-  final event = _mapPermissionUpdated(json, sessionId);
-  return event is SessionBlockedEvent ? event.detail : null;
+  if (json['sessionID'] != sessionId) return null;
+  // Native gateway records retain the complete legacy type/title contract
+  // while also carrying the underlying protocol method as `permission`.
+  final legacy = json['type'] is String && json['title'] is String;
+  final event = !legacy && json.containsKey('permission')
+      ? _mapPermissionAsked(json, sessionId)
+      : _mapPermissionUpdated(json, sessionId);
+  final detail = event is SessionBlockedEvent ? event.detail : null;
+  if (detail == null) {
+    // An undecodable active request must not look like an empty authoritative
+    // list: that would release durable permission-paused queue entries.
+    throw const FormatException('Pending permission is malformed.');
+  }
+  return detail;
 }
 
 /// Maps one record returned by `GET /question` for [sessionId].
@@ -387,6 +422,68 @@ ConversationEvent? _mapSessionIdle(
     return null;
   }
   return SessionIdleEvent(sessionId: eventSessionId);
+}
+
+/// Modern OpenCode v1 PermissionRequest (1.18.31). Keep malformed active
+/// events blocked even when there is insufficient detail for an action.
+ConversationEvent? _mapPermissionAsked(
+  Map<String, dynamic> properties,
+  String sessionId,
+) {
+  if (properties['sessionID'] != sessionId) return null;
+  PendingPermissionApproval? detail;
+  final id = _permissionText(properties['id'], limit: 256);
+  final permission = _permissionText(properties['permission'], limit: 128);
+  final patterns = _permissionPatterns(properties['patterns']);
+  final always = _permissionPatterns(properties['always']);
+  final metadata = properties['metadata'];
+  if (id != null &&
+      permission != null &&
+      patterns != null &&
+      patterns.isNotEmpty &&
+      always != null &&
+      metadata is Map<String, dynamic>) {
+    detail = PendingPermissionApproval(
+      sessionId: sessionId,
+      permissionId: id,
+      toolType: permission,
+      title: _permissionText(metadata['command']) ?? patterns.join('\n'),
+      patterns: patterns,
+      alwaysPatterns: always,
+      ruleScope: PermissionRuleScope.directoryInstance,
+      workingDirectory:
+          _permissionText(metadata['cwd']) ??
+          _permissionText(metadata['workdir']),
+      reason:
+          _permissionText(metadata['reason']) ??
+          _permissionText(metadata['description']),
+    );
+  }
+  return SessionBlockedEvent(
+    sessionId: sessionId,
+    reason: SessionBlockReason.permission,
+    detail: detail,
+  );
+}
+
+String? _permissionText(Object? value, {int limit = 65536}) =>
+    value is String &&
+        value.trim().isNotEmpty &&
+        value.length <= limit &&
+        !value.contains('\u0000')
+    ? value
+    : null;
+
+List<String>? _permissionPatterns(Object? value) {
+  if (value is! List || value.length > 128) return null;
+  final result = <String>[];
+  var length = 0;
+  for (final entry in value) {
+    final text = _permissionText(entry);
+    if (text == null || (length += text.length) > 65536) return null;
+    result.add(text);
+  }
+  return List.unmodifiable(result);
 }
 
 /// `permission.updated`'s `properties` is the OpenCode `Permission` object

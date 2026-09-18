@@ -675,7 +675,6 @@ void main() {
         'session.error',
         'session.compacted',
         'file.edited',
-        'permission.replied',
         'question.replied',
         'question.rejected',
         'installation.updated',

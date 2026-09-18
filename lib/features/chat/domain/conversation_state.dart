@@ -31,7 +31,7 @@ class ConversationState {
 
   /// Sessions with a pending permission or question, keyed by session id.
   /// A session present here is not present because it has been resolved
-  /// (`permission.replied` is not reduced); an entry is only ever removed
+  /// (`permission.replied` only retires presentation); an entry is only removed
   /// when a fresh `session.status`/`session.idle` event authoritatively
   /// confirms the session moved past it.
   final Map<String, SessionBlockReason> sessionBlocks;
@@ -85,6 +85,14 @@ ConversationState reduceConversationEvent(
       return _reduceSessionIdle(state, event);
     case SessionBlockedEvent():
       return _reduceSessionBlocked(state, event);
+    case PermissionRepliedEvent():
+      final approval = state.pendingApprovals[event.sessionId];
+      if (approval is! PendingPermissionApproval ||
+          approval.sessionId != event.sessionId ||
+          approval.permissionId != event.requestId) {
+        return state;
+      }
+      return clearPendingApproval(state, event.sessionId);
   }
 }
 

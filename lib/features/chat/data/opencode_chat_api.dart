@@ -354,6 +354,12 @@ class OpenCodeChatApi {
         'Pending permission and question responses must be lists.',
       );
     }
+    for (final permission in permissions) {
+      if (permission is! Map<String, dynamic> ||
+          permission['sessionID'] is! String) {
+        throw const FormatException('Pending permission is malformed.');
+      }
+    }
     return [
       ...permissions
           .whereType<Map<String, dynamic>>()

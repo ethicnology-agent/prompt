@@ -24,11 +24,15 @@ class ApprovalDock extends StatefulWidget {
     required this.onReplyToQuestion,
     required this.onRejectQuestion,
     this.allowAlways = true,
+    this.directory,
+    this.maxHeight,
     super.key,
   });
 
   final PendingApproval approval;
   final bool allowAlways;
+  final String? directory;
+  final double? maxHeight;
   final Future<bool> Function(String permissionId, PermissionResponse response)
   onRespondToPermission;
   final Future<bool> Function(String requestId, List<List<String>> answers)
@@ -41,9 +45,17 @@ class ApprovalDock extends StatefulWidget {
 
 class ApprovalDockState extends State<ApprovalDock> {
   bool _submitting = false;
+  final _decisionScroll = ScrollController();
+  final _detailsScroll = ScrollController();
   final Map<int, Set<String>> _selectedOptions = <int, Set<String>>{};
   final Map<int, TextEditingController> _customControllers =
       <int, TextEditingController>{};
+
+  bool _canAlways(PendingPermissionApproval approval) =>
+      widget.allowAlways &&
+      approval.hasKnownAlwaysScope &&
+      widget.directory != null &&
+      widget.directory!.trim().isNotEmpty;
 
   @override
   void initState() {
@@ -53,6 +65,8 @@ class ApprovalDockState extends State<ApprovalDock> {
 
   @override
   void dispose() {
+    _decisionScroll.dispose();
+    _detailsScroll.dispose();
     for (final controller in _customControllers.values) {
       controller.dispose();
     }
@@ -100,18 +114,16 @@ class ApprovalDockState extends State<ApprovalDock> {
         ),
         child: ConstrainedBox(
           constraints: BoxConstraints(
-            maxHeight: MediaQuery.sizeOf(context).height * 0.46,
+            maxHeight:
+                widget.maxHeight ?? MediaQuery.sizeOf(context).height * 0.46,
           ),
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(16),
-            child: switch (approval) {
-              PendingPermissionApproval() => _buildPermission(
-                context,
-                approval,
-              ),
-              PendingQuestionApproval() => _buildQuestions(context, approval),
-            },
-          ),
+          child: switch (approval) {
+            PendingPermissionApproval() => _buildPermission(context, approval),
+            PendingQuestionApproval() => SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: _buildQuestions(context, approval),
+            ),
+          },
         ),
       ),
     );
@@ -122,54 +134,149 @@ class ApprovalDockState extends State<ApprovalDock> {
     PendingPermissionApproval approval,
   ) {
     final theme = Theme.of(context);
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Text(
-          'Approval needed: ${approval.toolType}',
-          style: theme.textTheme.titleSmall,
-        ),
-        const SizedBox(height: 4),
-        Text(approval.title),
-        const SizedBox(height: 12),
-        Wrap(
-          spacing: 8,
-          runSpacing: 8,
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final compact =
+            constraints.maxHeight <
+            MediaQuery.textScalerOf(context).scale(120) + 48;
+        Widget decision(
+          String label,
+          PermissionResponse response,
+          AppButtonVariant variant,
+        ) => AppButton(
+          label: label,
+          variant: variant,
+          autofocus: response == PermissionResponse.reject,
+          onPressed: _submitting
+              ? null
+              : () => _respondToPermission(approval.permissionId, response),
+        );
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
-            AppButton(
-              label: 'Allow once',
-              onPressed: _submitting
-                  ? null
-                  : () => _respondToPermission(
-                      approval.permissionId,
-                      PermissionResponse.once,
+            Flexible(
+              child: Semantics(
+                container: true,
+                explicitChildNodes: true,
+                label: 'Permission request details',
+                hint: 'Scroll vertically to read the complete request',
+                child: Scrollbar(
+                  controller: _detailsScroll,
+                  thumbVisibility: true,
+                  child: SingleChildScrollView(
+                    controller: _detailsScroll,
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'Approval needed: ${approval.toolType}',
+                          style: theme.textTheme.titleSmall,
+                        ),
+                        const SizedBox(height: 4),
+                        SelectableText(approval.title),
+                        if (approval.patterns.isNotEmpty) ...[
+                          const SizedBox(height: 8),
+                          const Text('Requested patterns'),
+                          SelectableText(approval.patterns.join('\n')),
+                        ],
+                        if (approval.workingDirectory case final directory?)
+                          SelectableText('Working directory: $directory'),
+                        if (approval.reason case final reason?)
+                          SelectableText('Reason: $reason'),
+                      ],
                     ),
-            ),
-            if (widget.allowAlways)
-              AppButton(
-                label: 'Always allow',
-                variant: AppButtonVariant.secondary,
-                onPressed: _submitting
-                    ? null
-                    : () => _respondToPermission(
-                        approval.permissionId,
-                        PermissionResponse.always,
-                      ),
+                  ),
+                ),
               ),
-            AppButton(
-              label: 'Deny',
-              variant: AppButtonVariant.tertiary,
-              onPressed: _submitting
-                  ? null
-                  : () => _respondToPermission(
-                      approval.permissionId,
-                      PermissionResponse.reject,
+            ),
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+              child: compact
+                  ? Semantics(
+                      hint: 'Scroll horizontally for more permission options',
+                      child: Scrollbar(
+                        controller: _decisionScroll,
+                        thumbVisibility: true,
+                        child: SingleChildScrollView(
+                          key: const ValueKey('approval-decisions-scroll'),
+                          controller: _decisionScroll,
+                          padding: const EdgeInsets.only(bottom: 8),
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            children: [
+                              decision(
+                                'Deny',
+                                PermissionResponse.reject,
+                                AppButtonVariant.tertiary,
+                              ),
+                              decision(
+                                'Allow once',
+                                PermissionResponse.once,
+                                AppButtonVariant.primary,
+                              ),
+                              if (_canAlways(approval))
+                                decision(
+                                  'Always allow',
+                                  PermissionResponse.always,
+                                  AppButtonVariant.secondary,
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        Row(
+                          children: [
+                            Expanded(
+                              child: AppButton(
+                                label: 'Allow once',
+                                onPressed: _submitting
+                                    ? null
+                                    : () => _respondToPermission(
+                                        approval.permissionId,
+                                        PermissionResponse.once,
+                                      ),
+                              ),
+                            ),
+                            Expanded(
+                              child: AppButton(
+                                label: 'Deny',
+                                autofocus: true,
+                                variant: AppButtonVariant.tertiary,
+                                onPressed: _submitting
+                                    ? null
+                                    : () => _respondToPermission(
+                                        approval.permissionId,
+                                        PermissionResponse.reject,
+                                      ),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (_canAlways(approval))
+                          AppButton(
+                            label: 'Always allow',
+                            variant: AppButtonVariant.secondary,
+                            onPressed: _submitting
+                                ? null
+                                : () => _respondToPermission(
+                                    approval.permissionId,
+                                    PermissionResponse.always,
+                                  ),
+                          ),
+                      ],
                     ),
             ),
           ],
-        ),
-      ],
+        );
+      },
     );
   }
 
@@ -177,7 +284,64 @@ class ApprovalDockState extends State<ApprovalDock> {
     String permissionId,
     PermissionResponse response,
   ) async {
+    final approval = widget.approval;
+    if (_submitting ||
+        approval is! PendingPermissionApproval ||
+        approval.permissionId != permissionId) {
+      return;
+    }
     setState(() => _submitting = true);
+    if (response == PermissionResponse.always) {
+      if (!_canAlways(approval)) {
+        setState(() => _submitting = false);
+        return;
+      }
+      final directory = widget.directory;
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (dialogContext) => AppDialog(
+          title: const Text('Allow matching requests across sessions?'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text(
+                  'This can allow future matching requests in other '
+                  'sessions for this directory. It is not limited to this '
+                  'session. The server controls how long these rules remain.',
+                ),
+                const SizedBox(height: 12),
+                SelectableText('Directory: $directory'),
+                SelectableText('Permission: ${approval.toolType}'),
+                const Text('Reusable patterns'),
+                SelectableText(approval.alwaysPatterns.join('\n')),
+              ],
+            ),
+          ),
+          actions: [
+            AppButton(
+              label: 'Cancel',
+              autofocus: true,
+              variant: AppButtonVariant.tertiary,
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+            ),
+            AppButton(
+              label: 'Confirm always allow',
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+            ),
+          ],
+        ),
+      );
+      if (!mounted) return;
+      if (confirmed != true ||
+          !identical(widget.approval, approval) ||
+          widget.directory != directory ||
+          !_canAlways(approval)) {
+        setState(() => _submitting = false);
+        return;
+      }
+    }
     final succeeded = await widget.onRespondToPermission(
       permissionId,
       response,

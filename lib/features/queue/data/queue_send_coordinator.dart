@@ -895,8 +895,10 @@ class QueueSendCoordinator {
     bool resumeWhenEmpty = true,
     String? excludedApprovalId,
   }) async {
+    final approvalRevision = _chatRepository.approvalRevision;
     final result = await _chatRepository.pendingApprovals(profile, session);
-    if (_isStale(token)) {
+    if (_isStale(token) ||
+        approvalRevision != _chatRepository.approvalRevision) {
       return;
     }
     switch (result) {

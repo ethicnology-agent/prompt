@@ -9,9 +9,8 @@
 /// authoritative `session.status`/`session.idle` rule, exactly as before
 /// this type existed.
 ///
-/// A [PendingApproval] is reduced only from a live SSE event
-/// (`permission.updated` or `question.asked`) received while a session is
-/// activated; it is never fetched, reconciled, or cached beyond that
+/// A [PendingApproval] is reconciled from live SSE events and pending-request
+/// REST snapshots while a session is activated. It is never cached beyond that
 /// activation, and it is never written to Drift, a log, or a diagnostic
 /// export. [PendingPermissionApproval.title] and every [QuestionPrompt]
 /// field may describe a sensitive command, path, or question the agent
@@ -26,26 +25,46 @@ sealed class PendingApproval {
   final String sessionId;
 }
 
-/// A pending tool-call permission, reduced from a `permission.updated` SSE
-/// event's `Permission` payload.
+/// Known scope of OpenCode's suggested reusable permission rules. This is not
+/// a session-only grant. The server controls the lifetime of these rules.
+enum PermissionRuleScope { directoryInstance }
+
+/// A pending tool-call permission, from either legacy `permission.updated`
+/// or modern `permission.asked` / pending-request REST data.
 final class PendingPermissionApproval extends PendingApproval {
   const PendingPermissionApproval({
     required super.sessionId,
     required this.permissionId,
     required this.toolType,
     required this.title,
+    this.patterns = const [],
+    this.alwaysPatterns = const [],
+    this.ruleScope,
+    this.workingDirectory,
+    this.reason,
   });
 
   /// OpenCode's `Permission.id`, required to respond via `POST
   /// /session/{id}/permissions/{permissionID}`.
   final String permissionId;
 
-  /// OpenCode's `Permission.type` (for example `bash`, `edit`, `webfetch`).
+  /// Legacy `type` or modern `permission` (for example `bash`, `edit`).
   final String toolType;
 
-  /// OpenCode's `Permission.title`: the only human-readable summary the
-  /// server provides. May describe a sensitive command or path.
+  /// Legacy title or modern exact command / requested patterns. May describe
+  /// a sensitive command or path.
   final String title;
+
+  /// Exact requested targets and the potentially broader reusable rules.
+  final List<String> patterns;
+  final List<String> alwaysPatterns;
+  final PermissionRuleScope? ruleScope;
+  final String? workingDirectory;
+  final String? reason;
+
+  bool get hasKnownAlwaysScope =>
+      ruleScope == PermissionRuleScope.directoryInstance &&
+      alwaysPatterns.isNotEmpty;
 }
 
 /// One selectable choice within a [QuestionPrompt].

@@ -12,11 +12,15 @@ import 'package:prompt/features/chat/data/opencode_chat_service.dart';
 import 'package:prompt/features/chat/domain/chat_load_result.dart';
 import 'package:prompt/features/chat/domain/chat_message.dart';
 import 'package:prompt/features/chat/domain/conversation_event.dart';
+import 'package:prompt/features/chat/domain/pending_approval.dart';
+import 'package:prompt/features/chat/domain/session_block_reason.dart';
+import 'package:prompt/data/remote/opencode_event_service.dart';
 import 'package:prompt/features/chat/domain/conversation_message.dart';
 import 'package:prompt/features/chat/domain/permission_response.dart';
 import 'package:prompt/features/chat/domain/session_execution_state.dart';
 import 'package:prompt/features/chat/domain/session_artifacts.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/queue/domain/prompt_execution_options.dart';
 import 'package:prompt/features/sessions/domain/open_code_session.dart';
 
@@ -32,6 +36,47 @@ void main() {
     title: 'A session',
     createdAt: DateTime.fromMillisecondsSinceEpoch(1000),
     updatedAt: DateTime.fromMillisecondsSinceEpoch(2000),
+  );
+
+  test(
+    'permission reply replays over an in-flight transcript REST snapshot',
+    () async {
+      final response = Completer<http.Response>();
+      final client = MockClient((_) => response.future);
+      final repository = ChatRepository(
+        OpenCodeChatService(OpenCodeTransport(client)),
+        const _PasswordStore('synthetic'),
+      );
+      repository.activateConversation(session);
+      repository.applySessionState(session.id, const SessionBusy());
+      repository.applyBlocked(
+        session.id,
+        PendingPermissionApproval(
+          sessionId: session.id,
+          permissionId: 'request',
+          toolType: 'bash',
+          title: 'Approve',
+        ),
+      );
+      final load = repository.load(profile, session);
+      repository.applyEnvelope(
+        OpenCodeEventEnvelope(
+          directory: session.directory,
+          payload: {
+            'type': 'permission.replied',
+            'properties': {'sessionID': session.id, 'requestID': 'request'},
+          },
+        ),
+        session,
+      );
+      response.complete(http.Response('[]', 200));
+      await load;
+      final state = repository.conversationStateUpdates.value;
+      expect(state.pendingApprovals, isEmpty);
+      expect(state.sessionBlocks[session.id], SessionBlockReason.permission);
+      expect(state.sessionStates[session.id], isA<SessionBusy>());
+      client.close();
+    },
   );
 
   test('maps text parts from user and assistant messages', () async {
@@ -1163,6 +1208,29 @@ void main() {
   });
 
   group('sessionStatus', () {
+    for (final backend in AgentBackend.values) {
+      test('missing status respects ${backend.name} contract', () async {
+        final client = MockClient((_) async => http.Response('{}', 200));
+        addTearDown(client.close);
+        final repository = ChatRepository(
+          OpenCodeChatService(OpenCodeTransport(client)),
+          const _PasswordStore('synthetic'),
+        );
+        final active = ServerProfile(
+          origin: profile.origin,
+          username: profile.username,
+          backend: backend,
+        );
+        final result = await repository.sessionStatus(active, session);
+        final native =
+            backend == AgentBackend.gatewayClaude ||
+            backend == AgentBackend.gatewayCodex;
+        expect(
+          (result as Ok<SessionExecutionState, ChatFailure>).value,
+          native ? isA<SessionExecutionUnknown>() : isA<SessionIdle>(),
+        );
+      });
+    }
     test('maps this session\'s entry from the status response', () async {
       final client = MockClient((request) async {
         expect(request.method, 'GET');

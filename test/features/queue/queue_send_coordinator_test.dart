@@ -21,6 +21,7 @@ import 'package:prompt/features/chat/domain/permission_response.dart';
 import 'package:prompt/features/chat/domain/session_block_reason.dart';
 import 'package:prompt/features/chat/domain/session_execution_state.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/queue/data/queue_prompts_dao.dart';
 import 'package:prompt/features/queue/data/queue_prompts_repository.dart';
 import 'package:prompt/features/queue/data/queue_send_coordinator.dart';
@@ -61,6 +62,7 @@ class _StaticPasswordStore implements CredentialsStore {
 /// real server.
 class _ScriptedChatBackend {
   String sessionStatusType = 'idle';
+  bool sessionMissing = false;
   int promptAsyncStatusCode = 204;
   int abortStatusCode = 200;
   bool abortReturnValue = true;
@@ -91,12 +93,17 @@ class _ScriptedChatBackend {
   String? lastPermissionResponse;
   List<List<String>>? lastQuestionAnswers;
   List<Map<String, dynamic>> pendingPermissions = <Map<String, dynamic>>[];
+  Completer<void>? permissionListGate;
+  int permissionListCallCount = 0;
   List<Map<String, dynamic>> pendingQuestions = <Map<String, dynamic>>[];
 
   late final http.Client client = MockClient(_handle);
 
   Future<http.Response> _handle(http.Request request) async {
-    final path = request.url.path;
+    final path = request.url.path.replaceFirst(
+      RegExp(r'^/prompt/(claude|codex|opencode)'),
+      '',
+    );
     if (path.endsWith('/message')) return http.Response('[]', 200);
     if (path.endsWith('/prompt_async')) {
       promptAsyncCallCount++;
@@ -124,7 +131,10 @@ class _ScriptedChatBackend {
       return http.Response(jsonEncode(true), permissionResponseStatusCode);
     }
     if (path == '/permission') {
-      return http.Response(jsonEncode(pendingPermissions), 200);
+      permissionListCallCount++;
+      final snapshot = jsonEncode(pendingPermissions);
+      await permissionListGate?.future;
+      return http.Response(snapshot, 200);
     }
     if (path == '/question') {
       return http.Response(jsonEncode(pendingQuestions), 200);
@@ -149,7 +159,7 @@ class _ScriptedChatBackend {
       }
       return http.Response(
         jsonEncode({
-          'session-1': {'type': sessionStatusType},
+          if (!sessionMissing) 'session-1': {'type': sessionStatusType},
         }),
         200,
       );
@@ -400,6 +410,44 @@ void main() {
     await eventClient.close();
     await database.close();
   });
+
+  for (final engine in [
+    AgentBackend.gatewayClaude,
+    AgentBackend.gatewayCodex,
+  ]) {
+    test(
+      'native restart ${engine.name} never dispatches a queued prompt to a missing session',
+      () async {
+        final native = ServerProfile(
+          origin: profile.origin,
+          username: profile.username,
+          backend: engine,
+        );
+        backend.sessionStatusType = 'busy';
+        await coordinator.activate(profile: native, session: session);
+        await _settle();
+        expect(coordinator.currentSessionState, isA<SessionBusy>());
+        await queueRepository.enqueue(
+          profile: native,
+          session: session,
+          promptText: 'Must remain queued',
+        );
+        await _settle();
+        expect(backend.promptAsyncCallCount, 0);
+        coordinator.notifyAppInactive();
+        backend.sessionMissing = true;
+        coordinator.notifyAppForeground();
+        await _settle(ticks: 100);
+        expect(coordinator.currentSessionState, isA<SessionExecutionUnknown>());
+        expect(backend.sessionStatusCallCount, greaterThan(1));
+        expect(backend.promptAsyncCallCount, 0);
+        final queue = await queueRepository
+            .watchQueue(profile: native, session: session)
+            .first;
+        expect(queue.single.state, QueuedPromptState.queued);
+      },
+    );
+  }
 
   Future<QueuedPrompt> enqueue(
     String text, {
@@ -753,6 +801,54 @@ void main() {
   });
 
   group('permission/question blocking', () {
+    test(
+      'reply invalidates an older pending-permissions snapshot without dispatch',
+      () async {
+        backend.sessionStatusType = 'busy';
+        await coordinator.activate(profile: profile, session: session);
+        await _settle();
+        await enqueue('queued');
+        eventClient.emit('permission.updated', {
+          'id': 'first',
+          'type': 'bash',
+          'sessionID': session.id,
+          'title': 'Approve',
+        });
+        await _settle();
+        backend.pendingPermissions = [
+          {
+            'id': 'second',
+            'type': 'bash',
+            'sessionID': session.id,
+            'title': 'Stale approval',
+          },
+        ];
+        backend.permissionListGate = Completer<void>();
+        final count = backend.permissionListCallCount;
+        final reply = coordinator.respondToPermission(
+          'first',
+          PermissionResponse.reject,
+        );
+        await _settle();
+        expect(backend.permissionListCallCount, greaterThan(count));
+        eventClient.emit('permission.replied', {
+          'sessionID': session.id,
+          'requestID': 'second',
+          'response': 'reject',
+        });
+        await _settle();
+        backend.permissionListGate!.complete();
+        await reply;
+        await _settle();
+        expect(coordinator.currentPendingApproval, isNull);
+        expect(
+          coordinator.currentSessionBlockReason,
+          SessionBlockReason.permission,
+        );
+        expect((await currentQueue()).single.state, QueuedPromptState.paused);
+        expect(backend.promptAsyncCallCount, 0);
+      },
+    );
     test('orders a delayed pause before an unblock can resume it', () async {
       final pauseGate = Completer<void>();
       final delayedDao = _DelayedPauseDao(
@@ -794,61 +890,72 @@ void main() {
       expect(delayedDao.operations, ['pause-start', 'pause-done', 'queued']);
     });
 
-    test('a pending permission pauses the queued prompt, blocks dispatch, and '
-        'only resumes on an authoritative session.idle event', () async {
-      backend.sessionStatusType = 'busy';
-      await coordinator.activate(profile: profile, session: session);
-      await _settle();
+    for (final modern in [false, true]) {
+      test(
+        'a pending permission (modern=$modern) pauses the queued prompt, blocks dispatch, and '
+        'only resumes on an authoritative session.idle event',
+        () async {
+          backend.sessionStatusType = 'busy';
+          await coordinator.activate(profile: profile, session: session);
+          await _settle();
 
-      final prompt = await enqueue('first');
-      await _settle();
-      expect((await currentQueue()).single.state, QueuedPromptState.queued);
+          final prompt = await enqueue('first');
+          await _settle();
+          expect((await currentQueue()).single.state, QueuedPromptState.queued);
 
-      eventClient.emit('permission.updated', {
-        'id': 'perm_1',
-        'type': 'bash',
-        'sessionID': session.id,
-        'messageID': 'msg_1',
-        'title': 'Run a shell command',
-        'metadata': <String, dynamic>{},
-        'time': {'created': 1700000000000},
-      });
-      await _settle();
+          eventClient.emit(modern ? 'permission.asked' : 'permission.updated', {
+            'id': 'perm_1',
+            'sessionID': session.id,
+            if (!modern) ...{
+              'type': 'bash',
+              'messageID': 'msg_1',
+              'title': 'Run a shell command',
+            },
+            if (modern) ...{
+              'permission': 'bash',
+              'patterns': ['git status'],
+              'always': ['git *'],
+            },
+            'metadata': <String, dynamic>{},
+            'time': {'created': 1700000000000},
+          });
+          await _settle();
 
-      expect(
-        coordinator.currentSessionBlockReason,
-        SessionBlockReason.permission,
+          expect(
+            coordinator.currentSessionBlockReason,
+            SessionBlockReason.permission,
+          );
+          var queue = await currentQueue();
+          expect(queue.single.id, prompt.id);
+          expect(queue.single.state, QueuedPromptState.paused);
+          expect(queue.single.pauseReason, QueuePauseReason.permissionPending);
+          expect(backend.promptAsyncCallCount, 0);
+
+          // A reply retires the approval UI, but is not a terminal session event.
+          eventClient.emit('permission.replied', {
+            'sessionID': session.id,
+            'requestID': 'perm_1',
+            if (modern) 'reply': 'once' else 'response': 'once',
+          });
+          await _settle();
+          expect(coordinator.currentPendingApproval, isNull);
+          expect(
+            coordinator.currentSessionBlockReason,
+            SessionBlockReason.permission,
+          );
+          expect((await currentQueue()).single.state, QueuedPromptState.paused);
+          expect(backend.promptAsyncCallCount, 0);
+
+          eventClient.emit('session.idle', {'sessionID': session.id});
+          await _settle();
+
+          expect(coordinator.currentSessionBlockReason, isNull);
+          queue = await currentQueue();
+          expect(queue.single.state, QueuedPromptState.acknowledged);
+          expect(backend.promptAsyncCallCount, 1);
+        },
       );
-      var queue = await currentQueue();
-      expect(queue.single.id, prompt.id);
-      expect(queue.single.state, QueuedPromptState.paused);
-      expect(queue.single.pauseReason, QueuePauseReason.permissionPending);
-      expect(backend.promptAsyncCallCount, 0);
-
-      // permission.replied alone never lifts the block: no approval UI
-      // exists yet to act on it, and it is not an authoritative session
-      // status/idle event.
-      eventClient.emit('permission.replied', {
-        'sessionID': session.id,
-        'permissionID': 'perm_1',
-        'response': 'once',
-      });
-      await _settle();
-      expect(
-        coordinator.currentSessionBlockReason,
-        SessionBlockReason.permission,
-      );
-      expect((await currentQueue()).single.state, QueuedPromptState.paused);
-      expect(backend.promptAsyncCallCount, 0);
-
-      eventClient.emit('session.idle', {'sessionID': session.id});
-      await _settle();
-
-      expect(coordinator.currentSessionBlockReason, isNull);
-      queue = await currentQueue();
-      expect(queue.single.state, QueuedPromptState.acknowledged);
-      expect(backend.promptAsyncCallCount, 1);
-    });
+    }
 
     test('a pending question pauses the queue with questionPending', () async {
       backend.sessionStatusType = 'busy';

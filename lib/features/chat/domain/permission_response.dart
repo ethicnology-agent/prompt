@@ -7,7 +7,8 @@ enum PermissionResponse {
   once,
 
   /// Approve future requests matching the patterns OpenCode suggests, for
-  /// the rest of the current OpenCode session.
+  /// potentially across sessions in the same directory instance. The server
+  /// controls rule retention; this must never be presented as session-only.
   always,
 
   /// Deny the request.

@@ -45,6 +45,11 @@ class ChatRepository {
   );
   final List<_RecordedEvent> _events = <_RecordedEvent>[];
   int _eventSequence = 0;
+  int _approvalRevision = 0;
+
+  /// Invalidates pending-approval REST snapshots when live decisions or
+  /// authoritative session changes overtake the request.
+  int get approvalRevision => _approvalRevision;
   int _loadGeneration = 0;
   Future<ChatLoadResult>? _latestLoad;
   int _latestLoadGeneration = 0;
@@ -100,6 +105,12 @@ class ChatRepository {
 
   void applyEvent(ConversationEvent event) {
     if (_activeSession == null || event.sessionId != _activeSession!.id) return;
+    if (event is PermissionRepliedEvent ||
+        event is SessionBlockedEvent ||
+        event is SessionStatusEvent ||
+        event is SessionIdleEvent) {
+      _approvalRevision++;
+    }
     final state = reduceConversationEvent(
       _conversation.value.conversation,
       event,
@@ -137,6 +148,7 @@ class ChatRepository {
   }
 
   void clearApproval(String sessionId) {
+    _approvalRevision++;
     final state = clearPendingApproval(
       _conversation.value.conversation,
       sessionId,
@@ -536,7 +548,16 @@ class ChatRepository {
         password,
         session.directory,
       );
-      return statuses[session.id] ?? const SessionIdle();
+      final state = statuses[session.id];
+      if (state != null) return state;
+      // OpenCode reports a sparse busy/retry map. Native gateway maps are
+      // exhaustive: an absent UUID means the context is gone, not idle.
+      return switch (profile.backend) {
+        AgentBackend.gatewayClaude ||
+        AgentBackend.gatewayCodex => const SessionExecutionUnknown(),
+        AgentBackend.directOpenCode ||
+        AgentBackend.gatewayOpenCode => const SessionIdle(),
+      };
     });
   }
 
