@@ -623,6 +623,7 @@ void main() {
     () async {
       ServerProfile? cleanedProfile;
       List<String>? cleanedIds;
+      Set<String>? preparedIds;
       final repository = SessionsRepository(
         OpenCodeSessionsService(
           OpenCodeTransport(
@@ -633,11 +634,17 @@ void main() {
                   200,
                 );
               }
+              expect(preparedIds, {'session-1', 'child'});
               return http.Response('true', 200);
             }),
           ),
         ),
         const _PasswordStore('secret'),
+        onSessionsDeleting: (value, ids) async {
+          expect(value.id, profile.id);
+          preparedIds = ids.toSet();
+          return true;
+        },
         onSessionsDeleted: (value, ids) async {
           cleanedProfile = value;
           cleanedIds = ids.toList();
@@ -681,6 +688,35 @@ void main() {
       expect(cleanedIds, ['grandchild']);
     },
   );
+
+  for (final throws in [false, true]) {
+    test(
+      'failed deletion preparation prevents every remote mutation (throws: $throws)',
+      () async {
+        final methods = <String>[];
+        final repository = SessionsRepository(
+          OpenCodeSessionsService(
+            OpenCodeTransport(
+              MockClient((request) async {
+                methods.add(request.method);
+                return http.Response('[]', 200);
+              }),
+            ),
+          ),
+          const _PasswordStore('secret'),
+          onSessionsDeleting: (_, _) async {
+            if (throws) throw Exception('storage unavailable');
+            return false;
+          },
+        );
+        expect(
+          await repository.delete(profile, _session()),
+          isA<Err<void, SessionsFailure>>(),
+        );
+        expect(methods, ['GET']);
+      },
+    );
+  }
 
   test(
     'local cleanup failure does not convert successful remote deletion',

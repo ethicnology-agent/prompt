@@ -152,6 +152,123 @@ void _runQueuePromptsRepositoryTests({
     return (result as Ok<QueuedPrompt, QueueFailure>).value;
   }
 
+  test(
+    'session deletion pauses all pending states and cleans only confirmed scoped IDs',
+    () async {
+      final otherProfile = ServerProfile(
+        origin: Uri.parse('http://10.80.0.2:4096'),
+        username: 'opencode',
+      );
+      final queued = await enqueue('queued');
+      final sending = await enqueue('sending');
+      await repository.markSending(sending.id);
+      final paused = await enqueue('paused');
+      await repository.markPaused(
+        paused.id,
+        reason: QueuePauseReason.permissionPending,
+      );
+      final failed = await enqueue('failed');
+      await repository.markSending(failed.id);
+      await repository.markFailed(failed.id);
+      final acknowledged = await enqueue('acknowledged');
+      await repository.markSending(acknowledged.id);
+      await repository.markAcknowledged(acknowledged.id);
+      final child = await enqueue('child', forSession: otherSession);
+      final other = await repository.enqueue(
+        profile: otherProfile,
+        session: session,
+        promptText: 'unrelated',
+      );
+      expect(other, isA<Ok<QueuedPrompt, QueueFailure>>());
+
+      expect(
+        await repository.pauseForSessionDeletion(profile, [
+          session.id,
+          otherSession.id,
+        ]),
+        isA<Ok<void, QueueFailure>>(),
+      );
+      final stopped = await repository
+          .watchQueue(profile: profile, session: session)
+          .first;
+      for (final row in stopped.where((row) => row.id != acknowledged.id)) {
+        expect(row.state, QueuedPromptState.paused);
+        expect(row.pauseReason, QueuePauseReason.sessionDeleted);
+      }
+      expect(
+        await repository.markQueued(queued.id),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      expect(
+        await repository.markAcknowledged(sending.id),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      expect(
+        await repository.markPaused(
+          paused.id,
+          reason: QueuePauseReason.questionPending,
+        ),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      expect(
+        await repository.enqueue(
+          profile: profile,
+          session: session,
+          promptText: 'late',
+        ),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+
+      // A child was deleted, but deleting the parent failed. Only the child's
+      // content is removed; parent work stays stopped and cannot auto-resume.
+      expect(
+        await repository.deleteForSessions(profile, [otherSession.id]),
+        isA<Ok<void, QueueFailure>>(),
+      );
+      expect(
+        await repository
+            .watchQueue(profile: profile, session: otherSession)
+            .first,
+        isEmpty,
+      );
+      expect(
+        await repository.markQueued(child.id),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      expect(
+        await repository.watchQueue(profile: profile, session: session).first,
+        hasLength(5),
+      );
+      expect(
+        (await repository
+                .watchQueue(profile: otherProfile, session: session)
+                .first)
+            .single
+            .state,
+        QueuedPromptState.queued,
+      );
+      await repository.deleteForSessions(profile, [session.id]);
+      expect(
+        await repository.watchQueue(profile: profile, session: session).first,
+        isEmpty,
+      );
+      expect(
+        await repository
+            .watchQueue(profile: otherProfile, session: session)
+            .first,
+        hasLength(1),
+      );
+      expect(
+        await repository.enqueue(
+          profile: profile,
+          session: session,
+          promptText: 'stale view',
+        ),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+    },
+  );
+
   group('enqueue', () {
     test('assigns increasing positions per session', () async {
       final first = await enqueue('first prompt');

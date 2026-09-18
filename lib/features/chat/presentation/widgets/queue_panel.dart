@@ -145,6 +145,7 @@ class _QueueRow extends StatelessWidget {
   bool _mergeable(QueuedPrompt prompt) {
     return prompt.operationType == QueuedOperationType.prompt &&
         prompt.pauseReason != QueuePauseReason.submissionUnknown &&
+        prompt.pauseReason != QueuePauseReason.sessionDeleted &&
         (prompt.state == QueuedPromptState.queued ||
             prompt.state == QueuedPromptState.paused ||
             prompt.state == QueuedPromptState.failed);
@@ -164,7 +165,8 @@ class _QueueRow extends StatelessWidget {
         QueuePauseReason.questionPending => 'Paused: awaiting a question',
         QueuePauseReason.sessionGenerating => 'Paused: session busy',
         QueuePauseReason.networkUnavailable => 'Paused: network unavailable',
-        QueuePauseReason.sessionDeleted => 'Paused: session deleted',
+        QueuePauseReason.sessionDeleted =>
+          'Stopped: session deletion requested. Remove this queued item to discard it.',
         QueuePauseReason.serverRejected => 'Paused: server rejected it',
         null => 'Paused',
       },

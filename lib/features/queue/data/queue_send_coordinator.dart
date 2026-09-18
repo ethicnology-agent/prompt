@@ -155,6 +155,46 @@ class QueueSendCoordinator {
       _liveStatuses;
 
   bool _dispatchInProgress = false;
+  final Set<(String, String)> _deletingSessions = {};
+  final Map<(String, String), Set<Future<void>>> _dispatches = {};
+
+  /// Closes dispatch before the first remote abort. An already submitted
+  /// request must settle before aborting to avoid racing its submission.
+  /// Failed deletion never automatically resumes the abandoned queue.
+  Future<Result<void, QueueFailure>> prepareSessionDeletion(
+    ServerProfile profile,
+    Iterable<String> sessionIds,
+  ) async {
+    final ids = sessionIds.toSet();
+    final scopes = ids.map((id) => (profile.id, id)).toSet();
+    _deletingSessions.addAll(scopes);
+    await Future.wait([for (final scope in scopes) ...?_dispatches[scope]]);
+    return _queueRepository.pauseForSessionDeletion(profile, ids);
+  }
+
+  bool get _sessionDeletionBlocked =>
+      _deletingSessions.contains((_profile?.id, _session?.id)) ||
+      _queue.any(
+        (prompt) => prompt.pauseReason == QueuePauseReason.sessionDeleted,
+      );
+
+  void _startDispatch(QueuedPrompt prompt) {
+    final scope = (prompt.serverProfileId, prompt.sessionId);
+    final completion = Completer<void>();
+    _dispatches.putIfAbsent(scope, () => {}).add(completion.future);
+    unawaited(() async {
+      try {
+        await _dispatch(prompt);
+      } finally {
+        _dispatches[scope]?.remove(completion.future);
+        if (_dispatches[scope]?.isEmpty == true) {
+          _dispatches.remove(scope);
+        }
+        completion.complete();
+      }
+    }());
+  }
+
   int _executionRevision = 0;
   String? _pendingSendNowPromptId;
   Future<void> _blockTransitionTail = Future<void>.value();
@@ -663,7 +703,7 @@ class QueueSendCoordinator {
     if (prompt == null) {
       return const Err(QueueSendNowFailure.promptNotFound);
     }
-    if (prompt.state != QueuedPromptState.queued) {
+    if (prompt.state != QueuedPromptState.queued || _sessionDeletionBlocked) {
       return const Err(QueueSendNowFailure.promptNotQueued);
     }
 
@@ -1009,7 +1049,7 @@ class QueueSendCoordinator {
   }
 
   void _maybeDispatch() {
-    if (_disposed || _dispatchInProgress) {
+    if (_disposed || _dispatchInProgress || _sessionDeletionBlocked) {
       return;
     }
     if (_profile == null || _session == null) {
@@ -1041,7 +1081,7 @@ class QueueSendCoordinator {
       if (prompt == null || prompt.state != QueuedPromptState.queued) {
         return;
       }
-      unawaited(_dispatch(prompt));
+      _startDispatch(prompt);
       return;
     }
 
@@ -1055,7 +1095,7 @@ class QueueSendCoordinator {
     if (head == null) {
       return;
     }
-    unawaited(_dispatch(head));
+    _startDispatch(head);
   }
 
   Future<void> _dispatch(QueuedPrompt prompt) async {
@@ -1066,6 +1106,10 @@ class QueueSendCoordinator {
 
     final sendingResult = await _queueRepository.markSending(prompt.id);
     if (_isStale(token)) {
+      return;
+    }
+    if (_sessionDeletionBlocked) {
+      _dispatchInProgress = false;
       return;
     }
     if (sendingResult is Err<QueuedPrompt, QueueFailure>) {

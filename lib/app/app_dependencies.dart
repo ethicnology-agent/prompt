@@ -85,11 +85,16 @@ class AppDependencies {
     final sessionsRepository = SessionsRepository(
       OpenCodeSessionsService(resolvedTransport),
       credentials,
-      onSessionsDeleted: (profile, ids) async =>
-          (await dependencies.ensureStorage()).reviewHistory.deleteForSessions(
-            profile.id,
-            ids,
-          ),
+      onSessionsDeleting: (profile, ids) async {
+        final coordinator = await dependencies.ensureQueueCoordinator();
+        return await coordinator.prepareSessionDeletion(profile, ids)
+            is Ok<void, QueueFailure>;
+      },
+      onSessionsDeleted: (profile, ids) async {
+        final storage = await dependencies.ensureStorage();
+        await storage.queuedPrompts.deleteForSessions(profile.id, ids.toSet());
+        await storage.reviewHistory.deleteForSessions(profile.id, ids);
+      },
     );
 
     final connectionRepository = ConnectionRepository(

@@ -32,6 +32,8 @@ import 'package:prompt/features/queue/domain/queued_prompt.dart';
 import 'package:prompt/features/queue/domain/prompt_execution_options.dart';
 import 'package:prompt/features/queue/domain/sse_connection_state.dart';
 import 'package:prompt/features/sessions/domain/open_code_session.dart';
+import 'package:prompt/features/sessions/data/sessions_repository.dart';
+import 'package:prompt/features/sessions/data/opencode_sessions_service.dart';
 
 /// Lets Drift's `watch()` timer-scheduled re-query, and any pending
 /// microtask chain inside [QueueSendCoordinator] (stream delivery, mocked
@@ -267,6 +269,16 @@ class _RecordingTimerFactory {
 class _DelayedPauseDao implements QueuePromptsDao {
   _DelayedPauseDao(this._delegate, this.pauseGate);
 
+  @override
+  Future<void> pauseForSessionDeletion(
+    String profileId,
+    Set<String> sessionIds,
+  ) => _delegate.pauseForSessionDeletion(profileId, sessionIds);
+
+  @override
+  Future<void> deleteForSessions(String profileId, Set<String> sessionIds) =>
+      _delegate.deleteForSessions(profileId, sessionIds);
+
   final QueuePromptsDao _delegate;
   final Completer<void> pauseGate;
   final List<String> operations = <String>[];
@@ -410,6 +422,156 @@ void main() {
     await eventClient.close();
     await database.close();
   });
+
+  test(
+    'deletion blocks abort idle dispatch and clears confirmed queue',
+    () async {
+      backend.sessionStatusType = 'busy';
+      await coordinator.activate(profile: profile, session: session);
+      await _settle();
+      await queueRepository.enqueue(
+        profile: profile,
+        session: session,
+        promptText: 'Abandoned follow-up',
+      );
+      await _settle();
+      final deleteStarted = Completer<void>();
+      final deleteGate = Completer<void>();
+      final repository = SessionsRepository(
+        OpenCodeSessionsService(
+          OpenCodeTransport(
+            MockClient((request) async {
+              if (request.method == 'GET') return http.Response('[]', 200);
+              if (request.url.path.endsWith('/abort')) {
+                eventClient.emit('session.idle', {'sessionID': session.id});
+                await _settle();
+                return http.Response('true', 200);
+              }
+              deleteStarted.complete();
+              await deleteGate.future;
+              return http.Response('true', 200);
+            }),
+          ),
+        ),
+        const _StaticPasswordStore(),
+        onSessionsDeleting: (profile, ids) async =>
+            await coordinator.prepareSessionDeletion(profile, ids)
+                is Ok<void, QueueFailure>,
+        onSessionsDeleted: (profile, ids) async {
+          expect(
+            await queueRepository.deleteForSessions(profile, ids),
+            isA<Ok<void, QueueFailure>>(),
+          );
+        },
+      );
+      final deletion = repository.delete(profile, session);
+      await deleteStarted.future;
+      final sendsWhileDeleting = backend.promptAsyncCallCount;
+      deleteGate.complete();
+      await deletion;
+      await _settle();
+      expect(sendsWhileDeleting, 0);
+      expect(backend.promptAsyncCallCount, 0);
+      expect(
+        await queueRepository
+            .watchQueue(profile: profile, session: session)
+            .first,
+        isEmpty,
+      );
+    },
+  );
+
+  test(
+    'deletion waits for in-flight submission and never sends its follower',
+    () async {
+      backend.promptAsyncGate = Completer<void>();
+      await coordinator.activate(profile: profile, session: session);
+      await _settle();
+      await queueRepository.enqueue(
+        profile: profile,
+        session: session,
+        promptText: 'already submitted',
+      );
+      await queueRepository.enqueue(
+        profile: profile,
+        session: session,
+        promptText: 'follower',
+      );
+      await _settle();
+      expect(backend.promptAsyncCallCount, 1);
+      var prepared = false;
+      final preparation = coordinator
+          .prepareSessionDeletion(profile, [session.id])
+          .then((result) {
+            prepared = true;
+            return result;
+          });
+      eventClient.emit('session.idle', {'sessionID': session.id});
+      await _settle();
+      expect(prepared, isFalse);
+      backend.promptAsyncGate!.complete();
+      expect(await preparation, isA<Ok<void, QueueFailure>>());
+      await _settle();
+      expect(backend.promptAsyncCallCount, 1);
+      final rows = await queueRepository
+          .watchQueue(profile: profile, session: session)
+          .first;
+      expect(rows.first.state, QueuedPromptState.acknowledged);
+      expect(rows.last.pauseReason, QueuePauseReason.sessionDeleted);
+    },
+  );
+
+  test(
+    'deletion pause survives DAO and coordinator recreation and reconnect',
+    () async {
+      backend.sessionStatusType = 'busy';
+      await coordinator.activate(profile: profile, session: session);
+      await _settle();
+      final result = await queueRepository.enqueue(
+        profile: profile,
+        session: session,
+        promptText: 'abandoned',
+      );
+      final prompt = (result as Ok<QueuedPrompt, QueueFailure>).value;
+      await coordinator.prepareSessionDeletion(profile, [session.id]);
+      await coordinator.dispose();
+      queueRepository = QueuePromptsRepository(DriftQueuePromptsDao(database));
+      coordinator = QueueSendCoordinator(
+        queueRepository: queueRepository,
+        chatRepository: chatRepository,
+        eventService: eventService,
+        credentialsStore: const _StaticPasswordStore(),
+      );
+      backend.sessionStatusType = 'idle';
+      await coordinator.activate(profile: profile, session: session);
+      await _settle();
+      eventClient.emit('session.idle', {'sessionID': session.id});
+      coordinator.notifyAppInactive();
+      coordinator.notifyAppForeground();
+      await _settle(ticks: 100);
+      expect(backend.promptAsyncCallCount, 0);
+      expect(
+        await queueRepository.markQueued(prompt.id),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      expect(
+        await queueRepository.enqueue(
+          profile: profile,
+          session: session,
+          promptText: 'late',
+        ),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      expect(
+        (await queueRepository
+                .watchQueue(profile: profile, session: session)
+                .first)
+            .single
+            .pauseReason,
+        QueuePauseReason.sessionDeleted,
+      );
+    },
+  );
 
   for (final engine in [
     AgentBackend.gatewayClaude,

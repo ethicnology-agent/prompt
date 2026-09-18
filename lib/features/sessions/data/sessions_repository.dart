@@ -13,15 +13,28 @@ import '../domain/session_load_result.dart';
 import '../domain/session_activity.dart';
 import 'opencode_sessions_service.dart';
 
+class _SessionDeletionPreparationFailed implements Exception {
+  const _SessionDeletionPreparationFailed();
+}
+
 class SessionsRepository {
   SessionsRepository(
     this._sessionsService,
     this._credentialsStore, {
+    this.onSessionsDeleting,
     this.onSessionsDeleted,
   });
 
   final OpenCodeSessionsService _sessionsService;
   final CredentialsStore _credentialsStore;
+
+  /// Must durably block every target before any abort can emit idle.
+  /// Returning false prevents all remote mutations.
+  final Future<bool> Function(
+    ServerProfile profile,
+    Iterable<String> sessionIds,
+  )?
+  onSessionsDeleting;
   final Future<void> Function(
     ServerProfile profile,
     Iterable<String> sessionIds,
@@ -286,6 +299,23 @@ class SessionsRepository {
         }
       }
 
+      final targetIds = <String>{};
+      void collectTargets(String id) {
+        if (!targetIds.add(id)) return;
+        for (final child in byParent[id] ?? const []) {
+          collectTargets(child.id);
+        }
+      }
+
+      collectTargets(session.id);
+      try {
+        if (await onSessionsDeleting?.call(profile, targetIds) == false) {
+          throw const _SessionDeletionPreparationFailed();
+        }
+      } on Exception {
+        throw const _SessionDeletionPreparationFailed();
+      }
+
       final deletedIds = <String>[];
       Future<void> deleteTree(OpenCodeSession target) async {
         for (final child in byParent[target.id] ?? const []) {
@@ -371,6 +401,8 @@ class SessionsRepository {
     try {
       await action();
       return const Ok(null);
+    } on _SessionDeletionPreparationFailed {
+      return const Err(SessionsFailure.unavailable);
     } on OpenCodeHttpFailure catch (failure) {
       return Err(_httpFailure(failure.statusCode));
     } on OpenCodeTransportFailure catch (failure) {

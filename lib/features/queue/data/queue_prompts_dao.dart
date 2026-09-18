@@ -44,6 +44,18 @@ const _reorderableStates = {'queued', 'paused', 'failed'};
 /// No implementation may log [db.QueuedPrompt.promptText] or send network
 /// requests; each only reads and writes its own local storage.
 abstract interface class QueuePromptsDao {
+  /// Durably abandons pending work before a session deletion is attempted.
+  Future<void> pauseForSessionDeletion(
+    String serverProfileId,
+    Set<String> sessionIds,
+  );
+
+  /// Removes sensitive content only after remote deletion is confirmed.
+  Future<void> deleteForSessions(
+    String serverProfileId,
+    Set<String> sessionIds,
+  );
+
   Future<db.QueuedPrompt> enqueue({
     required String id,
     required String serverProfileId,
@@ -126,6 +138,66 @@ class DriftQueuePromptsDao implements QueuePromptsDao {
   DriftQueuePromptsDao(this._database);
 
   final db.PromptDatabase _database;
+  final Set<(String, String)> _deletingSessions = {};
+
+  @override
+  Future<void> pauseForSessionDeletion(
+    String serverProfileId,
+    Set<String> sessionIds,
+  ) {
+    _deletingSessions.addAll(sessionIds.map((id) => (serverProfileId, id)));
+    return _database.transaction(() async {
+      await (_database.update(_database.queuedPrompts)..where(
+            (t) =>
+                t.serverProfileId.equals(serverProfileId) &
+                t.sessionId.isIn(sessionIds) &
+                t.state.equals('acknowledged').not(),
+          ))
+          .write(
+            db.QueuedPromptsCompanion(
+              state: const Value('paused'),
+              pauseReason: const Value('sessionDeleted'),
+              updatedAtMillis: Value(DateTime.now().millisecondsSinceEpoch),
+            ),
+          );
+    });
+  }
+
+  @override
+  Future<void> deleteForSessions(
+    String serverProfileId,
+    Set<String> sessionIds,
+  ) async {
+    _deletingSessions.addAll(sessionIds.map((id) => (serverProfileId, id)));
+    await (_database.delete(_database.queuedPrompts)..where(
+          (t) =>
+              t.serverProfileId.equals(serverProfileId) &
+              t.sessionId.isIn(sessionIds),
+        ))
+        .go();
+  }
+
+  Future<void> _requireSessionWritable(
+    String profileId,
+    String sessionId,
+    String promptId,
+  ) async {
+    final blocked =
+        _deletingSessions.contains((profileId, sessionId)) ||
+        await (_database.select(_database.queuedPrompts)
+                  ..where(
+                    (t) =>
+                        t.serverProfileId.equals(profileId) &
+                        t.sessionId.equals(sessionId) &
+                        t.pauseReason.equals('sessionDeleted'),
+                  )
+                  ..limit(1))
+                .getSingleOrNull() !=
+            null;
+    if (blocked) {
+      throw InvalidQueuedPromptTransition(promptId, 'sessionDeleted');
+    }
+  }
 
   @override
   Future<db.QueuedPrompt> enqueue({
@@ -141,6 +213,7 @@ class DriftQueuePromptsDao implements QueuePromptsDao {
     required DateTime now,
   }) {
     return _database.transaction(() async {
+      await _requireSessionWritable(serverProfileId, sessionId, id);
       final nextPosition = await _nextPosition(serverProfileId, sessionId);
       final nowMillis = now.millisecondsSinceEpoch;
       await _database
@@ -385,6 +458,9 @@ class DriftQueuePromptsDao implements QueuePromptsDao {
     return _database.transaction(() async {
       final row = await _requireRow(id);
       _requireState(row, from);
+      if (to == 'queued' || to == 'sending') {
+        await _requireSessionWritable(row.serverProfileId, row.sessionId, id);
+      }
       var companion = db.QueuedPromptsCompanion(
         state: Value(to),
         updatedAtMillis: Value(now.millisecondsSinceEpoch),

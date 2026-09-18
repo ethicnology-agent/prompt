@@ -24,6 +24,16 @@ class QueuePromptsRepository {
   final QueuePromptsDao _dao;
   final String Function() _idGenerator;
 
+  Future<Result<void, QueueFailure>> pauseForSessionDeletion(
+    ServerProfile profile,
+    Iterable<String> sessionIds,
+  ) => _run(() => _dao.pauseForSessionDeletion(profile.id, sessionIds.toSet()));
+
+  Future<Result<void, QueueFailure>> deleteForSessions(
+    ServerProfile profile,
+    Iterable<String> sessionIds,
+  ) => _run(() => _dao.deleteForSessions(profile.id, sessionIds.toSet()));
+
   /// Restores the last durably submitted composer options, not unsent edits.
   /// An all-null options object is an explicit reset; null means no history.
   /// Read only metadata here, without decoding stored attachment bytes.

@@ -6,6 +6,28 @@ import 'package:prompt/features/chat/presentation/widgets/queue_panel.dart';
 import 'package:prompt/features/queue/queue.dart';
 
 void main() {
+  for (final stoppedIndex in [0, 1]) {
+    testWidgets(
+      'session deletion item $stoppedIndex cannot merge and explains discard',
+      (tester) async {
+        final prompts = [_prompt('first'), _prompt('second')];
+        prompts[stoppedIndex] = prompts[stoppedIndex].copyWith(
+          state: QueuedPromptState.paused,
+          pauseReason: QueuePauseReason.sessionDeleted,
+        );
+        await _pump(tester, prompts);
+        expect(find.byTooltip('Merge into the prompt above'), findsNothing);
+        expect(
+          find.textContaining('session deletion requested'),
+          findsOneWidget,
+        );
+        expect(find.textContaining('session deleted'), findsNothing);
+        expect(find.byTooltip('Remove from queue'), findsNWidgets(2));
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   for (final uncertainIndex in [0, 1]) {
     testWidgets(
       'uncertain item $uncertainIndex cannot be merged in either direction',

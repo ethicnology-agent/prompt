@@ -18,6 +18,58 @@ import 'queue_prompts_dao.dart';
 class InMemoryQueuePromptsDao implements QueuePromptsDao {
   final List<db.QueuedPrompt> _rows = [];
   final StreamController<void> _changes = StreamController<void>.broadcast();
+  final Set<(String, String)> _deletingSessions = {};
+
+  @override
+  Future<void> pauseForSessionDeletion(
+    String serverProfileId,
+    Set<String> sessionIds,
+  ) async {
+    _deletingSessions.addAll(sessionIds.map((id) => (serverProfileId, id)));
+    for (final row in _rows.toList()) {
+      if (row.serverProfileId == serverProfileId &&
+          sessionIds.contains(row.sessionId) &&
+          row.state != 'acknowledged') {
+        _transition(
+          row.id,
+          from: {row.state},
+          to: 'paused',
+          now: DateTime.now(),
+          pauseReason: 'sessionDeleted',
+        );
+      }
+    }
+  }
+
+  @override
+  Future<void> deleteForSessions(
+    String serverProfileId,
+    Set<String> sessionIds,
+  ) async {
+    _deletingSessions.addAll(sessionIds.map((id) => (serverProfileId, id)));
+    _rows.removeWhere(
+      (row) =>
+          row.serverProfileId == serverProfileId &&
+          sessionIds.contains(row.sessionId),
+    );
+    _notify();
+  }
+
+  void _requireSessionWritable(
+    String profileId,
+    String sessionId,
+    String promptId,
+  ) {
+    if (_deletingSessions.contains((profileId, sessionId)) ||
+        _rows.any(
+          (row) =>
+              row.serverProfileId == profileId &&
+              row.sessionId == sessionId &&
+              row.pauseReason == 'sessionDeleted',
+        )) {
+      throw InvalidQueuedPromptTransition(promptId, 'sessionDeleted');
+    }
+  }
 
   @override
   Future<db.QueuedPrompt> enqueue({
@@ -32,6 +84,7 @@ class InMemoryQueuePromptsDao implements QueuePromptsDao {
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
     required DateTime now,
   }) async {
+    _requireSessionWritable(serverProfileId, sessionId, id);
     final nowMillis = now.millisecondsSinceEpoch;
     final row = db.QueuedPrompt(
       id: id,
@@ -283,6 +336,9 @@ class InMemoryQueuePromptsDao implements QueuePromptsDao {
   }) {
     final row = _requireRow(id);
     _requireState(row, from);
+    if (to == 'queued' || to == 'sending') {
+      _requireSessionWritable(row.serverProfileId, row.sessionId, id);
+    }
     final replaced = db.QueuedPrompt(
       id: row.id,
       serverProfileId: row.serverProfileId,
