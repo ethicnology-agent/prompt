@@ -4,6 +4,7 @@ export 'src/components/app_button.dart';
 export 'src/components/app_dialog.dart';
 export 'src/components/app_text_field.dart';
 export 'src/components/attachment_thumbnail.dart';
+export 'src/components/attachment_image_viewer.dart';
 export 'src/components/composer_action_bar.dart';
 export 'src/components/draft_composer_panel.dart';
 export 'src/components/identity_avatar.dart';

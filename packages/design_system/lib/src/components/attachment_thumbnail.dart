@@ -11,6 +11,13 @@ enum AttachmentThumbnailState { loading, ready, unavailable, cleared }
 /// Clearing invalidates pending work; late results are disposed, never cached.
 class AttachmentThumbnailController extends ChangeNotifier
     with WidgetsBindingObserver {
+  /// A bounded inspection bitmap, distinct from the 192px thumbnail. Encoded
+  /// bytes remain owned by the caller and are not retained after decoding.
+  factory AttachmentThumbnailController.viewer(Uint8List bytes) =>
+      AttachmentThumbnailController(
+        bytes,
+        decoder: (data) => _decodeThumbnail(data, maxDimension: 2048),
+      );
   AttachmentThumbnailController(
     Uint8List bytes, {
     @visibleForTesting Future<ui.Image> Function(Uint8List)? decoder,
@@ -32,6 +39,17 @@ class AttachmentThumbnailController extends ChangeNotifier
 
   @visibleForTesting
   ui.Image? get debugImage => _image;
+
+  void paint(Canvas canvas, Size size, {BoxFit fit = BoxFit.contain}) {
+    final image = _image;
+    if (image == null) return;
+    paintImage(
+      canvas: canvas,
+      rect: Offset.zero & size,
+      image: image,
+      fit: fit,
+    );
+  }
 
   Future<void> _load(
     Uint8List bytes,
@@ -83,7 +101,10 @@ class AttachmentThumbnailController extends ChangeNotifier
   }
 }
 
-Future<ui.Image> _decodeThumbnail(Uint8List bytes) async {
+Future<ui.Image> _decodeThumbnail(
+  Uint8List bytes, {
+  int maxDimension = 192,
+}) async {
   if (bytes.lengthInBytes > 10 * 1024 * 1024) {
     throw const FormatException('Image exceeds preview byte limit.');
   }
@@ -104,10 +125,10 @@ Future<ui.Image> _decodeThumbnail(Uint8List bytes) async {
     final largest = descriptor.width > descriptor.height
         ? descriptor.width
         : descriptor.height;
-    final scale = largest > 192 ? 192 / largest : 1.0;
+    final scale = largest > maxDimension ? maxDimension / largest : 1.0;
     codec = await descriptor.instantiateCodec(
-      targetWidth: (descriptor.width * scale).round().clamp(1, 192),
-      targetHeight: (descriptor.height * scale).round().clamp(1, 192),
+      targetWidth: (descriptor.width * scale).round().clamp(1, maxDimension),
+      targetHeight: (descriptor.height * scale).round().clamp(1, maxDimension),
     );
     final frame = await codec.getNextFrame();
     return frame.image;
@@ -124,10 +145,12 @@ class AttachmentThumbnail extends StatefulWidget {
     required this.controller,
     required this.label,
     this.onRemove,
+    this.onOpen,
   });
   final AttachmentThumbnailController controller;
   final String label;
   final VoidCallback? onRemove;
+  final VoidCallback? onOpen;
 
   @override
   State<AttachmentThumbnail> createState() => _AttachmentThumbnailWidgetState();
@@ -182,20 +205,28 @@ class _AttachmentThumbnailWidgetState extends State<AttachmentThumbnail> {
             height: 64,
             child: Semantics(
               label: '${widget.label}, $status',
+              button: widget.onOpen != null,
               image: state == AttachmentThumbnailState.ready,
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: ColoredBox(
-                  color: Theme.of(context).colorScheme.surfaceContainerHighest,
-                  child: state == AttachmentThumbnailState.ready
-                      ? CustomPaint(
-                          painter: _ThumbnailPainter(widget.controller),
-                        )
-                      : Icon(
-                          state == AttachmentThumbnailState.loading
-                              ? Icons.image_outlined
-                              : Icons.insert_drive_file_outlined,
-                        ),
+              child: InkWell(
+                onTap: state == AttachmentThumbnailState.ready
+                    ? widget.onOpen
+                    : null,
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(8),
+                  child: ColoredBox(
+                    color: Theme.of(
+                      context,
+                    ).colorScheme.surfaceContainerHighest,
+                    child: state == AttachmentThumbnailState.ready
+                        ? CustomPaint(
+                            painter: _ThumbnailPainter(widget.controller),
+                          )
+                        : Icon(
+                            state == AttachmentThumbnailState.loading
+                                ? Icons.image_outlined
+                                : Icons.insert_drive_file_outlined,
+                          ),
+                  ),
                 ),
               ),
             ),
