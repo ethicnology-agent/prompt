@@ -11,6 +11,7 @@ export 'src/components/identity_avatar.dart';
 export 'src/components/prompt_panel.dart';
 export 'src/components/session_list_tile.dart';
 export 'src/components/selection_picker.dart';
+export 'src/components/inline_selection_panel.dart';
 export 'src/components/settings_group.dart';
 export 'src/components/code_line_viewer.dart';
 export 'src/prompt_color_tokens.dart';
