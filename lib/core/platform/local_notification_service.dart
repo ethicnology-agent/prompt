@@ -18,9 +18,14 @@ class LocalNotificationService {
   bool get isEnabled => _enabled;
 
   Future<LocalNotificationPermission> requestPermission() async {
-    final permission = await _platform.requestPermission();
-    _enabled = permission == LocalNotificationPermission.granted;
-    return permission;
+    try {
+      final permission = await _platform.requestPermission();
+      _enabled = permission == LocalNotificationPermission.granted;
+      return permission;
+    } on Exception {
+      _enabled = false;
+      return LocalNotificationPermission.unavailable;
+    }
   }
 
   Future<void> showSessionCompleted() =>

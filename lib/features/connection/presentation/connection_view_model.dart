@@ -39,7 +39,7 @@ class ConnectionViewModel extends ValueNotifier<ConnectionUiState> {
   int get operationGeneration => _operationGeneration;
 
   Future<void> connect(ServerProfile profile, String? password) async {
-    if (_disposed) return;
+    if (_disposed || value is ConnectionChecking) return;
     final generation = ++_operationGeneration;
     value = const ConnectionChecking();
     final result = await _repository.test(profile, password);
@@ -54,7 +54,7 @@ class ConnectionViewModel extends ValueNotifier<ConnectionUiState> {
   }
 
   Future<void> restore(ServerProfile profile) async {
-    if (_disposed) return;
+    if (_disposed || value is ConnectionChecking) return;
     final generation = ++_operationGeneration;
     value = const ConnectionChecking();
     final result = await _repository.restore(profile);

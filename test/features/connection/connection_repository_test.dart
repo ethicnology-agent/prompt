@@ -18,6 +18,25 @@ void main() {
   );
 
   test(
+    'saved credential read failure stays a typed recoverable failure',
+    () async {
+      final client = MockClient((_) async => http.Response('', 200));
+      addTearDown(client.close);
+      final repository = ConnectionRepository(
+        OpenCodeHealthService(OpenCodeTransport(client)),
+        _FailingReadCredentials(),
+        _FakeServerProfileStore(),
+      );
+      final result = await repository.restore(profile);
+      expect(result, isA<ConnectionFailed>());
+      expect(
+        (result as ConnectionFailed).failure,
+        ConnectionFailure.secureStorageUnavailable,
+      );
+    },
+  );
+
+  test(
     'tests the configured OpenCode health endpoint with basic auth',
     () async {
       late http.Request request;
@@ -120,6 +139,12 @@ class _FakeCredentialsStore implements CredentialsStore {
   Future<void> savePassword(String profileId, String? value) async {
     password = value;
   }
+}
+
+class _FailingReadCredentials extends _FakeCredentialsStore {
+  @override
+  Future<String?> readPassword(String profileId) async =>
+      throw Exception('synthetic storage failure');
 }
 
 class _FakeServerProfileStore implements ServerProfileStore {

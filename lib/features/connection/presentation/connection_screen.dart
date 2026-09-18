@@ -33,6 +33,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _editedAddress = false;
+  bool _profileLoadFailed = false;
   ServerProfile? _prefilledProfile;
   ConnectionReady? _notifiedReady;
   AgentBackend _backend = AgentBackend.directOpenCode;
@@ -45,7 +46,17 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
 
   Future<void> _restoreLastProfile() async {
     final generation = widget.viewModel.operationGeneration;
-    final profile = await widget.profileLoader();
+    ServerProfile? profile;
+    try {
+      profile = await widget.profileLoader();
+    } on Exception {
+      if (mounted &&
+          !_editedAddress &&
+          generation == widget.viewModel.operationGeneration) {
+        setState(() => _profileLoadFailed = true);
+      }
+      return;
+    }
     if (!mounted ||
         profile == null ||
         _editedAddress ||
@@ -55,7 +66,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     _originController.text = profile.origin.toString();
     _usernameController.text = profile.username ?? '';
     _prefilledProfile = profile;
-    setState(() => _backend = profile.backend);
+    final backend = profile.backend;
+    setState(() => _backend = backend);
     if (widget.restoreAutomatically) await widget.viewModel.restore(profile);
   }
 
@@ -68,9 +80,12 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   }
 
   Future<void> _connect() async {
+    if (widget.viewModel.value is ConnectionChecking) return;
     if (!(_formKey.currentState?.validate() ?? false)) {
       return;
     }
+
+    if (_profileLoadFailed) setState(() => _profileLoadFailed = false);
 
     final profile = ServerProfile(
       origin: Uri.parse(_originController.text.trim()),
@@ -218,6 +233,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               autocorrect: false,
                               textInputAction: TextInputAction.next,
                               autofillHints: const [AutofillHints.username],
+                              onChanged: (_) => _editedAddress = true,
                             ),
                             const SizedBox(height: 16),
                             AppTextFormField(
@@ -228,6 +244,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               enableSuggestions: false,
                               autocorrect: false,
                               autofillHints: const [AutofillHints.password],
+                              onChanged: (_) => _editedAddress = true,
                               onSubmitted: (_) => _connect(),
                             ),
                             if (_prefilledProfile != null)
@@ -256,6 +273,16 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                 ),
                               ),
                             ],
+                            if (_profileLoadFailed)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 16),
+                                child: Semantics(
+                                  liveRegion: true,
+                                  child: const Text(
+                                    'Could not load the saved connection. Enter your server details to continue.',
+                                  ),
+                                ),
+                              ),
                             const SizedBox(height: 24),
                             AppButton(
                               label: 'Test private connection',

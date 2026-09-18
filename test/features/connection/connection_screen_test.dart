@@ -15,6 +15,74 @@ import 'package:prompt/features/connection/presentation/connection_screen.dart';
 import 'package:prompt/features/connection/presentation/connection_view_model.dart';
 
 void main() {
+  testWidgets('saved profile load failure leaves manual connection available', (
+    tester,
+  ) async {
+    final model = _viewModel();
+    addTearDown(model.dispose);
+    await _pumpScreen(
+      tester,
+      model,
+      profileLoader: () async => throw Exception('synthetic profile failure'),
+    );
+    await tester.pumpAndSettle();
+    expect(
+      find.text(
+        'Could not load the saved connection. Enter your server details to continue.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<FilledButton>(find.byType(FilledButton)).onPressed,
+      isNotNull,
+    );
+    expect(tester.takeException(), isNull);
+  });
+  test(
+    'duplicate submissions do not repeat a pending connection check',
+    () async {
+      final health = _RecordingHealthService.pending();
+      final viewModel = _viewModel(health: health);
+      addTearDown(viewModel.dispose);
+      final first = viewModel.connect(_profile(), null);
+      final second = viewModel.connect(_profile(), null);
+      await Future<void>.delayed(Duration.zero);
+      expect(health.calls, 1);
+      health.complete();
+      await Future.wait([first, second]);
+    },
+  );
+
+  for (final field in [1, 2]) {
+    testWidgets('credential edit blocks a late profile restore field=$field', (
+      tester,
+    ) async {
+      final restore = Completer<ServerProfile?>();
+      final health = _RecordingHealthService();
+      final viewModel = _viewModel(health: health);
+      addTearDown(viewModel.dispose);
+      await _pumpScreen(tester, viewModel, profileLoader: () => restore.future);
+      await tester.enterText(
+        find.byType(TextFormField).at(field),
+        'user-entered',
+      );
+      restore.complete(_profile(username: 'saved-user'));
+      await tester.pumpAndSettle();
+      expect(health.calls, 0);
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: find.byType(TextFormField).at(field),
+                matching: find.byType(TextField),
+              ),
+            )
+            .controller!
+            .text,
+        'user-entered',
+      );
+    });
+  }
   for (final restore in [false, true]) {
     test(
       'reset invalidates an unfinished ${restore ? 'restore' : 'connect'}',

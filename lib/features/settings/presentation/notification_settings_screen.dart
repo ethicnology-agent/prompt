@@ -19,7 +19,16 @@ class _NotificationSettingsScreenState
   var _requesting = false;
   LocalNotificationPermission? _permission;
 
+  @override
+  void initState() {
+    super.initState();
+    if (widget.service.isEnabled) {
+      _permission = LocalNotificationPermission.granted;
+    }
+  }
+
   Future<void> _enableNotifications() async {
+    if (_requesting) return;
     setState(() => _requesting = true);
     final permission = await widget.service.requestPermission();
     if (!mounted) {

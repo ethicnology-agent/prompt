@@ -5,6 +5,19 @@ import 'package:prompt/core/platform/local_notification_types.dart';
 import 'package:prompt/features/settings/presentation/notification_settings_screen.dart';
 
 void main() {
+  testWidgets('reopening reflects existing opt-in without requesting again', (
+    tester,
+  ) async {
+    final platform = _RecordingNotificationPlatform();
+    final service = LocalNotificationService(platform);
+    await service.requestPermission();
+    await tester.pumpWidget(
+      MaterialApp(home: NotificationSettingsScreen(service: service)),
+    );
+    expect(find.text('Notifications are enabled.'), findsOneWidget);
+    expect(platform.permissionRequests, 1);
+  });
+
   testWidgets('requests notification permission only from enable action', (
     tester,
   ) async {

@@ -152,14 +152,14 @@ class _ModelCard extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Row(
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Expanded(
-                  child: Text(
-                    '${language.label} INT8',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
+                Text(
+                  '${language.label} INT8',
+                  style: Theme.of(context).textTheme.titleSmall,
                 ),
+                const SizedBox(height: 4),
                 Text(status),
               ],
             ),

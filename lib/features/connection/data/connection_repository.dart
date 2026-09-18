@@ -149,7 +149,11 @@ class ConnectionRepository {
   }
 
   Future<ConnectionResult> restore(ServerProfile profile) async {
-    final password = await _credentialsStore.readPassword(profile.id);
-    return test(profile, password);
+    try {
+      final password = await _credentialsStore.readPassword(profile.id);
+      return test(profile, password);
+    } on Exception {
+      return const ConnectionFailed(ConnectionFailure.secureStorageUnavailable);
+    }
   }
 }

@@ -11,6 +11,43 @@ import 'package:prompt/features/voice/presentation/voice_settings_screen.dart';
 import 'package:prompt/features/voice/presentation/voice_view_model.dart';
 
 void main() {
+  testWidgets('installation failure remains readable with large text', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(320, 700));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final viewModel = VoiceViewModel(
+      VoiceRepository(
+        _UnavailableVoiceEngine(),
+        _UnavailableModelPicker(),
+        _FakeModelInstaller(error: const VoiceModelChecksumException()),
+      ),
+    );
+    addTearDown(viewModel.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        builder: (context, child) => MediaQuery(
+          data: MediaQuery.of(
+            context,
+          ).copyWith(textScaler: const TextScaler.linear(2)),
+          child: child!,
+        ),
+        home: VoiceSettingsScreen(viewModel: viewModel),
+      ),
+    );
+    await tester.scrollUntilVisible(find.text('Install French model'), 300);
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.text('Install French model'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Install French model'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('The downloaded voice model failed its checksum.'),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'installs and selects a model without requesting microphone permission',
     (tester) async {

@@ -3,6 +3,26 @@ import 'package:prompt/core/platform/local_notification_service.dart';
 import 'package:prompt/core/platform/local_notification_types.dart';
 
 void main() {
+  test(
+    'permission platform failure stays disabled and permits retry',
+    () async {
+      final platform = _RecordingPlatform(LocalNotificationPermission.granted)
+        ..failRequest = true;
+      final service = LocalNotificationService(platform);
+      expect(
+        await service.requestPermission(),
+        LocalNotificationPermission.unavailable,
+      );
+      expect(service.isEnabled, isFalse);
+      platform.failRequest = false;
+      expect(
+        await service.requestPermission(),
+        LocalNotificationPermission.granted,
+      );
+      expect(service.isEnabled, isTrue);
+    },
+  );
+
   test('stays silent until the user grants permission', () async {
     final platform = _RecordingPlatform(LocalNotificationPermission.granted);
     final service = LocalNotificationService(platform);
@@ -33,9 +53,13 @@ class _RecordingPlatform implements LocalNotificationPlatform {
 
   final LocalNotificationPermission _permission;
   final shown = <SessionNotificationKind>[];
+  bool failRequest = false;
 
   @override
-  Future<LocalNotificationPermission> requestPermission() async => _permission;
+  Future<LocalNotificationPermission> requestPermission() async {
+    if (failRequest) throw Exception('Platform unavailable');
+    return _permission;
+  }
 
   @override
   Future<void> showSessionNotification(SessionNotificationKind kind) async {
