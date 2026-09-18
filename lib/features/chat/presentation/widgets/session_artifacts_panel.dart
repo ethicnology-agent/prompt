@@ -173,7 +173,7 @@ class _LazyArtifactList extends StatelessWidget {
             child: Text('No changed files reported for this session.'),
           );
         }
-        return _DiffRow(diff: diffs[index - todos.length - 1]);
+        return _DiffRow(diff: diffs[index - todoOffset - todos.length]);
       },
     );
   }
