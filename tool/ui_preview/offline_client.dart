@@ -163,16 +163,104 @@ class OfflinePreviewClient extends http.BaseClient {
     if (request.method == 'GET') {
       if (path == '/file/content') {
         fileReads++;
-        if (request.url.queryParameters['directory'] != directory) {
+        final scope = request.url.queryParameters['directory'];
+        if (scope != directory &&
+            scope != '$directory/lib' &&
+            scope != '$directory/assets') {
           return _json(403, {'error': 'Fixture directory only'});
         }
-        return switch (request.url.queryParameters['path']) {
-          filePath || 'lib/example.dart' => _json(200, {
-            'type': 'text',
-            'content': fileContent,
-          }),
-          'assets/fixture.bin' => _json(200, {'type': 'binary'}),
+        final requested = request.url.queryParameters['path'];
+        final resolved = requested != null && requested.startsWith('/')
+            ? requested
+            : '$scope/$requested';
+        return switch (resolved) {
+          filePath => _json(200, {'type': 'text', 'content': fileContent}),
+          '$directory/assets/fixture.bin' => _json(200, {'type': 'binary'}),
           _ => _json(404, {'error': 'Fixture file unavailable'}),
+        };
+      }
+      if (path == '/file' ||
+          path == '/file/status' ||
+          path == '/vcs' ||
+          path.startsWith('/find')) {
+        final scope = request.url.queryParameters['directory'];
+        if (scope != directory &&
+            scope != '$directory/lib' &&
+            scope != '$directory/assets') {
+          return _json(403, {'error': 'Fixture directory only'});
+        }
+        if (path == '/vcs') return _json(200, {'branch': 'fixture'});
+        if (path == '/file/status') {
+          return _json(200, [
+            {
+              'path': 'lib/example.dart',
+              'status': 'modified',
+              'added': 1,
+              'removed': 1,
+            },
+            {
+              'path': 'removed.txt',
+              'status': 'deleted',
+              'added': 0,
+              'removed': 1,
+            },
+          ]);
+        }
+        if (path == '/file') {
+          final requested = request.url.queryParameters['path'];
+          final names = switch (requested) {
+            directory => ['lib', 'assets'],
+            '$directory/lib' => ['example.dart'],
+            '$directory/assets' => ['fixture.bin'],
+            _ => <String>[],
+          };
+          return _json(200, [
+            for (final name in names)
+              {
+                'name': name,
+                'absolute': '$requested/$name',
+                'type': requested == directory ? 'directory' : 'file',
+                'ignored': false,
+              },
+          ]);
+        }
+        final query =
+            request.url.queryParameters['query'] ??
+            request.url.queryParameters['pattern'] ??
+            '';
+        if (scope == '$directory/assets' ||
+            query.isEmpty ||
+            !'example.dart accent teal'.contains(query.toLowerCase())) {
+          return _json(200, []);
+        }
+        final relative = scope == directory
+            ? 'lib/example.dart'
+            : 'example.dart';
+        return switch (path) {
+          '/find/file' => _json(200, [relative]),
+          '/find' => _json(200, [
+            {
+              'path': {'text': relative},
+              'lines': {'text': 'final accent = "teal";'},
+              'line_number': 2,
+              'absolute_offset': 40,
+              'submatches': <Object?>[],
+            },
+          ]),
+          '/find/symbol' => _json(200, [
+            {
+              'name': 'accent',
+              'kind': 13,
+              'location': {
+                'uri': 'file://$filePath',
+                'range': {
+                  'start': {'line': 1, 'character': 6},
+                  'end': {'line': 1, 'character': 12},
+                },
+              },
+            },
+          ]),
+          _ => _json(404, {'error': 'Fixture route unavailable'}),
         };
       }
       if (path == '/global/event') {
