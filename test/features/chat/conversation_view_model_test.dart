@@ -597,6 +597,72 @@ void main() {
     expect(viewModel.queue.value.single.promptText, 'first\n\nsecond');
   });
 
+  for (final uncertainIndex in [0, 1]) {
+    test(
+      'never merges uncertain queue item $uncertainIndex in either direction',
+      () async {
+        backend.sessionStatusType = 'busy';
+        await viewModel.open(profile, session);
+        await _settle();
+        await viewModel.enqueuePrompt('first');
+        await viewModel.enqueuePrompt('second');
+        await _settle();
+        await buildQueueRepository().markPaused(
+          viewModel.queue.value[uncertainIndex].id,
+          reason: QueuePauseReason.submissionUnknown,
+        );
+        await _settle();
+        final ids = viewModel.queue.value.map((prompt) => prompt.id).toList();
+        final errors = <String>[];
+        final subscription = viewModel.queueErrors.listen(errors.add);
+        addTearDown(subscription.cancel);
+
+        await viewModel.mergeIntoPrevious(ids.last);
+        await _settle();
+
+        expect(viewModel.queue.value.map((prompt) => prompt.id), ids);
+        expect(viewModel.queue.value.map((prompt) => prompt.promptText), [
+          'first',
+          'second',
+        ]);
+        expect(
+          errors,
+          contains(
+            'Delivery is unconfirmed. Check the conversation before removing the local queue item; it cannot be merged.',
+          ),
+        );
+        expect(backend.promptAsyncCallCount, 0);
+      },
+    );
+  }
+
+  test(
+    'attachment merge rejection offers no nonexistent attachment editing action',
+    () async {
+      backend.sessionStatusType = 'busy';
+      await viewModel.open(profile, session);
+      await _settle();
+      await viewModel.enqueuePrompt('first');
+      viewModel.attachments.value = [
+        PromptAttachment(name: 'fixture.txt', bytes: Uint8List.fromList([65])),
+      ];
+      await viewModel.enqueuePrompt('second');
+      await _settle();
+      final errors = <String>[];
+      final subscription = viewModel.queueErrors.listen(errors.add);
+      addTearDown(subscription.cancel);
+      await viewModel.mergeIntoPrevious(viewModel.queue.value.last.id);
+      await _settle();
+      expect(viewModel.queue.value, hasLength(2));
+      expect(viewModel.queue.value.last.attachments, hasLength(1));
+      expect(
+        errors,
+        contains('Attachments cannot be merged. Keep this prompt separate.'),
+      );
+      expect(backend.promptAsyncCallCount, 0);
+    },
+  );
+
   test('never overwrites an already-loaded REST message before its own live '
       'text part has arrived', () async {
     backend.sessionStatusType = 'idle';
