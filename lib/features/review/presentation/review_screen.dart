@@ -55,7 +55,10 @@ class _ReviewScreenState extends State<ReviewScreen> {
 
   void _selectDefaults() {
     final state = widget.capabilitiesViewModel.value;
-    if (state is! CapabilitiesReady) return;
+    if (state is! CapabilitiesReady) {
+      if (mounted) setState(() {});
+      return;
+    }
     final models = state.capabilities.models
         .where((model) => model.isProviderConnected)
         .toList();
@@ -130,14 +133,25 @@ class _ReviewScreenState extends State<ReviewScreen> {
   };
 
   bool get _valid {
+    final state = widget.capabilitiesViewModel.value;
+    if (state is! CapabilitiesReady) return false;
+    final connected = state.capabilities.models
+        .where((model) => model.isProviderConnected)
+        .map(_modelKey)
+        .toSet();
     final selected = _selection.values.whereType<String>().toList();
     return _roles.length >= 2 &&
         selected.length == _roles.length &&
+        selected.every(connected.contains) &&
         selected.toSet().length == _roles.length;
   }
 
   Future<void> _start() async {
-    if (!_valid) return;
+    if (!mounted ||
+        !_valid ||
+        widget.viewModel.value.state != ReviewRunState.idle) {
+      return;
+    }
     await widget.viewModel.start(
       widget.target,
       _roles
@@ -353,7 +367,12 @@ class _ReviewScreenState extends State<ReviewScreen> {
                 Expanded(
                   child: DropdownButtonFormField<String>(
                     key: ValueKey('review-selector-${role.name}'),
-                    initialValue: _selection[role],
+                    initialValue:
+                        models.any(
+                          (model) => _modelKey(model) == _selection[role],
+                        )
+                        ? _selection[role]
+                        : null,
                     isExpanded: true,
                     decoration: InputDecoration(labelText: _role(role)),
                     items: models
@@ -367,8 +386,21 @@ class _ReviewScreenState extends State<ReviewScreen> {
                           ),
                         )
                         .toList(),
-                    onChanged: (model) =>
-                        setState(() => _selection[role] = model),
+                    onChanged: capabilityState is! CapabilitiesReady
+                        ? null
+                        : (model) {
+                            if (!mounted || !_roles.contains(role)) return;
+                            final current = widget.capabilitiesViewModel.value;
+                            if (current is! CapabilitiesReady ||
+                                !current.capabilities.models.any(
+                                  (candidate) =>
+                                      candidate.isProviderConnected &&
+                                      _modelKey(candidate) == model,
+                                )) {
+                              return;
+                            }
+                            setState(() => _selection[role] = model);
+                          },
                   ),
                 ),
                 if (_roles.length > 2) ...[

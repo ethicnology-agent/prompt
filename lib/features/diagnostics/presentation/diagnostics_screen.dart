@@ -35,11 +35,25 @@ class DiagnosticsScreen extends StatefulWidget {
 class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   bool _reconnecting = false;
   bool _reloading = false;
+  bool _reloadDialogOpen = false;
+  int _scopeRevision = 0;
 
   @override
   void initState() {
     super.initState();
     widget.viewModel.load(widget.profile);
+  }
+
+  @override
+  void didUpdateWidget(DiagnosticsScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profile.id != widget.profile.id ||
+        oldWidget.viewModel != widget.viewModel) {
+      _scopeRevision++;
+      _reloading = false;
+      _reconnecting = false;
+      widget.viewModel.load(widget.profile);
+    }
   }
 
   Future<void> _reconnect() async {
@@ -59,6 +73,12 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   }
 
   Future<void> _reload() async {
+    if (!mounted || _reloading || _reloadDialogOpen) return;
+    final revision = _scopeRevision;
+    final profile = widget.profile;
+    final viewModel = widget.viewModel;
+    final reconcile = widget.onReloadReconciled;
+    _reloadDialogOpen = true;
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AppDialog(
@@ -82,15 +102,20 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
         ],
       ),
     );
-    if (confirmed != true || _reloading) {
+    _reloadDialogOpen = false;
+    if (!mounted ||
+        revision != _scopeRevision ||
+        confirmed != true ||
+        _reloading) {
       return;
     }
     setState(() => _reloading = true);
-    final result = await widget.viewModel.reload();
+    final result = await viewModel.reload(expectedProfile: profile);
+    if (!mounted || revision != _scopeRevision) return;
     if (result is DiagnosticsReloaded) {
-      await widget.onReloadReconciled();
+      await reconcile();
     }
-    if (!mounted) return;
+    if (!mounted || revision != _scopeRevision) return;
     setState(() => _reloading = false);
     final message = switch (result) {
       DiagnosticsReloaded() => 'OpenCode reloaded',

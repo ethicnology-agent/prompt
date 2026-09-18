@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -30,6 +31,93 @@ void main() {
     return DiagnosticsRepository(
       OpenCodeDiagnosticsService(OpenCodeTransport(client)),
       const _PasswordStore(),
+    );
+  }
+
+  test('pending diagnostics load cannot notify after disposal', () async {
+    final repository = _ControlledRepository();
+    repository.pendingLoad = Completer<DiagnosticsLoadResult>();
+    final viewModel = DiagnosticsViewModel(repository);
+    final loading = viewModel.load(profile);
+    viewModel.dispose();
+    repository.pendingLoad!.complete(
+      const DiagnosticsLoadFailed(DiagnosticsFailure.unavailable),
+    );
+    await expectLater(loading, completes);
+  });
+
+  for (final dispose in [false, true]) {
+    test('late reload cannot restore old profile dispose=$dispose', () async {
+      final repository = _ControlledRepository();
+      final viewModel = DiagnosticsViewModel(repository);
+      await viewModel.load(profile);
+      final reloading = viewModel.reload();
+      if (dispose) {
+        viewModel.dispose();
+      } else {
+        await viewModel.load(
+          ServerProfile(origin: Uri.parse('http://10.80.0.2')),
+        );
+      }
+      final count = repository.loaded.length;
+      repository.pendingReload.complete(const DiagnosticsReloaded());
+      await expectLater(reloading, completes);
+      expect(repository.loaded.length, count);
+      if (!dispose) viewModel.dispose();
+    });
+  }
+
+  for (final replace in [false, true]) {
+    testWidgets(
+      'reload confirmation cannot outlive diagnostics owner replace=$replace',
+      (tester) async {
+        final repository = _ControlledRepository();
+        final viewModel = DiagnosticsViewModel(repository);
+        final current = ValueNotifier<ServerProfile?>(profile);
+        final theme = themeViewModel();
+        addTearDown(current.dispose);
+        addTearDown(theme.dispose);
+        addTearDown(viewModel.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            home: ValueListenableBuilder<ServerProfile?>(
+              valueListenable: current,
+              builder: (_, owner, _) => owner == null
+                  ? const SizedBox()
+                  : DiagnosticsScreen(
+                      profile: owner,
+                      viewModel: viewModel,
+                      localNotificationService: LocalNotificationService(
+                        const _UnavailableNotifications(),
+                      ),
+                      themeViewModel: theme,
+                      onReconnect: () async => true,
+                      onDisconnect: () {},
+                      onReloadReconciled: () async {},
+                    ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.scrollUntilVisible(
+          find.text('Reload OpenCode'),
+          400,
+          scrollable: find.byType(Scrollable),
+        );
+        await tester.tap(find.widgetWithText(ListTile, 'Reload OpenCode'));
+        await tester.pumpAndSettle();
+        current.value = replace
+            ? ServerProfile(origin: Uri.parse('http://10.80.0.2'))
+            : null;
+        await tester.pump();
+        await tester.tap(find.widgetWithText(FilledButton, 'Reload OpenCode'));
+        await tester.pump();
+        expect(repository.reloads, isEmpty);
+        expect(tester.takeException(), isNull);
+        repository.pendingReload.complete(const DiagnosticsReloaded());
+        await tester.pumpAndSettle();
+        await tester.pumpWidget(const SizedBox());
+      },
     );
   }
 
@@ -463,6 +551,28 @@ void main() {
     theme.dispose();
     viewModel.dispose();
   });
+}
+
+class _ControlledRepository implements DiagnosticsRepository {
+  final loaded = <ServerProfile>[];
+  final reloads = <ServerProfile>[];
+  Completer<DiagnosticsLoadResult>? pendingLoad;
+  final pendingReload = Completer<DiagnosticsReloadResult>();
+
+  @override
+  Future<DiagnosticsLoadResult> load(ServerProfile profile) {
+    loaded.add(profile);
+    return pendingLoad?.future ??
+        Future.value(
+          const DiagnosticsLoadFailed(DiagnosticsFailure.unavailable),
+        );
+  }
+
+  @override
+  Future<DiagnosticsReloadResult> reload(ServerProfile profile) {
+    reloads.add(profile);
+    return pendingReload.future;
+  }
 }
 
 class _PasswordStore implements CredentialsStore {

@@ -51,6 +51,18 @@ void main() {
     files: const [ReviewFile(path: 'a', status: 'M', patch: 'x')],
   );
 
+  test('history deletion failure after disposal is ignored', () async {
+    final pendingStore = Completer<ReviewHistoryStore>();
+    final viewModel = ReviewViewModel(
+      _Repository(Future.value(snapshot)),
+      historyStoreProvider: () => pendingStore.future,
+    );
+    final deletion = viewModel.deleteHistory('review');
+    viewModel.dispose();
+    pendingStore.completeError(StateError('Storage unavailable'));
+    await expectLater(deletion, completes);
+  });
+
   test(
     'cancel preserves the current run data while changing only run state',
     () async {

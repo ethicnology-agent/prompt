@@ -9,6 +9,7 @@ import 'package:prompt/data/remote/opencode_transport.dart';
 import 'package:prompt/features/capabilities/data/capabilities_repository.dart';
 import 'package:prompt/features/capabilities/data/opencode_capabilities_service.dart';
 import 'package:prompt/features/capabilities/domain/open_code_capabilities.dart';
+import 'package:prompt/features/capabilities/domain/capabilities_load_result.dart';
 import 'package:prompt/features/capabilities/domain/open_code_model.dart';
 import 'package:prompt/features/capabilities/presentation/capabilities_view_model.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
@@ -195,6 +196,78 @@ StoredReview _stored(String id, ReviewRun run) => StoredReview(
 );
 
 void main() {
+  for (final next in <CapabilitiesUiState>[
+    const CapabilitiesLoading(),
+    const CapabilitiesError(CapabilitiesFailure.unavailable),
+    const CapabilitiesEmpty(),
+  ]) {
+    testWidgets(
+      'capability loss ${next.runtimeType} disables review and stale start',
+      (tester) async {
+        final repository = _FakeRepository(_snapshot);
+        final review = ReviewViewModel(repository);
+        final capabilities = _capabilities(_models);
+        addTearDown(capabilities.dispose);
+        await tester.pumpWidget(_screen(review, capabilities));
+        await tester.pumpAndSettle();
+        final start = tester
+            .widget<FilledButton>(
+              find.widgetWithText(FilledButton, 'Start review'),
+            )
+            .onPressed!;
+        capabilities.value = next;
+        await tester.pump();
+        expect(
+          tester
+              .widget<FilledButton>(
+                find.widgetWithText(FilledButton, 'Start review'),
+              )
+              .onPressed,
+          isNull,
+        );
+        start();
+        await tester.pump();
+        expect(repository.started, isEmpty);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
+  testWidgets('stale reviewer dropdown cannot restore a disconnected model', (
+    tester,
+  ) async {
+    final repository = _FakeRepository(_snapshot);
+    final review = ReviewViewModel(repository);
+    final capabilities = _capabilities(_models);
+    addTearDown(capabilities.dispose);
+    await tester.pumpWidget(_screen(review, capabilities));
+    await tester.pumpAndSettle();
+    final select = tester
+        .widget<DropdownButtonFormField<String>>(
+          find.byType(DropdownButtonFormField<String>).first,
+        )
+        .onChanged!;
+    capabilities.value = CapabilitiesReady(
+      OpenCodeCapabilities(
+        models: _models.skip(1).toList(),
+        agents: const [],
+        commands: const [],
+      ),
+    );
+    await tester.pump();
+    select('provider0\u0000model0');
+    await tester.pump();
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.text('Start review'));
+    await tester.pumpAndSettle();
+    expect(
+      repository.started.single.any(
+        (reviewer) => reviewer.model.modelId == 'model0',
+      ),
+      isFalse,
+    );
+  });
   testWidgets('desktop review content grows when the window is resized', (
     tester,
   ) async {

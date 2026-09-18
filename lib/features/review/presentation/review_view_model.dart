@@ -102,7 +102,7 @@ class ReviewViewModel extends ValueNotifier<ReviewRun> {
       try {
         await (await historyStoreProvider!()).delete(id);
       } on Object {
-        historyState.value = const ReviewHistoryFailed();
+        if (!_disposed) historyState.value = const ReviewHistoryFailed();
         return;
       }
     }
