@@ -2,6 +2,7 @@ import { randomUUID, createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import { Fault, allowedDirectory } from './security.js';
 import { approvalPresentation, approvalRestriction } from './approval-presentation.js';
+import { validatePromptParts } from './image-input.js';
 
 export class Sessions extends EventEmitter {
   constructor(engine, adapter, roots, { maxSessions = 32, maxMessages = 1000, maxOutput = 2 * 1024 * 1024, turnTimeout = 30 * 60 * 1000, approvalTimeout = 5 * 60 * 1000 } = {}) {
@@ -39,18 +40,38 @@ export class Sessions extends EventEmitter {
     directory = await allowedDirectory(directory, this.roots);
     if (title !== undefined && (typeof title !== 'string' || title.length > 256)) throw new Fault(400, 'invalid_title');
     const now = Date.now();
-    const session = { id: `${this.engine}_${randomUUID()}`, projectID: this.projectId(directory), directory, title: title || 'New session', time: { created: now, updated: now }, messages: [], accepted: new Map(), status: 'idle', runner: null, active: false, outputBytes: 0 };
+    const session = { id: `${this.engine}_${randomUUID()}`, projectID: this.projectId(directory), directory, title: title || 'New session', time: { created: now, updated: now }, messages: [], accepted: new Map(), status: 'idle', runner: null, active: false, outputBytes: 0, imageBytes: 0 };
     this.sessions.set(session.id, session);
     return this.record(session);
   }
-  message(session, role, text, id = randomUUID()) {
-    const record = { info: { id, role, sessionID: session.id, time: { created: Date.now() } }, parts: [{ id: randomUUID(), type: 'text', sessionID: session.id, messageID: id, text }] };
+  message(session, role, text, id = randomUUID(), parts = [{ type: 'text', text }]) {
+    const record = { info: { id, role, sessionID: session.id, time: { created: Date.now() } }, parts: parts.map((part) => ({ ...part, id: randomUUID(), sessionID: session.id, messageID: id })) };
     session.messages.push(record);
     this.emitEvent(session, 'message.updated', { info: record.info });
-    this.emitEvent(session, 'message.part.updated', { part: record.parts[0] });
+    for (const part of record.parts) this.emitEvent(session, 'message.part.updated', { part });
     return record;
   }
-  submit(session, body) {
+  submit(session, body, catalog) {
+    if (typeof body.messageID === 'string' && session.accepted.has(body.messageID)) {
+      const fingerprint = createHash('sha256').update(JSON.stringify(body)).digest('hex');
+      if (session.accepted.get(body.messageID) !== fingerprint) throw new Fault(409, 'message_id_conflict');
+      return;
+    }
+    if (body.reasoningEffort !== undefined) {
+      if (typeof body.reasoningEffort !== 'string' || !body.reasoningEffort.length || body.reasoningEffort.length > 128 || /[\x00-\x1f\x7f]/.test(body.reasoningEffort)) throw new Fault(400, 'invalid_reasoning_effort');
+      if (!catalog || !body.model || body.model.providerID !== this.engine || body.model.modelID === 'default') throw new Fault(400, 'effort_requires_available_model');
+      return catalog.read().then((value) => {
+        const model = value.models.find((entry) => entry.id === body.model.modelID);
+        if (value.status !== 'ready' || !model?.executionOptions?.reasoningEfforts.some((choice) => choice.id === body.reasoningEffort) || (this.engine === 'codex' && !model.executionOptions.defaultReasoningEffortId)) throw new Fault(400, 'unsupported_reasoning_effort');
+        this._submit(session, body, { reasoningEffort: body.reasoningEffort });
+      });
+    }
+    const selectedModel = body.model?.modelID ?? session.selectedModel;
+    const defaultEffort = catalog?.cached?.models.find((entry) => entry.id === selectedModel)?.executionOptions?.defaultReasoningEffortId;
+    if (session.effortWasSet && this.engine === 'codex' && selectedModel && selectedModel !== 'default' && !defaultEffort) throw new Fault(400, 'effort_default_unavailable');
+    return this._submit(session, body, { resetEffort: session.effortWasSet === true, defaultEffort });
+  }
+  _submit(session, body, execution) {
     const fingerprint = createHash('sha256').update(JSON.stringify(body)).digest('hex');
     if (typeof body.messageID === 'string' && session.accepted.has(body.messageID)) {
       if (session.accepted.get(body.messageID) !== fingerprint) throw new Fault(409, 'message_id_conflict');
@@ -59,24 +80,26 @@ export class Sessions extends EventEmitter {
     if (session.broken) throw new Fault(409, 'session_failed_create_new');
     if (session.active) throw new Fault(409, 'session_busy');
     if (session.messages.length + 2 > this.maxMessages) throw new Fault(429, 'history_limit');
-    if (!Array.isArray(body.parts) || !body.parts.length || body.parts.some((part) => part?.type !== 'text' || typeof part.text !== 'string')) throw new Fault(400, 'text_parts_required');
-    if (Object.keys(body).some((key) => !['parts', 'model', 'agent', 'messageID'].includes(key))) throw new Fault(400, 'unsupported_prompt_option');
+    const input = validatePromptParts(body.parts);
+    if (Object.keys(body).some((key) => !['parts', 'model', 'agent', 'messageID', 'reasoningEffort'].includes(key))) throw new Fault(400, 'unsupported_prompt_option');
     if (body.agent && body.agent !== this.engine) throw new Fault(400, 'unsupported_agent');
     if (body.model && (body.model.providerID !== this.engine || typeof body.model.modelID !== 'string' || body.model.modelID.length > 128)) throw new Fault(400, 'invalid_model');
     if (body.messageID !== undefined && (typeof body.messageID !== 'string' || body.messageID.length > 128)) throw new Fault(400, 'invalid_message_id');
-    const text = body.parts.map((part) => part.text).join('\n');
-    if (!text.trim() || Buffer.byteLength(text) > 128 * 1024) throw new Fault(400, 'invalid_prompt');
+    const { text, images } = input;
+    if (session.outputBytes + Buffer.byteLength(text) > this.maxOutput || session.imageBytes + input.imageBytes > 25 * 1024 * 1024) throw new Fault(413, 'history_limit');
     session.outputBytes += Buffer.byteLength(text);
-    if (session.outputBytes > this.maxOutput) throw new Fault(413, 'history_limit');
+    session.imageBytes += input.imageBytes;
     session.active = true;
+    session.effortWasSet ||= execution.reasoningEffort !== undefined;
+    session.selectedModel = body.model?.modelID ?? session.selectedModel;
     if (body.messageID) session.accepted.set(body.messageID, fingerprint);
     session.time.updated = Date.now();
-    this.message(session, 'user', text, body.messageID);
+    this.message(session, 'user', text, body.messageID, input.parts);
     session.assistant = this.message(session, 'assistant', '');
     this.status(session, 'busy');
-    session.task = this.run(session, text, body.model?.modelID);
+    session.task = this.run(session, text, body.model?.modelID, images, execution);
   }
-  async run(session, text, model) {
+  async run(session, text, model, images = [], execution = {}) {
     let deadline;
     try {
       const timeout = new Promise((_, reject) => { deadline = setTimeout(() => { session.runner?.close(); reject(new Fault(504, 'turn_timeout')); }, this.turnTimeout); });
@@ -86,7 +109,7 @@ export class Sessions extends EventEmitter {
           permission: (tool, input) => this.permission(session, tool, input),
         });
         if (!session.active) { session.runner.close(); return; }
-        await session.runner.run(text, model);
+        await session.runner.run(text, model, images, execution);
       })(), timeout]);
       session.assistant.info.time.completed = Date.now();
     } catch {

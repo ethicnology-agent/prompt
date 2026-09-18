@@ -233,25 +233,32 @@ test('Codex real subprocess fixture validates handshake, deltas and completion',
   assert.equal(output, 'fixture response');
 });
 
-test('Claude SDK hook gates every tool and resumes native context', async () => {
+test('Claude SDK hook gates every tool and retains one nonpersistent native context', async () => {
   const options = [];
-  const adapter = new ClaudeAdapter(({ options: settings }) => {
+  const adapter = new ClaudeAdapter(({ prompt, options: settings }) => {
     options.push(settings);
-    return (async function* () {
-      const result = await settings.hooks.PreToolUse[0].hooks[0]({ tool_name: 'Bash', tool_input: { command: 'fixture' } });
-      assert.equal(result.hookSpecificOutput.permissionDecision, 'deny');
-      yield { type: 'system', subtype: 'init', session_id: 'native-session' };
-      yield { type: 'stream_event', event: { delta: { type: 'text_delta', text: 'fixture' } } };
-      yield { type: 'result', subtype: 'success', is_error: false };
+    const stream = (async function* () {
+      for await (const _message of prompt) {
+        const result = await settings.hooks.PreToolUse[0].hooks[0]({ tool_name: 'Bash', tool_input: { command: 'fixture' } });
+        assert.equal(result.hookSpecificOutput.permissionDecision, 'deny');
+        yield { type: 'system', subtype: 'init', session_id: 'native-session' };
+        yield { type: 'stream_event', event: { delta: { type: 'text_delta', text: 'fixture' } } };
+        yield { type: 'result', subtype: 'success', is_error: false };
+      }
     })();
+    stream.close = () => { void stream.return(); };
+    return stream;
   });
   let text = '';
   const runner = await adapter.open({ directory: '/fixture' }, { delta: (value) => { text += value; }, permission: async () => false });
   await runner.run('first'); await runner.run('second');
-  assert.equal(options[1].resume, 'native-session');
+  assert.equal(options.length, 1);
+  assert.equal(options[0].persistSession, false);
+  assert.equal(options[0].resume, undefined);
   assert.deepEqual(options[0].settingSources, []);
   assert.equal(options[0].permissionMode, 'default');
   assert.equal(text, 'fixturefixture');
+  runner.close();
 });
 
 test('SSE disconnect releases its subscription and snapshots reconcile deltas', async (t) => {

@@ -12,8 +12,9 @@ export function childEnvironment(source = process.env) {
 }
 
 export class JsonProcess extends EventEmitter {
-  constructor(executable, args, cwd, launch = spawn) {
+  constructor(executable, args, cwd, launch = spawn, { maxFrameBytes = 2 * 1024 * 1024 } = {}) {
     super();
+    if (!Number.isInteger(maxFrameBytes) || maxFrameBytes < 1 || maxFrameBytes > 16 * 1024 * 1024) throw new Fault(400, 'invalid_frame_limit');
     this.pending = new Map();
     this.counter = 0;
     this.closed = false;
@@ -24,7 +25,7 @@ export class JsonProcess extends EventEmitter {
     this.child.stdout.setEncoding('utf8');
     this.child.stdout.on('data', (chunk) => {
       this.buffer += chunk;
-      if (Buffer.byteLength(this.buffer) > 2 * 1024 * 1024) return this.close();
+      if (Buffer.byteLength(this.buffer) > maxFrameBytes) return this.close();
       let end;
       while ((end = this.buffer.indexOf('\n')) >= 0) {
         const line = this.buffer.slice(0, end);

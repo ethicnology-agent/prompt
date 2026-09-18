@@ -1,6 +1,8 @@
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
 import { Fault, authenticate, privateAddress, bodyJson, allowedDirectory } from './security.js';
+import { NativeModelCatalog, providerCatalog } from './model-catalog.js';
+import { imageConstraints, imageRequestBytes } from './image-input.js';
 
 function json(response, value, status = 200) {
   response.writeHead(status, { 'content-type': 'application/json', 'cache-control': 'no-store', 'x-content-type-options': 'nosniff' });
@@ -15,6 +17,7 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
     if (!['http:', 'https:'].includes(url.protocol) || !privateAddress(url.hostname.replace(/^\[|\]$/g, '')) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Fault(400, 'private_opencode_origin_required');
   }
   const subscribers = new Set();
+  const catalogs = new Map(Object.entries(engines).map(([engine, store]) => [engine, new NativeModelCatalog(store.adapter, roots[0])]));
   const server = createServer({ requestTimeout: 30000, headersTimeout: 10000, maxHeaderSize: 8192 }, async (request, response) => {
     try {
       const origin = request.headers.origin;
@@ -43,7 +46,8 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
       if (url.pathname === '/prompt/capabilities' && request.method === 'GET') {
         json(response, { protocolVersion: 1, machine: { worktrees: Boolean(worktrees) }, engines: Object.fromEntries(['claude', 'codex', 'opencode'].map((name) => [name, {
           available: name === 'opencode' ? Boolean(openCode) : Boolean(engines[name]),
-          features: name === 'opencode' ? (openCode ? ['sessions', 'text', 'abort', 'permissions', 'permissionAlways', 'questions', 'commands', 'attachments', 'sessionDelete', 'sessionRename', 'sessionFork', 'sessionRevert'] : []) : (engines[name] ? ['sessions', 'text', 'abort', 'permissions', 'sessionDelete', 'sessionRename'] : []),
+          features: name === 'opencode' ? (openCode ? ['sessions', 'text', 'abort', 'permissions', 'permissionAlways', 'questions', 'commands', 'attachments', 'sessionDelete', 'sessionRename', 'sessionFork', 'sessionRevert'] : []) : (engines[name] ? ['sessions', 'text', 'abort', 'permissions', 'attachments', 'imageAttachments', 'sessionDelete', 'sessionRename'] : []),
+          ...(name !== 'opencode' && engines[name] ? { attachmentConstraints: imageConstraints } : {}),
           persistence: name === 'opencode' ? 'upstream' : 'gateway-lifetime',
         }])) }); return;
       }
@@ -73,7 +77,7 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
       if (request.method === 'GET') {
         if (path === '/global/health') { json(response, { healthy: true, version: 'prompt-gateway/0.1.0' }); return; }
         if (path === '/project') { json(response, store.projects()); return; }
-        if (path === '/provider') { json(response, { all: [{ id: engine, name: engine, models: { default: { id: 'default', name: 'CLI default' } } }], connected: [engine], default: { [engine]: 'default' } }); return; }
+        if (path === '/provider') { json(response, providerCatalog(engine, await catalogs.get(engine).read())); return; }
         if (path === '/agent') { json(response, [{ name: engine, mode: 'primary', builtIn: true }]); return; }
         if (path === '/command' || path === '/question') { json(response, []); return; }
         if (path === '/permission') { json(response, [...store.permissions.values()].map((p) => p.record)); return; }
@@ -114,7 +118,7 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
         json(response, session.messages.slice(start, end)); return;
       }
       if (['todo', 'diff', 'children'].includes(action) && request.method === 'GET') { json(response, []); return; }
-      if (action === 'prompt_async' && request.method === 'POST') { store.submit(session, await bodyJson(request)); response.writeHead(204); response.end(); return; }
+      if (action === 'prompt_async' && request.method === 'POST') { await store.submit(session, await bodyJson(request, imageRequestBytes), catalogs.get(engine)); response.writeHead(204); response.end(); return; }
       if (action === 'abort' && request.method === 'POST') { json(response, await store.abort(session)); return; }
       if (action?.startsWith('permissions/') && request.method === 'POST') {
         const body = await bodyJson(request);
@@ -132,6 +136,7 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
     async listen(port = 4097) { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); }); return server.address(); },
     async close() {
       worktrees?.close();
+      for (const catalog of catalogs.values()) catalog.close();
       for (const response of subscribers) response.destroy();
       for (const store of Object.values(engines)) store.close();
       server.closeAllConnections();
