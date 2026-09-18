@@ -410,6 +410,7 @@ void main() {
     OpenCodeSession? activeSession,
     ServerProfile? activeProfile,
     ValueChanged<OpenCodeSession>? onOpenFork,
+    ValueChanged<String>? onOpenFile,
   }) async {
     // Default to a settled, empty transcript unless a test seeds its own:
     // the loading state renders an indeterminate `CircularProgressIndicator`,
@@ -438,6 +439,7 @@ void main() {
           reviewViewModelFactory: reviewViewModelFactory,
           voiceViewModel: voiceViewModel,
           onOpenFork: onOpenFork,
+          onOpenFile: onOpenFile,
         ),
       ),
     );
@@ -1979,6 +1981,139 @@ void main() {
     );
   });
 
+  testWidgets(
+    'dragging artifact files expands the mobile sheet and reaches the last file',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 850));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      viewModel.artifacts.value = SessionArtifactsReady(
+        todos: const [],
+        diffs: [
+          for (var i = 0; i < 40; i++)
+            SessionFileDiff(
+              file: 'artifact-$i.dart',
+              patch: '',
+              additions: 1,
+              deletions: 0,
+            ),
+        ],
+      );
+      await pumpScreen(tester);
+      await tester.tap(find.byTooltip('Session details and actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Session artifacts'));
+      await tester.pumpAndSettle();
+      final sheet = find.byType(DraggableScrollableSheet);
+      final initialHeight = tester.getSize(sheet).height;
+      await tester.drag(find.text('artifact-0.dart'), const Offset(0, -200));
+      await tester.pumpAndSettle();
+      expect(tester.getSize(sheet).height, greaterThan(initialHeight + 100));
+      final scrollable = find.descendant(
+        of: sheet,
+        matching: find.byType(Scrollable),
+      );
+      expect(scrollable, findsOneWidget);
+      await tester.scrollUntilVisible(
+        find.text('artifact-39.dart'),
+        400,
+        scrollable: scrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('artifact-39.dart').hitTestable(), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('file tool navigation opens exact path only after explicit tap', (
+    tester,
+  ) async {
+    const path = '/workspace/project/été file.dart';
+    final opened = <String>[];
+    viewModel.messages.value = ConversationReady([
+      ChatMessage(
+        id: 'file-message',
+        role: ChatMessageRole.assistant,
+        createdAt: DateTime(2026),
+        text: '',
+        details: const [
+          ChatToolDetail(
+            id: 'file-tool',
+            tool: 'read',
+            status: 'completed',
+            filePath: path,
+            output: 'File output stays inspectable',
+          ),
+        ],
+      ),
+    ]);
+    await pumpScreen(tester, onOpenFile: opened.add);
+    expect(opened, isEmpty);
+    expect(find.text(path), findsOneWidget);
+    await tester.tap(find.text('Tool output'));
+    await tester.pumpAndSettle();
+    expect(find.text('File output stays inspectable'), findsOneWidget);
+    expect(opened, isEmpty);
+    await tester.tap(find.text(path));
+    await tester.pump();
+    expect(opened, [path]);
+  });
+
+  for (final scenario in [
+    'missing callback',
+    'unsupported profile',
+    'missing typed path',
+  ]) {
+    testWidgets('file tool navigation is unavailable with $scenario', (
+      tester,
+    ) async {
+      final opened = <String>[];
+      viewModel.messages.value = ConversationReady([
+        ChatMessage(
+          id: 'file-message',
+          role: ChatMessageRole.assistant,
+          createdAt: DateTime(2026),
+          text: '',
+          details: [
+            ChatToolDetail(
+              id: 'file-tool',
+              tool: 'read',
+              status: 'completed',
+              filePath: scenario == 'missing typed path'
+                  ? null
+                  : '/workspace/file.dart',
+              input: '{"filePath":"/workspace/file.dart"}',
+              output: 'File output stays inspectable',
+            ),
+          ],
+        ),
+      ]);
+      await pumpScreen(
+        tester,
+        onOpenFile: scenario == 'missing callback' ? null : opened.add,
+        activeProfile: scenario == 'unsupported profile'
+            ? ServerProfile(
+                origin: profile.origin,
+                backend: AgentBackend.gatewayCodex,
+                capabilities: BackendCapabilities([
+                  BackendFeature.sessions,
+                  BackendFeature.text,
+                ]),
+              )
+            : profile,
+      );
+      expect(find.text('/workspace/file.dart'), findsNothing);
+      expect(find.text('Tool output'), findsNothing);
+      expect(find.text('File output stays inspectable'), findsOneWidget);
+      expect(
+        find.byWidgetPredicate(
+          (widget) => widget is ListTile && widget.onTap != null,
+        ),
+        findsNothing,
+      );
+      expect(opened, isEmpty);
+    });
+  }
+
   testWidgets('renders a live subagent tool before assistant prose', (
     tester,
   ) async {
@@ -3098,7 +3233,13 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.byType(DraggableScrollableSheet), findsOneWidget);
-    expect(find.byType(ListView), findsWidgets);
+    expect(
+      find.descendant(
+        of: find.byType(DraggableScrollableSheet),
+        matching: find.byType(CustomScrollView),
+      ),
+      findsOneWidget,
+    );
     await tester.drag(find.text('Todo 0'), const Offset(0, -400));
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);

@@ -62,6 +62,7 @@ final class ToolMessagePart extends MessagePart {
     required this.status,
     this.summary,
     this.error,
+    this.filePath,
   });
 
   final String tool;
@@ -71,6 +72,7 @@ final class ToolMessagePart extends MessagePart {
   /// It is kept in memory only and is never logged or persisted.
   final String? summary;
   final String? error;
+  final String? filePath;
 }
 
 /// Any other OpenCode part type (file, agent, step markers, snapshots,

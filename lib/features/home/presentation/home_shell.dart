@@ -180,6 +180,8 @@ class _HomeShellState extends State<HomeShell> {
                   voiceViewModel: widget.voiceViewModel,
                   onOpenFork: (forked) =>
                       setState(() => _selectedSession = forked),
+                  onOpenFile: (path) =>
+                      _openSessionFile(context, session, path),
                   reviewViewModelFactory: widget.reviewViewModelFactory,
                 ),
                 _ => const _EmptyMasterDetail(),
@@ -294,6 +296,24 @@ class _HomeShellState extends State<HomeShell> {
     );
   }
 
+  void _openSessionFile(
+    BuildContext context,
+    OpenCodeSession session,
+    String path,
+  ) {
+    if (!widget.profile.capabilities.supports(BackendFeature.workspace)) return;
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => WorkspaceFileScreen(
+          profile: widget.profile,
+          directory: session.directory,
+          path: path,
+          viewModel: widget.workspaceViewModel.createFileViewModel(),
+        ),
+      ),
+    );
+  }
+
   Future<void> _openConversation(
     BuildContext context,
     OpenCodeSession session,
@@ -307,6 +327,7 @@ class _HomeShellState extends State<HomeShell> {
           capabilitiesViewModel: widget.capabilitiesViewModel,
           voiceViewModel: widget.voiceViewModel,
           onOpenFork: (forked) => _replaceConversation(context, forked),
+          onOpenFile: (path) => _openSessionFile(context, session, path),
           reviewViewModelFactory: widget.reviewViewModelFactory,
         ),
       ),
@@ -324,6 +345,7 @@ class _HomeShellState extends State<HomeShell> {
           capabilitiesViewModel: widget.capabilitiesViewModel,
           voiceViewModel: widget.voiceViewModel,
           onOpenFork: (forked) => _replaceConversation(context, forked),
+          onOpenFile: (path) => _openSessionFile(context, session, path),
           reviewViewModelFactory: widget.reviewViewModelFactory,
         ),
       ),

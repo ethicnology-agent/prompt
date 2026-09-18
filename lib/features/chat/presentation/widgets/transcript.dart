@@ -14,6 +14,7 @@ class Transcript extends StatelessWidget {
     required this.controller,
     required this.onRevert,
     this.canRevert = true,
+    this.onOpenFile,
     this.assistantLabel = 'OpenCode',
     required this.onLoadOlder,
     required this.hasMore,
@@ -28,6 +29,7 @@ class Transcript extends StatelessWidget {
   final ScrollController controller;
   final ValueChanged<ChatMessage> onRevert;
   final bool canRevert;
+  final ValueChanged<String>? onOpenFile;
   final String assistantLabel;
   final VoidCallback onLoadOlder;
   final bool hasMore;
@@ -71,6 +73,7 @@ class Transcript extends StatelessWidget {
                 showRevert: canRevert && index == 0,
                 assistantLabel: assistantLabel,
                 onRevert: () => onRevert(message),
+                onOpenFile: onOpenFile,
                 desktop: desktop,
               );
               return desktop
@@ -226,6 +229,7 @@ class _MessageBubble extends StatelessWidget {
     required this.onRevert,
     required this.desktop,
     required this.assistantLabel,
+    this.onOpenFile,
     super.key,
   });
 
@@ -234,6 +238,7 @@ class _MessageBubble extends StatelessWidget {
   final VoidCallback onRevert;
   final bool desktop;
   final String assistantLabel;
+  final ValueChanged<String>? onOpenFile;
 
   @override
   Widget build(BuildContext context) {
@@ -280,7 +285,7 @@ class _MessageBubble extends StatelessWidget {
             if (message.details.isNotEmpty) ...[
               if (!userMessage) const SizedBox(height: 10),
               for (final detail in message.details)
-                _MessageDetailCard(detail: detail),
+                _MessageDetailCard(detail: detail, onOpenFile: onOpenFile),
             ],
             if (message.text.trim().isNotEmpty) ...[
               if (!userMessage || message.details.isNotEmpty)
@@ -329,14 +334,50 @@ class _MessageBubble extends StatelessWidget {
 }
 
 class _MessageDetailCard extends StatelessWidget {
-  const _MessageDetailCard({required this.detail});
+  const _MessageDetailCard({required this.detail, this.onOpenFile});
 
   final ChatMessageDetail detail;
+  final ValueChanged<String>? onOpenFile;
 
   @override
   Widget build(BuildContext context) {
     if (detail is ChatToolDetail) {
       final toolDetail = detail as ChatToolDetail;
+      if (toolDetail.filePath case final path? when onOpenFile != null) {
+        final theme = Theme.of(context);
+        final generic = toolDetail.presentation;
+        final status = _toolStatus(toolDetail.status);
+        return Padding(
+          padding: const EdgeInsets.only(top: 6),
+          child: Card(
+            margin: EdgeInsets.zero,
+            color: _tokens(theme).panelRaised,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                ListTile(
+                  leading: Icon(
+                    status.icon,
+                    color: status.color(_tokens(theme)),
+                  ),
+                  title: Text(
+                    generic is ChatGenericToolPresentation
+                        ? generic.title
+                        : _toolLabel(toolDetail.tool),
+                  ),
+                  subtitle: Text(path),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: () => onOpenFile!(path),
+                ),
+                ExpansionTile(
+                  title: const Text('Tool output'),
+                  children: [_MessageDetailCard(detail: detail)],
+                ),
+              ],
+            ),
+          ),
+        );
+      }
       if (toolDetail.presentation case final ChatTodoPresentation todos) {
         return _TodoDetailCard(items: todos.items);
       }

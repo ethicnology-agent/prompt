@@ -21,6 +21,7 @@ class ChatToolDetail extends ChatMessageDetail {
     this.output,
     this.error,
     this.presentation,
+    this.filePath,
   });
 
   final String tool;
@@ -29,6 +30,9 @@ class ChatToolDetail extends ChatMessageDetail {
   final String? output;
   final String? error;
   final ChatToolPresentation? presentation;
+
+  /// Validated structured tool input; never inferred from display text.
+  final String? filePath;
 }
 
 sealed class ChatToolPresentation {

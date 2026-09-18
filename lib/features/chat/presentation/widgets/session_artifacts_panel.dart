@@ -11,6 +11,9 @@ class SessionArtifactsPanel extends StatelessWidget {
     required this.state,
     required this.onRefresh,
     this.lazy = false,
+    this.onOpenDiff,
+    this.scrollController,
+    this.header,
     super.key,
   });
 
@@ -20,11 +23,53 @@ class SessionArtifactsPanel extends StatelessWidget {
   /// Set this only when the parent gives the panel a finite height. The
   /// default keeps the panel composable in an outer scroll view.
   final bool lazy;
+  final ValueChanged<SessionFileDiff>? onOpenDiff;
+  final ScrollController? scrollController;
+  final Widget? header;
 
   @override
   Widget build(BuildContext context) {
-    if (lazy && state is SessionArtifactsLoading) {
-      return const Center(child: CircularProgressIndicator());
+    if (lazy) {
+      return Semantics(
+        container: true,
+        label: 'Session artifacts',
+        child: CustomScrollView(
+          controller: scrollController,
+          slivers: [
+            if (header != null) SliverToBoxAdapter(child: header),
+            if (state case SessionArtifactsReady(
+              :final todos,
+              :final diffs,
+            )) ...[
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                  child: Text(
+                    'Session artifacts',
+                    style: Theme.of(context).textTheme.titleMedium,
+                  ),
+                ),
+              ),
+              SliverPadding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                sliver: _LazyArtifactList(
+                  todos: todos,
+                  diffs: diffs,
+                  onRefresh: onRefresh,
+                  onOpenDiff: onOpenDiff,
+                ),
+              ),
+            ] else
+              SliverToBoxAdapter(
+                child: SessionArtifactsPanel(
+                  state: state,
+                  onRefresh: onRefresh,
+                  onOpenDiff: onOpenDiff,
+                ),
+              ),
+          ],
+        ),
+      );
     }
     return Semantics(
       container: true,
@@ -65,53 +110,43 @@ class SessionArtifactsPanel extends StatelessWidget {
                   ),
                 ],
               ),
-              SessionArtifactsReady(:final todos, :final diffs) =>
-                lazy
-                    ? Expanded(
-                        child: _LazyArtifactList(
-                          todos: todos,
-                          diffs: diffs,
-                          onRefresh: onRefresh,
+              SessionArtifactsReady(:final todos, :final diffs) => Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                          'Todos (${todos.length}) · Changed files (${diffs.length})',
+                          style: Theme.of(context).textTheme.labelLarge,
                         ),
-                      )
-                    : Column(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
-                        children: [
-                          Row(
-                            children: [
-                              Expanded(
-                                child: Text(
-                                  'Todos (${todos.length}) · Changed files (${diffs.length})',
-                                  style: Theme.of(context).textTheme.labelLarge,
-                                ),
-                              ),
-                              AppIconButton(
-                                icon: Icons.refresh_rounded,
-                                tooltip: 'Refresh session artifacts',
-                                onPressed: onRefresh,
-                              ),
-                            ],
-                          ),
-                          if (todos.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 8),
-                              child: Text(
-                                'No todos reported for this session.',
-                              ),
-                            )
-                          else
-                            for (final todo in todos) _TodoRow(todo: todo),
-                          if (diffs.isEmpty)
-                            const Padding(
-                              padding: EdgeInsets.symmetric(vertical: 8),
-                              child: Text(
-                                'No changed files reported for this session.',
-                              ),
-                            )
-                          else
-                            for (final diff in diffs) _DiffRow(diff: diff),
-                        ],
                       ),
+                      AppIconButton(
+                        icon: Icons.refresh_rounded,
+                        tooltip: 'Refresh session artifacts',
+                        onPressed: onRefresh,
+                      ),
+                    ],
+                  ),
+                  if (todos.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text('No todos reported for this session.'),
+                    )
+                  else
+                    for (final todo in todos) _TodoRow(todo: todo),
+                  if (diffs.isEmpty)
+                    const Padding(
+                      padding: EdgeInsets.symmetric(vertical: 8),
+                      child: Text(
+                        'No changed files reported for this session.',
+                      ),
+                    )
+                  else
+                    for (final diff in diffs)
+                      _DiffRow(diff: diff, onOpen: onOpenDiff),
+                ],
+              ),
             },
           ],
         ),
@@ -125,11 +160,13 @@ class _LazyArtifactList extends StatelessWidget {
     required this.todos,
     required this.diffs,
     required this.onRefresh,
+    this.onOpenDiff,
   });
 
   final List<SessionTodo> todos;
   final List<SessionFileDiff> diffs;
   final Future<void> Function({String? messageId}) onRefresh;
+  final ValueChanged<SessionFileDiff>? onOpenDiff;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +174,7 @@ class _LazyArtifactList extends StatelessWidget {
         1 +
         (todos.isEmpty ? 1 : todos.length) +
         (diffs.isEmpty ? 1 : diffs.length);
-    return ListView.builder(
+    return SliverList.builder(
       itemCount: itemCount,
       itemBuilder: (context, index) {
         if (index == 0) {
@@ -173,7 +210,10 @@ class _LazyArtifactList extends StatelessWidget {
             child: Text('No changed files reported for this session.'),
           );
         }
-        return _DiffRow(diff: diffs[index - todoOffset - todos.length]);
+        return _DiffRow(
+          diff: diffs[index - todoOffset - todos.length],
+          onOpen: onOpenDiff,
+        );
       },
     );
   }
@@ -211,9 +251,10 @@ class _TodoRow extends StatelessWidget {
 }
 
 class _DiffRow extends StatefulWidget {
-  const _DiffRow({required this.diff});
+  const _DiffRow({required this.diff, this.onOpen});
 
   final SessionFileDiff diff;
+  final ValueChanged<SessionFileDiff>? onOpen;
 
   @override
   State<_DiffRow> createState() => _DiffRowState();
@@ -279,6 +320,18 @@ class _DiffRowState extends State<_DiffRow> {
   @override
   Widget build(BuildContext context) {
     final counters = '+${diff.additions} · -${diff.deletions}';
+    if (widget.onOpen != null) {
+      return ListTile(
+        contentPadding: EdgeInsets.zero,
+        leading: const Icon(Icons.difference_outlined),
+        title: Text(diff.file.isEmpty ? 'Changed file' : diff.file),
+        subtitle: Text(
+          diff.status == null ? counters : '${diff.status} · $counters',
+        ),
+        trailing: const Icon(Icons.chevron_right),
+        onTap: () => widget.onOpen!(diff),
+      );
+    }
     return ExpansionTile(
       initiallyExpanded: diff.patch.split('\n').length > _previewLines,
       tilePadding: EdgeInsets.zero,

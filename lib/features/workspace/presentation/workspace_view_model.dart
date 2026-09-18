@@ -8,6 +8,7 @@ import '../../sessions/sessions.dart';
 import '../data/workspace_repository.dart';
 import '../domain/workspace_entry.dart';
 import '../domain/workspace_failure.dart';
+import 'workspace_file_view_model.dart';
 
 sealed class WorkspaceUiState {
   const WorkspaceUiState();
@@ -90,6 +91,9 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
   WorkspaceViewModel(this._repository) : super(const WorkspaceIdle());
 
   final WorkspaceRepository _repository;
+
+  WorkspaceFileViewModel createFileViewModel() =>
+      WorkspaceFileViewModel(_repository);
   final List<String> _pathHistory = [];
   Timer? _searchDebounce;
   int _searchRequest = 0;

@@ -84,8 +84,9 @@ List<ChatMessageDetail> _details(
           :final status,
           :final summary,
           :final error,
+          :final filePath,
         ) =>
-          _toolDetail(id, tool, status, summary, error, prior[id]),
+          _toolDetail(id, tool, status, summary, error, filePath, prior[id]),
         _ => null,
       },
   ].whereType<ChatMessageDetail>().toList(growable: false);
@@ -97,6 +98,7 @@ ChatToolDetail _toolDetail(
   ToolPartStatus status,
   String? input,
   String? error,
+  String? filePath,
   ChatMessageDetail? old,
 ) {
   final prior = old is ChatToolDetail ? old : null;
@@ -108,6 +110,7 @@ ChatToolDetail _toolDetail(
     output: prior?.output,
     error: error ?? prior?.error,
     presentation: prior?.presentation,
+    filePath: filePath,
   );
 }
 
@@ -131,6 +134,7 @@ bool _sameDetails(List<ChatMessageDetail> a, List<ChatMessageDetail> b) {
           left.input != right.input ||
           left.output != right.output ||
           left.error != right.error ||
+          left.filePath != right.filePath ||
           left.presentation != right.presentation) {
         return false;
       }

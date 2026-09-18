@@ -18,6 +18,7 @@ import '../domain/session_artifacts.dart';
 import '../domain/session_execution_state.dart';
 import 'conversation_view_model.dart';
 import 'session_details_screen.dart';
+import 'session_file_diff_screen.dart';
 import 'widgets/approval_dock.dart';
 import 'widgets/composer.dart';
 import 'widgets/connection_status_banner.dart';
@@ -63,6 +64,7 @@ class ConversationScreen extends StatefulWidget {
     this.capabilitiesViewModel,
     this.voiceViewModel,
     this.onOpenFork,
+    this.onOpenFile,
     this.reviewViewModelFactory,
     super.key,
   });
@@ -73,6 +75,7 @@ class ConversationScreen extends StatefulWidget {
   final CapabilitiesViewModel? capabilitiesViewModel;
   final VoiceViewModel? voiceViewModel;
   final ValueChanged<OpenCodeSession>? onOpenFork;
+  final ValueChanged<String>? onOpenFile;
   final ReviewViewModel Function()? reviewViewModelFactory;
 
   @override
@@ -669,6 +672,12 @@ class _ConversationScreenState extends State<ConversationScreen>
                   messages: messages,
                   onRefresh: widget.viewModel.refreshFromUserAction,
                   onRevert: _confirmRevert,
+                  onOpenFile:
+                      widget.profile.capabilities.supports(
+                        BackendFeature.workspace,
+                      )
+                      ? widget.onOpenFile
+                      : null,
                   canRevert: widget.profile.capabilities.supports(
                     BackendFeature.sessionRevert,
                   ),
@@ -874,6 +883,20 @@ class _ConversationScreenState extends State<ConversationScreen>
       valueListenable: widget.viewModel.artifacts,
       builder: (context, state, _) => SessionArtifactsPanel(
         state: state,
+        onOpenDiff: (diff) => Navigator.of(context).push<void>(
+          MaterialPageRoute<void>(
+            builder: (_) => SessionFileDiffScreen(
+              diff: diff,
+              onOpenFile:
+                  widget.onOpenFile == null ||
+                      !widget.profile.capabilities.supports(
+                        BackendFeature.workspace,
+                      )
+                  ? null
+                  : () => widget.onOpenFile!(diff.file),
+            ),
+          ),
+        ),
         onRefresh: widget.viewModel.reloadArtifacts,
         lazy: false,
       ),
@@ -958,20 +981,26 @@ class _ConversationScreenState extends State<ConversationScreen>
       builder: (context, scrollController) =>
           ValueListenableBuilder<SessionArtifactsState>(
             valueListenable: widget.viewModel.artifacts,
-            builder: (context, state, _) => ListView(
-              controller: scrollController,
-              children: [
-                _executionPanel(),
-                const SizedBox(height: 8),
-                SizedBox(
-                  height: 560,
-                  child: SessionArtifactsPanel(
-                    state: state,
-                    onRefresh: widget.viewModel.reloadArtifacts,
-                    lazy: true,
+            builder: (context, state, _) => SessionArtifactsPanel(
+              scrollController: scrollController,
+              header: _executionPanel(),
+              onOpenDiff: (diff) => Navigator.of(context).push<void>(
+                MaterialPageRoute<void>(
+                  builder: (_) => SessionFileDiffScreen(
+                    diff: diff,
+                    onOpenFile:
+                        widget.onOpenFile == null ||
+                            !widget.profile.capabilities.supports(
+                              BackendFeature.workspace,
+                            )
+                        ? null
+                        : () => widget.onOpenFile!(diff.file),
                   ),
                 ),
-              ],
+              ),
+              state: state,
+              onRefresh: widget.viewModel.reloadArtifacts,
+              lazy: true,
             ),
           ),
     ),
