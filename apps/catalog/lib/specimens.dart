@@ -1,3 +1,4 @@
+import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:design_system/design_system.dart';
@@ -21,6 +22,8 @@ final specimens = <Specimen>[
     (_) => const _DraftComposerSpecimen(expanded: false, canSubmit: false),
   ),
   Specimen('Attachment thumbnail', (_) => const _AttachmentSpecimen()),
+  Specimen('Image viewer', (_) => const _ImageViewerSpecimen()),
+  Specimen('Inline selection panel', (_) => const _InlineSelectionSpecimen()),
   Specimen(
     'Code lines',
     (_) => const SizedBox(
@@ -413,6 +416,121 @@ class SpecimenPage extends StatelessWidget {
         child: specimen.builder(context),
       ),
     ),
+  );
+}
+
+class _InlineSelectionSpecimen extends StatefulWidget {
+  const _InlineSelectionSpecimen();
+  @override
+  State<_InlineSelectionSpecimen> createState() =>
+      _InlineSelectionSpecimenState();
+}
+
+class _InlineSelectionSpecimenState extends State<_InlineSelectionSpecimen> {
+  String _selected = 'default';
+  bool _open = true;
+  @override
+  Widget build(BuildContext context) => _open
+      ? InlineSelectionPanel<String>(
+          title: 'Model',
+          selected: _selected,
+          listHeight: 220,
+          options: const [
+            InlineSelectionOption(value: 'default', label: 'Engine default'),
+            InlineSelectionOption(
+              value: 'focused',
+              label: 'Focused model',
+              description: 'Synthetic catalog option',
+              groupLabel: 'Available models',
+            ),
+            InlineSelectionOption(
+              value: 'fast',
+              label: 'Fast model',
+              groupLabel: 'Available models',
+            ),
+          ],
+          onSelected: (value) => setState(() => _selected = value),
+          onClose: () => setState(() => _open = false),
+        )
+      : AppButton(
+          label: 'Open inline choices',
+          onPressed: () => setState(() => _open = true),
+        );
+}
+
+class _ImageViewerSpecimen extends StatefulWidget {
+  const _ImageViewerSpecimen();
+  @override
+  State<_ImageViewerSpecimen> createState() => _ImageViewerSpecimenState();
+}
+
+class _ImageViewerSpecimenState extends State<_ImageViewerSpecimen> {
+  bool _opening = false;
+  AttachmentThumbnailController? _viewer;
+
+  Future<void> _open() async {
+    if (_opening) return;
+    setState(() => _opening = true);
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, 1024, 512),
+      Paint()..color = const Color(0xff164c99),
+    );
+    for (var row = 0; row < 8; row++) {
+      for (var column = 0; column < 16; column++) {
+        if ((row + column).isEven) {
+          canvas.drawRect(
+            Rect.fromLTWH(column * 64, row * 64, 64, 64),
+            Paint()..color = const Color(0xffeab04f),
+          );
+        }
+      }
+    }
+    canvas.drawCircle(
+      const Offset(512, 256),
+      100,
+      Paint()..color = Colors.white,
+    );
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(1024, 512);
+    picture.dispose();
+    try {
+      ByteData? data;
+      try {
+        data = await image.toByteData(format: ui.ImageByteFormat.png);
+      } finally {
+        image.dispose();
+      }
+      if (!mounted || data == null) return;
+      final viewer = AttachmentThumbnailController.viewer(
+        data.buffer.asUint8List(),
+      );
+      _viewer = viewer;
+      await showAttachmentImageViewer(
+        context,
+        controller: viewer,
+        label: 'Synthetic inspection grid',
+      );
+    } finally {
+      _viewer?.dispose();
+      _viewer = null;
+      if (mounted) setState(() => _opening = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    _viewer?.clear();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => AppButton(
+    label: 'Inspect synthetic image',
+    icon: Icons.zoom_in,
+    busy: _opening,
+    onPressed: _open,
   );
 }
 

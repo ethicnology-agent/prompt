@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:catalog/main.dart';
 import 'package:catalog/specimens.dart';
 import 'package:design_system/design_system.dart';
@@ -11,12 +13,14 @@ void main() {
         testWidgets('${specimen.name} dark=$dark size=$size large text', (
           tester,
         ) async {
+          final opened = Completer<void>();
           tester.view.physicalSize = size;
           tester.view.devicePixelRatio = 1;
           addTearDown(tester.view.resetPhysicalSize);
           addTearDown(tester.view.resetDevicePixelRatio);
           await tester.pumpWidget(
             MaterialApp(
+              navigatorObservers: [_ViewerObserver(opened)],
               theme: dark ? promptDarkTheme() : promptTheme(),
               builder: (context, child) => MediaQuery(
                 data: MediaQuery.of(
@@ -35,6 +39,72 @@ void main() {
             await tester.tap(find.text('Cancel'));
             await tester.pumpAndSettle();
             expect(find.text('Confirm action'), findsNothing);
+          }
+          if (specimen.name == 'Image viewer') {
+            await tester.runAsync(() async {
+              await tester.tap(find.text('Inspect synthetic image'));
+              // PNG encoding is real asynchronous engine work; navigation
+              // observers also need frames while that work completes.
+              for (var frame = 0; frame < 200 && !opened.isCompleted; frame++) {
+                await tester.pump();
+                await Future<void>.delayed(const Duration(milliseconds: 10));
+              }
+            });
+            expect(opened.isCompleted, isTrue);
+            await tester.pumpAndSettle();
+            final viewer = tester.widget<AttachmentImageViewer>(
+              find.byType(AttachmentImageViewer),
+            );
+            await tester.runAsync(() async {
+              final controller = viewer.controller;
+              if (controller.state != AttachmentThumbnailState.loading) return;
+              final ready = Completer<void>();
+              void changed() {
+                if (!ready.isCompleted) ready.complete();
+              }
+
+              controller.addListener(changed);
+              await ready.future;
+              controller.removeListener(changed);
+            });
+            await tester.pumpAndSettle();
+            expect(viewer.controller.state, AttachmentThumbnailState.ready);
+            expect(viewer.controller.debugImage!.width, 1024);
+            await tester.tap(find.byTooltip('Zoom in'));
+            await tester.pump();
+            final transform = tester
+                .widget<InteractiveViewer>(find.byType(InteractiveViewer))
+                .transformationController!;
+            expect(transform.value.getMaxScaleOnAxis(), 2);
+            await tester.tap(find.byTooltip('Reset zoom'));
+            expect(transform.value.getMaxScaleOnAxis(), 1);
+            await tester.tap(find.byTooltip('Close image'));
+            await tester.runAsync(() async {
+              await Future<void>.delayed(Duration.zero);
+            });
+            await tester.pumpAndSettle();
+            expect(find.byType(AttachmentImageViewer), findsNothing);
+            expect(viewer.controller.debugImage, isNull);
+          }
+          if (specimen.name == 'Inline selection panel') {
+            await tester.ensureVisible(find.text('Focused model'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.text('Focused model'));
+            await tester.pump();
+            expect(
+              tester
+                  .widget<InlineSelectionPanel<String>>(
+                    find.byType(InlineSelectionPanel<String>),
+                  )
+                  .selected,
+              'focused',
+            );
+            expect(find.byType(BottomSheet), findsNothing);
+            await tester.ensureVisible(find.byTooltip('Close Model choices'));
+            await tester.pumpAndSettle();
+            await tester.tap(find.byTooltip('Close Model choices'));
+            await tester.pump();
+            expect(find.text('Open inline choices'), findsOneWidget);
           }
           expect(tester.takeException(), isNull);
         });
@@ -56,4 +126,13 @@ void main() {
     expect(find.widgetWithText(AppButton, 'Continue'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
+}
+
+class _ViewerObserver extends NavigatorObserver {
+  _ViewerObserver(this.opened);
+  final Completer<void> opened;
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    if (previousRoute != null && !opened.isCompleted) opened.complete();
+  }
 }
