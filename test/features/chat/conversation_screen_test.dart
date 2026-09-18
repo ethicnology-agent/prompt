@@ -23,6 +23,7 @@ import 'package:prompt/features/chat/domain/prompt_attachment.dart';
 import 'package:prompt/features/chat/domain/session_artifacts.dart';
 import 'package:prompt/features/chat/domain/session_execution_state.dart';
 import 'package:prompt/features/chat/presentation/conversation_screen.dart';
+import 'package:prompt/features/chat/presentation/session_details_screen.dart';
 import 'package:prompt/features/chat/presentation/conversation_view_model.dart';
 import 'package:prompt/features/chat/presentation/widgets/composer.dart';
 import 'package:prompt/features/chat/presentation/widgets/session_artifacts_panel.dart';
@@ -201,6 +202,16 @@ class _FakeConversationViewModel extends ConversationViewModel {
   bool openCalled = false;
   bool leaveCalled = false;
   int refreshCallCount = 0;
+  int forkCallCount = 0;
+  Completer<SessionCreateResult?>? pendingFork;
+
+  @override
+  Future<SessionCreateResult?> fork() {
+    forkCallCount++;
+    return pendingFork?.future ??
+        Future.value(const Err(SessionsFailure.unavailable));
+  }
+
   int loadOlderCallCount = 0;
 
   int respondToPermissionCallCount = 0;
@@ -398,6 +409,7 @@ void main() {
     bool disableAnimations = false,
     OpenCodeSession? activeSession,
     ServerProfile? activeProfile,
+    ValueChanged<OpenCodeSession>? onOpenFork,
   }) async {
     // Default to a settled, empty transcript unless a test seeds its own:
     // the loading state renders an indeterminate `CircularProgressIndicator`,
@@ -425,6 +437,7 @@ void main() {
           capabilitiesViewModel: capabilitiesViewModel,
           reviewViewModelFactory: reviewViewModelFactory,
           voiceViewModel: voiceViewModel,
+          onOpenFork: onOpenFork,
         ),
       ),
     );
@@ -438,6 +451,83 @@ void main() {
 
     expect(viewModel.openCalled, isTrue);
   });
+
+  testWidgets(
+    'composer model choice is direct searchable and committed only by Apply',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      const choices = CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'connected',
+              id: 'chosen-id',
+              name: 'Chosen model',
+              isProviderConnected: true,
+            ),
+            OpenCodeModel(
+              providerId: 'offline',
+              id: 'hidden-id',
+              name: 'Disconnected model',
+              isProviderConnected: false,
+            ),
+          ],
+          agents: [],
+          commands: [],
+        ),
+      );
+      capabilities.value = choices;
+      await pumpScreen(tester, capabilitiesViewModel: capabilities);
+      capabilities.value = choices;
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.text('Prompt execution'), findsNothing);
+      expect(find.text('Disconnected model'), findsNothing);
+      await tester.enterText(
+        find.widgetWithText(TextField, 'Search model'),
+        'connected',
+      );
+      await tester.pump();
+      await tester.tap(find.text('Chosen model'));
+      await tester.pump();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.text('Model default'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chosen model'));
+      await tester.pump();
+      tester.state<NavigatorState>(find.byType(Navigator)).pop();
+      await tester.pumpAndSettle();
+      expect(find.text('Model default'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chosen model'));
+      await tester.pump();
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Use chosen model');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pump();
+      expect(viewModel.lastPromptOptions?.modelProviderId, 'connected');
+      expect(viewModel.lastPromptOptions?.modelId, 'chosen-id');
+      expect(viewModel.enqueueCallCount, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'composer actions anchor attachment left and queue right at large text scale',
@@ -470,7 +560,7 @@ void main() {
   );
 
   testWidgets(
-    'phone header keeps one avatar action and accessible session menu',
+    'phone avatar opens session details with working actions and live status',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(390, 844));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -495,8 +585,18 @@ void main() {
       expect(tester.widget<AppBar>(appBar).toolbarHeight, 56);
       await tester.tap(find.byTooltip('Session details and actions'));
       await tester.pumpAndSettle();
-      expect(find.text('/workspace/project'), findsOneWidget);
-      expect(find.text('Execution status: Syncing activity'), findsOneWidget);
+      expect(find.byType(SessionDetailsScreen), findsOneWidget);
+      var details = tester.widget<SessionDetailsScreen>(
+        find.byType(SessionDetailsScreen),
+      );
+      expect(details.session.directory, '/workspace/project');
+      expect(details.executionLabel, 'Syncing activity');
+      viewModel.executionState.value = const SessionIdle();
+      await tester.pump();
+      details = tester.widget<SessionDetailsScreen>(
+        find.byType(SessionDetailsScreen),
+      );
+      expect(details.executionLabel, 'Idle');
       expect(find.text('Session artifacts'), findsOneWidget);
       await tester.tap(find.text('Refresh transcript'));
       await tester.pumpAndSettle();
@@ -508,6 +608,130 @@ void main() {
       expect(find.byType(SessionArtifactsPanel), findsOneWidget);
     },
   );
+
+  testWidgets('details forks once and opens the actual returned session', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final opened = <OpenCodeSession>[];
+    viewModel.pendingFork = Completer<SessionCreateResult?>();
+    await pumpScreen(tester, onOpenFork: opened.add);
+    await tester.tap(find.byTooltip('Session details and actions'));
+    await tester.pumpAndSettle();
+    final callback = tester
+        .widget<SessionDetailsScreen>(find.byType(SessionDetailsScreen))
+        .onFork!;
+    await tester.tap(find.text('Fork session'));
+    callback();
+    await tester.pump();
+    expect(viewModel.forkCallCount, 1);
+    expect(opened, isEmpty);
+    final busy = tester.widget<ListTile>(
+      find.ancestor(
+        of: find.text('Forking session…'),
+        matching: find.byType(ListTile),
+      ),
+    );
+    expect(busy.onTap, isNull);
+    final forked = OpenCodeSession(
+      id: 'actual-server-fork',
+      projectId: session.projectId,
+      directory: session.directory,
+      title: 'Forked',
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    );
+    viewModel.pendingFork!.complete(Ok(forked));
+    await tester.pumpAndSettle();
+    expect(opened, [same(forked)]);
+    expect(find.byType(SessionDetailsScreen), findsNothing);
+    expect(viewModel.sendNowCallCount, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  for (final failure in SessionsFailure.values) {
+    testWidgets('details fork displays typed $failure and permits retry', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final opened = <OpenCodeSession>[];
+      viewModel.pendingFork = Completer<SessionCreateResult?>();
+      await pumpScreen(tester, onOpenFork: opened.add);
+      await tester.tap(find.byTooltip('Session details and actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Fork session'));
+      viewModel.pendingFork!.complete(Err(failure));
+      await tester.pumpAndSettle();
+      expect(find.text(failure.message), findsOneWidget);
+      expect(opened, isEmpty);
+      expect(find.byType(SessionDetailsScreen), findsOneWidget);
+      expect(find.text('Fork session'), findsOneWidget);
+      viewModel.pendingFork = Completer<SessionCreateResult?>();
+      await tester.tap(find.text('Fork session'));
+      expect(viewModel.forkCallCount, 2);
+      viewModel.pendingFork!.complete(null);
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+  }
+
+  for (final supported in [false, true]) {
+    testWidgets(
+      'details fork requires capability and destination supported=$supported',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(390, 844));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await pumpScreen(
+          tester,
+          activeProfile: supported
+              ? profile
+              : ServerProfile(
+                  origin: profile.origin,
+                  backend: AgentBackend.gatewayCodex,
+                  capabilities: BackendCapabilities(const [
+                    BackendFeature.sessions,
+                    BackendFeature.text,
+                  ]),
+                ),
+          onOpenFork: supported ? null : (_) {},
+        );
+        await tester.tap(find.byTooltip('Session details and actions'));
+        await tester.pumpAndSettle();
+        expect(find.text('Fork session'), findsNothing);
+        expect(viewModel.forkCallCount, 0);
+      },
+    );
+  }
+
+  testWidgets('details fork remains guarded across closing and reopening', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final opened = <OpenCodeSession>[];
+    viewModel.pendingFork = Completer<SessionCreateResult?>();
+    await pumpScreen(tester, onOpenFork: opened.add);
+    await tester.tap(find.byTooltip('Session details and actions'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fork session'));
+    await tester.pump();
+    await tester.pageBack();
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Session details and actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Forking session…'), findsOneWidget);
+    tester
+        .widget<SessionDetailsScreen>(find.byType(SessionDetailsScreen))
+        .onFork!();
+    expect(viewModel.forkCallCount, 1);
+    viewModel.pendingFork!.complete(Ok(session));
+    await tester.pumpAndSettle();
+    expect(find.text('Fork session'), findsOneWidget);
+    expect(opened, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
 
   testWidgets(
     'phone header menu hides unsupported review and workspace actions',
@@ -739,6 +963,129 @@ void main() {
       closeTo(surfaceSize.height - keyboardHeight, 1),
     );
   });
+
+  for (final keyboard in [0.0, 320.0]) {
+    testWidgets(
+      'pending approval keeps composer at viewport bottom with IME $keyboard',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(393, 851));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        viewModel.pendingApproval.value = const PendingPermissionApproval(
+          permissionId: 'approval-bottom',
+          sessionId: 'session-1',
+          toolType: 'bash',
+          title: 'Permit this operation?',
+        );
+        await pumpScreen(tester, viewInsetsBottom: keyboard);
+        final composer = find.byKey(
+          const ValueKey('conversation-composer-panel'),
+        );
+        expect(tester.getBottomRight(composer).dy, closeTo(851 - keyboard, 1));
+        expect(find.text('Allow once').hitTestable(), findsOneWidget);
+        expect(find.text('Deny').hitTestable(), findsOneWidget);
+        expect(tester.takeException(), isNull);
+        await tester.tap(find.text('Deny'));
+        await tester.pump();
+        expect(viewModel.lastPermissionResponse, PermissionResponse.reject);
+        expect(tester.getBottomRight(composer).dy, closeTo(851 - keyboard, 1));
+      },
+    );
+  }
+
+  for (final keyboard in [240.0, 300.0]) {
+    testWidgets(
+      'model picker and underlying conversation tolerate landscape IME $keyboard',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(850, 393));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final capabilities = CapabilitiesViewModel(
+          CapabilitiesRepository(
+            OpenCodeCapabilitiesService(
+              OpenCodeTransport(
+                MockClient((_) async => http.Response('', 404)),
+              ),
+            ),
+            const _StaticPasswordStore(),
+          ),
+        );
+        addTearDown(capabilities.dispose);
+        const choices = CapabilitiesReady(
+          OpenCodeCapabilities(
+            models: [
+              OpenCodeModel(
+                providerId: 'local',
+                id: 'model',
+                name: 'Available model',
+                isProviderConnected: true,
+              ),
+            ],
+            agents: [],
+            commands: [],
+          ),
+        );
+        capabilities.value = choices;
+        await pumpScreen(tester, capabilitiesViewModel: capabilities);
+        capabilities.value = choices;
+        await tester.pump();
+        final composerController = tester
+            .widget<TextField>(find.byType(TextField))
+            .controller!;
+        composerController.text = 'Retained draft';
+        await tester.pump();
+        await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+        await tester.pumpAndSettle();
+        await tester.enterText(
+          find.widgetWithText(TextField, 'Search model'),
+          'nomatch',
+        );
+        await tester.pump();
+        await pumpScreen(
+          tester,
+          capabilitiesViewModel: capabilities,
+          viewInsetsBottom: keyboard,
+        );
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(composerController.text, 'Retained draft');
+        expect(find.byType(SelectionPicker<OpenCodeModel>), findsOneWidget);
+        expect(
+          tester
+              .widget<EditableText>(
+                find.descendant(
+                  of: find.widgetWithText(TextField, 'Search model'),
+                  matching: find.byType(EditableText),
+                ),
+              )
+              .focusNode
+              .hasFocus,
+          isTrue,
+        );
+        final searchField = tester.widget<TextField>(
+          find.widgetWithText(TextField, 'Search model'),
+        );
+        expect(
+          searchField.controller?.text ??
+              tester
+                  .widget<EditableText>(
+                    find.descendant(
+                      of: find.widgetWithText(TextField, 'Search model'),
+                      matching: find.byType(EditableText),
+                    ),
+                  )
+                  .controller
+                  .text,
+          'nomatch',
+        );
+        tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        final original = tester
+            .widget<TextField>(find.byType(TextField))
+            .controller;
+        expect(identical(original, composerController), isTrue);
+      },
+    );
+  }
 
   testWidgets(
     'loads earlier history from the visible edge and preserves errors',
@@ -2504,17 +2851,22 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claude Sonnet').last);
     await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply').last);
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Default').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('build').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply').last);
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Apply'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Apply'));
     await tester.pumpAndSettle();
 
     expect(find.byType(AlertDialog), findsNothing);
-    expect(find.text('Claude Sonnet'), findsOneWidget);
-    expect(find.text('build'), findsOneWidget);
+    expect(find.text('Claude Sonnet'), findsNWidgets(2));
+    expect(find.text('build'), findsNWidgets(2));
     capabilities.dispose();
   });
 
@@ -2576,6 +2928,8 @@ void main() {
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text(longModelName));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply').last);
     await tester.pumpAndSettle();
     expect(find.text(longModelName), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -2662,6 +3016,9 @@ void main() {
     await tester.tap(find.text('Fable').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('GPT-5.6 Sol').last);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Apply').last);
+    await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Apply'));
     await tester.pumpAndSettle();
     await tester.tap(find.text('Apply'));
@@ -2698,7 +3055,7 @@ void main() {
     );
     await tester.tap(find.byTooltip('Session artifacts'));
     await tester.pumpAndSettle();
-    expect(find.text('GPT-5.6 Sol'), findsOneWidget);
+    expect(find.text('GPT-5.6 Sol'), findsNWidgets(2));
     tester.state<NavigatorState>(find.byType(Navigator)).pop();
     await tester.pumpAndSettle();
 
