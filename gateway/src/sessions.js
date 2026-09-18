@@ -26,12 +26,20 @@ export class Sessions extends EventEmitter {
   record(session) {
     return { id: session.id, projectID: session.projectID, directory: session.directory, title: session.title, time: session.time };
   }
+  projectId(directory) {
+    const rootIndex = this.roots.indexOf(directory);
+    return rootIndex >= 0 ? `root_${rootIndex}` : `workspace_${createHash('sha256').update(directory).digest('hex').slice(0, 24)}`;
+  }
+  projects() {
+    const directories = new Set([...this.roots, ...[...this.sessions.values()].map((session) => session.directory)]);
+    return [...directories].map((worktree) => ({ id: this.projectId(worktree), worktree }));
+  }
   async create(directory, title) {
     if (this.sessions.size >= this.maxSessions) throw new Fault(429, 'session_limit');
     directory = await allowedDirectory(directory, this.roots);
     if (title !== undefined && (typeof title !== 'string' || title.length > 256)) throw new Fault(400, 'invalid_title');
     const now = Date.now();
-    const session = { id: `${this.engine}_${randomUUID()}`, projectID: `root_${this.roots.findIndex((root) => directory === root || directory.startsWith(`${root}/`))}`, directory, title: title || 'New session', time: { created: now, updated: now }, messages: [], accepted: new Map(), status: 'idle', runner: null, active: false, outputBytes: 0 };
+    const session = { id: `${this.engine}_${randomUUID()}`, projectID: this.projectId(directory), directory, title: title || 'New session', time: { created: now, updated: now }, messages: [], accepted: new Map(), status: 'idle', runner: null, active: false, outputBytes: 0 };
     this.sessions.set(session.id, session);
     return this.record(session);
   }

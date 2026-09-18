@@ -7,7 +7,7 @@ function json(response, value, status = 200) {
   response.end(JSON.stringify(value));
 }
 
-export function createGateway({ token, username = 'prompt', host = '127.0.0.1', roots, engines, openCode, webOrigins = [] }) {
+export function createGateway({ token, username = 'prompt', host = '127.0.0.1', roots, engines, openCode, worktrees, webOrigins = [] }) {
   if (!privateAddress(host)) throw new Fault(400, 'private_literal_bind_required');
   if (typeof token !== 'string' || token.length < 32 || username.includes(':')) throw new Fault(400, 'strong_token_required');
   if (openCode) {
@@ -30,8 +30,18 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
       }
       if (!authenticate(request.headers.authorization, username, token)) throw new Fault(401, 'unauthorized');
       const url = new URL(request.url, 'http://gateway.invalid');
+      if (url.pathname === '/prompt/worktrees') {
+        if (!worktrees) throw new Fault(503, 'worktrees_unavailable');
+        if (request.method === 'GET') { json(response, await worktrees.list(url.searchParams.get('directory'))); return; }
+        if (request.method === 'POST') {
+          const body = await bodyJson(request, 8192);
+          if (Object.keys(body).some((key) => !['directory', 'name'].includes(key))) throw new Fault(400, 'unsupported_worktree_option');
+          json(response, await worktrees.create(body), 201); return;
+        }
+        throw new Fault(405, 'unsupported_worktree_method');
+      }
       if (url.pathname === '/prompt/capabilities' && request.method === 'GET') {
-        json(response, { protocolVersion: 1, engines: Object.fromEntries(['claude', 'codex', 'opencode'].map((name) => [name, {
+        json(response, { protocolVersion: 1, machine: { worktrees: Boolean(worktrees) }, engines: Object.fromEntries(['claude', 'codex', 'opencode'].map((name) => [name, {
           available: name === 'opencode' ? Boolean(openCode) : Boolean(engines[name]),
           features: name === 'opencode' ? (openCode ? ['sessions', 'text', 'abort', 'permissions', 'permissionAlways', 'questions', 'commands', 'attachments', 'sessionDelete', 'sessionRename', 'sessionFork', 'sessionRevert'] : []) : (engines[name] ? ['sessions', 'text', 'abort', 'permissions', 'sessionDelete', 'sessionRename'] : []),
           persistence: name === 'opencode' ? 'upstream' : 'gateway-lifetime',
@@ -62,7 +72,7 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
       }
       if (request.method === 'GET') {
         if (path === '/global/health') { json(response, { healthy: true, version: 'prompt-gateway/0.1.0' }); return; }
-        if (path === '/project') { json(response, roots.map((worktree, index) => ({ id: `root_${index}`, worktree }))); return; }
+        if (path === '/project') { json(response, store.projects()); return; }
         if (path === '/provider') { json(response, { all: [{ id: engine, name: engine, models: { default: { id: 'default', name: 'CLI default' } } }], connected: [engine], default: { [engine]: 'default' } }); return; }
         if (path === '/agent') { json(response, [{ name: engine, mode: 'primary', builtIn: true }]); return; }
         if (path === '/command' || path === '/question') { json(response, []); return; }
@@ -121,6 +131,7 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
     server,
     async listen(port = 4097) { await new Promise((resolve, reject) => { server.once('error', reject); server.listen(port, host, resolve); }); return server.address(); },
     async close() {
+      worktrees?.close();
       for (const response of subscribers) response.destroy();
       for (const store of Object.values(engines)) store.close();
       server.closeAllConnections();

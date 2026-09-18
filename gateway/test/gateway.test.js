@@ -61,6 +61,30 @@ test('roots reject traversal, symlink escape and public prefix confusion', async
   assert.equal(response.status, 403);
 });
 
+test('project catalogs include active nested workspaces with matching stable IDs', async (t) => {
+  const f = await fixture(t);
+  const directory = join(f.directory, 'nested-worktree');
+  await mkdir(directory);
+  const create = () => f.request(`/prompt/codex/session?directory=${encodeURIComponent(directory)}`, 'POST', {});
+  const first = await (await create()).json();
+  const second = await (await create()).json();
+  const projects = await (await f.request('/prompt/codex/project')).json();
+  const project = projects.find((entry) => entry.worktree === directory);
+  assert.ok(project, 'Every active session directory must have an authoritative project catalog');
+  assert.equal(project.id, first.projectID);
+  assert.equal(project.id, second.projectID);
+  assert.equal(projects.filter((entry) => entry.worktree === directory).length, 1);
+  assert.equal(projects.find((entry) => entry.worktree === f.directory).id, 'root_0');
+  assert.notEqual(project.id, 'root_0');
+  const visible = (await Promise.all(projects.map(async (entry) =>
+    (await f.request(`/prompt/codex/session?directory=${encodeURIComponent(entry.worktree)}`)).json()))).flat();
+  assert.deepEqual(new Set(visible.map((entry) => entry.id)), new Set([first.id, second.id]));
+  await f.request(`/prompt/codex/session/${first.id}`, 'DELETE');
+  assert.ok((await (await f.request('/prompt/codex/project')).json()).some((entry) => entry.id === project.id));
+  await f.request(`/prompt/codex/session/${second.id}`, 'DELETE');
+  assert.equal((await (await f.request('/prompt/codex/project')).json()).some((entry) => entry.id === project.id), false);
+});
+
 test('session queue does not interrupt and duplicate acceptance never executes twice', async (t) => {
   const f = await fixture(t);
   const record = await (await f.request('/prompt/codex/session', 'POST', {})).json();
