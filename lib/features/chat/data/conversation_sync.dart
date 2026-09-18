@@ -74,6 +74,18 @@ List<ChatMessageDetail> _details(
   return [
     for (final part in parts)
       switch (part) {
+        FileMessagePart(
+          :final id,
+          :final name,
+          :final mediaType,
+          :final bytes,
+        ) =>
+          ChatFileDetail(
+            id: id,
+            name: name,
+            mediaType: mediaType,
+            bytes: bytes,
+          ),
         ReasoningMessagePart(:final id, :final text) =>
           text.isEmpty && prior[id] is ChatReasoningDetail
               ? prior[id]!
@@ -117,6 +129,15 @@ ChatToolDetail _toolDetail(
 bool _sameDetails(List<ChatMessageDetail> a, List<ChatMessageDetail> b) {
   if (a.length != b.length) return false;
   for (var i = 0; i < a.length; i++) {
+    if (a[i] is ChatFileDetail && b[i] is ChatFileDetail) {
+      final left = a[i] as ChatFileDetail;
+      final right = b[i] as ChatFileDetail;
+      if (left.name != right.name ||
+          left.mediaType != right.mediaType ||
+          !identical(left.bytes, right.bytes)) {
+        return false;
+      }
+    }
     if (a[i].runtimeType != b[i].runtimeType || a[i].id != b[i].id) {
       return false;
     }

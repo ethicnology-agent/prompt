@@ -4,6 +4,21 @@
 /// `conversation_state.dart` for the pure reducer.
 library;
 
+import 'dart:typed_data';
+
+final class FileMessagePart extends MessagePart {
+  const FileMessagePart({
+    required super.id,
+    required super.messageId,
+    required this.name,
+    required this.mediaType,
+    this.bytes,
+  });
+  final String name;
+  final String mediaType;
+  final Uint8List? bytes;
+}
+
 /// The role of a [ConversationMessage].
 ///
 /// [ConversationRole.unknown] exists only for the transitional case where a

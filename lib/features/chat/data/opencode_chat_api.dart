@@ -1,4 +1,6 @@
 import 'dart:convert';
+import 'dart:typed_data';
+import '../../../data/remote/inline_image_parser.dart';
 
 import 'package:http/http.dart' as http;
 
@@ -536,7 +538,17 @@ class OpenCodeMessageRecord {
       if (id is! String || type is! String) {
         continue;
       }
-      if (type == 'reasoning' && rawPart['text'] is String) {
+      if (type == 'file') {
+        final mime = rawPart['mime'] is String ? rawPart['mime'] as String : '';
+        details.add(
+          OpenCodeFileRecord(
+            id: id,
+            name: safeAttachmentName(rawPart['filename']),
+            mediaType: mime,
+            bytes: parseInlineImage(rawPart['url'], mime),
+          ),
+        );
+      } else if (type == 'reasoning' && rawPart['text'] is String) {
         details.add(
           OpenCodeReasoningRecord(id: id, text: rawPart['text'] as String),
         );
@@ -969,6 +981,18 @@ sealed class OpenCodeMessageDetailRecord {
   const OpenCodeMessageDetailRecord({required this.id});
 
   final String id;
+}
+
+class OpenCodeFileRecord extends OpenCodeMessageDetailRecord {
+  const OpenCodeFileRecord({
+    required super.id,
+    required this.name,
+    required this.mediaType,
+    this.bytes,
+  });
+  final String name;
+  final String mediaType;
+  final Uint8List? bytes;
 }
 
 class OpenCodeReasoningRecord extends OpenCodeMessageDetailRecord {

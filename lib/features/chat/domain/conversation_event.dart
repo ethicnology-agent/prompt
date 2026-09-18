@@ -7,6 +7,7 @@
 library;
 
 import '../../../data/remote/opencode_event_service.dart';
+import '../../../data/remote/inline_image_parser.dart';
 import '../../../data/remote/opencode_session_status_parser.dart';
 import '../../../data/remote/opencode_tool_file_path_parser.dart';
 import 'conversation_message.dart';
@@ -295,6 +296,15 @@ MessagePart? _mapMessagePart(Map<String, dynamic> json) {
     return null;
   }
   switch (type) {
+    case 'file':
+      final mime = json['mime'] is String ? json['mime'] as String : '';
+      return FileMessagePart(
+        id: id,
+        messageId: messageId,
+        name: safeAttachmentName(json['filename']),
+        mediaType: mime,
+        bytes: parseInlineImage(json['url'], mime),
+      );
     case 'text':
       final text = json['text'];
       if (text is! String) {

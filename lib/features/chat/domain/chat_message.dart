@@ -1,4 +1,20 @@
+import 'dart:typed_data';
+
 enum ChatMessageRole { user, assistant }
+
+class ChatFileDetail extends ChatMessageDetail {
+  const ChatFileDetail({
+    required super.id,
+    required this.name,
+    required this.mediaType,
+    this.bytes,
+  });
+  final String name;
+  final String mediaType;
+
+  /// Validated encoded image bytes only, never a remote URL or local path.
+  final Uint8List? bytes;
+}
 
 sealed class ChatMessageDetail {
   const ChatMessageDetail({required this.id});

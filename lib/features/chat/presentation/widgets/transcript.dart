@@ -410,6 +410,7 @@ class _MessageDetailCard extends StatelessWidget {
     final theme = Theme.of(context);
     final tokens = _tokens(theme);
     return switch (detail) {
+      ChatFileDetail() => _HistoryAttachment(detail: detail as ChatFileDetail),
       ChatReasoningDetail(:final text) when _isSingleLine(text) => Padding(
         padding: const EdgeInsets.only(top: 6),
         child: Card(
@@ -814,6 +815,91 @@ String _toolLabel(String tool) => tool
 
 bool _isSingleLine(String text) =>
     text.trim().split('\n').where((line) => line.trim().isNotEmpty).length <= 1;
+
+class _HistoryAttachment extends StatefulWidget {
+  const _HistoryAttachment({required this.detail});
+  final ChatFileDetail detail;
+  @override
+  State<_HistoryAttachment> createState() => _HistoryAttachmentState();
+}
+
+class _HistoryAttachmentState extends State<_HistoryAttachment>
+    with WidgetsBindingObserver {
+  AttachmentThumbnailController? _controller;
+  AttachmentThumbnailController? _viewer;
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    _load();
+  }
+
+  Future<void> _inspect() async {
+    final bytes = widget.detail.bytes;
+    if (bytes == null || _viewer != null) return;
+    final viewer = AttachmentThumbnailController.viewer(bytes);
+    _viewer = viewer;
+    try {
+      await showAttachmentImageViewer(
+        context,
+        controller: viewer,
+        label: widget.detail.name,
+      );
+    } finally {
+      viewer.dispose();
+      if (identical(_viewer, viewer)) _viewer = null;
+    }
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed &&
+        _controller?.state == AttachmentThumbnailState.cleared) {
+      _controller?.dispose();
+      _load();
+      if (mounted) setState(() {});
+    }
+  }
+
+  void _load() {
+    final bytes = widget.detail.bytes;
+    _controller = bytes == null ? null : AttachmentThumbnailController(bytes);
+  }
+
+  @override
+  void didUpdateWidget(_HistoryAttachment oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (!identical(oldWidget.detail.bytes, widget.detail.bytes)) {
+      _viewer?.clear();
+      _controller?.dispose();
+      _load();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _viewer?.clear();
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      if (_controller != null)
+        AttachmentThumbnail(
+          controller: _controller!,
+          label: widget.detail.name,
+          onOpen: _inspect,
+        )
+      else
+        const Text('Preview unavailable'),
+      Text(widget.detail.name),
+    ],
+  );
+}
 
 PromptTokens _tokens(ThemeData theme) =>
     theme.extension<PromptTokens>() ??

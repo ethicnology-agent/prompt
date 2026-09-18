@@ -15,6 +15,13 @@ ChatMessage mapChatMessage(OpenCodeMessageRecord record) => ChatMessage(
 
 ChatMessageDetail mapChatMessageDetail(OpenCodeMessageDetailRecord record) {
   return switch (record) {
+    OpenCodeFileRecord(
+      :final id,
+      :final name,
+      :final mediaType,
+      :final bytes,
+    ) =>
+      ChatFileDetail(id: id, name: name, mediaType: mediaType, bytes: bytes),
     OpenCodeReasoningRecord(:final id, :final text) => ChatReasoningDetail(
       id: id,
       text: text,

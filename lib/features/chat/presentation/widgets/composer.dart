@@ -88,38 +88,13 @@ class Composer extends StatelessWidget {
         : 'Enter inserts a newline; use the queue button to submit';
     return PromptAdaptiveBuilder(
       builder: (context, _) => Padding(
-        padding: const EdgeInsets.fromLTRB(16, 8, 16, 16),
+        padding: const EdgeInsets.symmetric(horizontal: 12),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            ValueListenableBuilder<List<PromptAttachment>>(
-              valueListenable: attachments,
-              builder: (context, selected, _) {
-                if (selected.isEmpty) {
-                  return const SizedBox.shrink();
-                }
-                return Align(
-                  alignment: Alignment.centerLeft,
-                  child: Padding(
-                    padding: const EdgeInsets.only(bottom: 8),
-                    child: Wrap(
-                      spacing: 8,
-                      runSpacing: 4,
-                      children: [
-                        for (final attachment in selected)
-                          InputChip(
-                            label: Text(
-                              '${attachment.name} · '
-                              '${_formatBytes(attachment.byteCount)}',
-                            ),
-                            onDeleted: () => onRemoveAttachment(attachment),
-                            deleteButtonTooltipMessage: 'Remove attachment',
-                          ),
-                      ],
-                    ),
-                  ),
-                );
-              },
+            AttachmentStrip(
+              attachments: attachments,
+              onRemove: onRemoveAttachment,
             ),
             if (voiceState case final voiceState?)
               ValueListenableBuilder<VoiceUiState>(
@@ -192,16 +167,20 @@ class Composer extends StatelessWidget {
                           desktopShortcuts,
                           event,
                         ),
-                        child: AppTextField(
-                          controller: controller,
-                          minLines: 1,
-                          maxLines: 6,
-                          textInputAction: TextInputAction.newline,
-                          label: command == null ? null : '/${command!.name}',
-                          hint: command == null
-                              ? 'Message this session…'
-                              : command!.description ?? 'Command arguments…',
-                          variant: AppTextFieldVariant.borderless,
+                        child: ConstrainedBox(
+                          constraints: const BoxConstraints(minHeight: 48),
+                          child: AppTextField(
+                            controller: controller,
+                            dense: true,
+                            minLines: 1,
+                            maxLines: 6,
+                            textInputAction: TextInputAction.newline,
+                            label: command == null ? null : '/${command!.name}',
+                            hint: command == null
+                                ? 'Message this session…'
+                                : command!.description ?? 'Command arguments…',
+                            variant: AppTextFieldVariant.borderless,
+                          ),
                         ),
                       ),
                     ),
@@ -210,6 +189,170 @@ class Composer extends StatelessWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class AttachmentStrip extends StatefulWidget {
+  const AttachmentStrip({required this.attachments, this.onRemove, super.key});
+  final ValueListenable<List<PromptAttachment>> attachments;
+  final ValueChanged<PromptAttachment>? onRemove;
+
+  @override
+  State<AttachmentStrip> createState() => _AttachmentStripState();
+}
+
+class _AttachmentStripState extends State<AttachmentStrip>
+    with WidgetsBindingObserver {
+  final _previews =
+      Map<PromptAttachment, AttachmentThumbnailController>.identity();
+  List<PromptAttachment> _selected = const [];
+  AttachmentThumbnailController? _viewer;
+  PromptAttachment? _viewedAttachment;
+
+  Future<void> _inspect(PromptAttachment attachment) async {
+    if (_viewer != null || attachment.isReleased) return;
+    final viewer = AttachmentThumbnailController.viewer(attachment.bytes);
+    _viewer = viewer;
+    _viewedAttachment = attachment;
+    try {
+      await showAttachmentImageViewer(
+        context,
+        controller: viewer,
+        label: attachment.name,
+      );
+    } finally {
+      viewer.dispose();
+      if (identical(_viewer, viewer)) {
+        _viewer = null;
+        _viewedAttachment = null;
+      }
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+    widget.attachments.addListener(_changed);
+    _synchronize();
+  }
+
+  void _synchronize() {
+    _selected = widget.attachments.value
+        .where((attachment) => !attachment.isReleased)
+        .toList(growable: false);
+    if (_viewedAttachment != null && !_selected.contains(_viewedAttachment)) {
+      _viewer?.clear();
+    }
+    for (final attachment in _previews.keys.toList()) {
+      if (!_selected.any((current) => identical(current, attachment))) {
+        _previews.remove(attachment)!.dispose();
+      }
+    }
+    for (final attachment in _selected) {
+      if (const {
+        'image/png',
+        'image/jpeg',
+        'image/webp',
+        'image/gif',
+      }.contains(attachment.mediaType)) {
+        _previews.putIfAbsent(
+          attachment,
+          () => AttachmentThumbnailController(attachment.bytes),
+        );
+      }
+    }
+  }
+
+  void _changed() {
+    // Release removed previews synchronously, even if no frame is scheduled.
+    _synchronize();
+    if (mounted) setState(() {});
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state != AppLifecycleState.resumed) return;
+    // A platform picker can deliver its selection before resumed. Controllers
+    // deliberately keep no encoded bytes while inactive, so ask the current
+    // owner again instead of reviving a cached buffer or a released selection.
+    for (final attachment in _previews.keys.toList()) {
+      if (_previews[attachment]!.state == AttachmentThumbnailState.cleared) {
+        _previews.remove(attachment)!.dispose();
+      }
+    }
+    _changed();
+  }
+
+  @override
+  void didUpdateWidget(AttachmentStrip oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.attachments != widget.attachments) {
+      oldWidget.attachments.removeListener(_changed);
+      widget.attachments.addListener(_changed);
+      _synchronize();
+    }
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    widget.attachments.removeListener(_changed);
+    _viewer?.clear();
+    for (final controller in _previews.values) {
+      controller.dispose();
+    }
+    _previews.clear();
+    _selected = const [];
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_selected.isEmpty) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 8),
+      child: SizedBox(
+        key: const ValueKey('composer-attachments'),
+        height: _previews.isEmpty ? 64 : 80,
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            children: [
+              for (final attachment in _selected) ...[
+                if (_previews[attachment] case final controller?)
+                  AttachmentThumbnail(
+                    key: ObjectKey(attachment),
+                    controller: controller,
+                    label: attachment.name,
+                    onOpen: () => _inspect(attachment),
+                    onRemove: widget.onRemove == null
+                        ? null
+                        : () => widget.onRemove!(attachment),
+                  )
+                else
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 240),
+                    child: InputChip(
+                      key: ObjectKey(attachment),
+                      label: Text(
+                        '${attachment.name} · ${_formatBytes(attachment.byteCount)}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                      onDeleted: widget.onRemove == null
+                          ? null
+                          : () => widget.onRemove!(attachment),
+                      deleteButtonTooltipMessage: 'Remove attachment',
+                    ),
+                  ),
+                const SizedBox(width: 8),
+              ],
+            ],
+          ),
         ),
       ),
     );
