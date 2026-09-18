@@ -22,12 +22,16 @@ class SelectionPicker<T> extends StatefulWidget {
     required this.selected,
     required this.onApply,
     required this.onCancel,
+    this.includeDefault = true,
   });
   final String title;
   final List<SelectionOption<T>> options;
   final T? selected;
   final ValueChanged<T?> onApply;
   final VoidCallback onCancel;
+
+  /// Whether to offer the generic null-valued default alongside caller options.
+  final bool includeDefault;
 
   @override
   State<SelectionPicker<T>> createState() => _SelectionPickerState<T>();
@@ -82,16 +86,17 @@ class _SelectionPickerState<T> extends State<SelectionPicker<T>> {
                     ),
                   ],
                 ),
-                ListTile(
-                  title: const Text('Default'),
-                  selected: _selected == null,
-                  leading: Icon(
-                    _selected == null
-                        ? Icons.radio_button_checked
-                        : Icons.radio_button_unchecked,
+                if (widget.includeDefault)
+                  ListTile(
+                    title: const Text('Default'),
+                    selected: _selected == null,
+                    leading: Icon(
+                      _selected == null
+                          ? Icons.radio_button_checked
+                          : Icons.radio_button_unchecked,
+                    ),
+                    onTap: () => setState(() => _selected = null),
                   ),
-                  onTap: () => setState(() => _selected = null),
-                ),
               ],
             ),
           ),

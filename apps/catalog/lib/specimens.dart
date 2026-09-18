@@ -1,3 +1,5 @@
+import 'dart:ui' as ui;
+
 import 'package:design_system/design_system.dart';
 import 'package:flutter/material.dart';
 
@@ -9,6 +11,16 @@ class Specimen {
 }
 
 final specimens = <Specimen>[
+  Specimen('Draft composer panel', (_) => const _DraftComposerSpecimen()),
+  Specimen(
+    'Draft composer collapsed',
+    (_) => const _DraftComposerSpecimen(expanded: false),
+  ),
+  Specimen(
+    'Draft composer disabled submit',
+    (_) => const _DraftComposerSpecimen(expanded: false, canSubmit: false),
+  ),
+  Specimen('Attachment thumbnail', (_) => const _AttachmentSpecimen()),
   Specimen(
     'Code lines',
     (_) => const SizedBox(
@@ -325,6 +337,69 @@ final specimens = <Specimen>[
   ),
 ];
 
+class _DraftComposerSpecimen extends StatefulWidget {
+  const _DraftComposerSpecimen({this.expanded = true, this.canSubmit = true});
+  final bool expanded;
+  final bool canSubmit;
+  @override
+  State<_DraftComposerSpecimen> createState() => _DraftComposerSpecimenState();
+}
+
+class _DraftComposerSpecimenState extends State<_DraftComposerSpecimen> {
+  final _controller = TextEditingController();
+  final _focus = FocusNode();
+  String _engine = 'Local engine';
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    _focus.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    height: 400,
+    child: DraftComposerPanel(
+      controller: _controller,
+      focusNode: _focus,
+      expanded: widget.expanded,
+      configuration: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const CreationConfigurationRow(
+            icon: Icons.computer_outlined,
+            label: 'Machine',
+            value: 'Local specimen',
+          ),
+          const CreationConfigurationRow(
+            icon: Icons.folder_outlined,
+            label: 'Directory',
+            value: '/workspace/example',
+          ),
+          const CreationConfigurationRow(
+            icon: Icons.account_tree_outlined,
+            label: 'Worktree',
+            value: 'Unavailable',
+          ),
+          CreationConfigurationRow(
+            icon: Icons.memory_outlined,
+            label: 'Engine',
+            value: _engine,
+            onTap: () => setState(
+              () => _engine = _engine == 'Local engine'
+                  ? 'Alternate local engine'
+                  : 'Local engine',
+            ),
+          ),
+        ],
+      ),
+      onSubmit: widget.canSubmit ? () => _controller.clear() : null,
+      onClose: _focus.unfocus,
+    ),
+  );
+}
+
 class SpecimenPage extends StatelessWidget {
   const SpecimenPage({required this.specimen, super.key});
 
@@ -339,4 +414,64 @@ class SpecimenPage extends StatelessWidget {
       ),
     ),
   );
+}
+
+class _AttachmentSpecimen extends StatefulWidget {
+  const _AttachmentSpecimen();
+
+  @override
+  State<_AttachmentSpecimen> createState() => _AttachmentSpecimenState();
+}
+
+class _AttachmentSpecimenState extends State<_AttachmentSpecimen> {
+  AttachmentThumbnailController? _controller;
+  bool _removed = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _prepare();
+  }
+
+  Future<void> _prepare() async {
+    final recorder = ui.PictureRecorder();
+    final canvas = Canvas(recorder);
+    canvas.drawRect(
+      const Rect.fromLTWH(0, 0, 64, 64),
+      Paint()..color = const Color(0xff56d6b2),
+    );
+    canvas.drawCircle(const Offset(24, 24), 12, Paint()..color = Colors.white);
+    final picture = recorder.endRecording();
+    final image = picture.toImageSync(64, 64);
+    picture.dispose();
+    try {
+      final data = await image.toByteData(format: ui.ImageByteFormat.png);
+      if (!mounted || data == null) return;
+      setState(
+        () => _controller = AttachmentThumbnailController(
+          data.buffer.asUint8List(),
+        ),
+      );
+    } finally {
+      image.dispose();
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller?.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final controller = _controller;
+    if (_removed) return const Text('Attachment removed');
+    if (controller == null) return const SizedBox(width: 88, height: 80);
+    return AttachmentThumbnail(
+      controller: controller,
+      label: 'Synthetic color tile',
+      onRemove: () => setState(() => _removed = true),
+    );
+  }
 }
