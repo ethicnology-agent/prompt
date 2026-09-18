@@ -4,6 +4,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:prompt/features/chat/domain/prompt_attachment.dart';
 
 void main() {
+  test(
+    'immutable platform bytes become an owned mutable buffer that can be cleared',
+    () {
+      final platform = Uint8List.fromList([4, 5, 6]).asUnmodifiableView();
+      final attachment = PromptAttachment(name: 'private.txt', bytes: platform);
+      final owned = attachment.bytes;
+      expect(identical(owned, platform), isFalse);
+      attachment.release();
+      expect(owned, everyElement(0));
+      expect(platform, [4, 5, 6]);
+      expect(attachment.isReleased, isTrue);
+    },
+  );
   test('detects a PNG screenshot as image media', () {
     final attachment = PromptAttachment(
       name: 'Screenshot',
@@ -34,11 +47,12 @@ void main() {
   test('release overwrites and drops memory-only attachment bytes', () {
     final bytes = Uint8List.fromList([4, 5, 6]);
     final attachment = PromptAttachment(name: 'private.txt', bytes: bytes);
+    final owned = attachment.bytes;
 
     attachment.release();
 
     expect(attachment.isReleased, isTrue);
-    expect(bytes, everyElement(0));
+    expect(owned, everyElement(0));
     expect(() => attachment.bytes, throwsStateError);
   });
 }

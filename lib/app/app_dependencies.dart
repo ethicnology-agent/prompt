@@ -108,7 +108,7 @@ class AppDependencies {
           (await dependencies.ensureStorage()).queuedPrompts,
         ),
         queueCoordinatorProvider: () => dependencies.ensureQueueCoordinator(),
-        attachmentPicker: attachmentPicker ?? FilePickerAttachmentPicker(),
+        attachmentPicker: attachmentPicker ?? createAttachmentPicker(),
       ),
       capabilitiesViewModel: CapabilitiesViewModel(
         CapabilitiesRepository(

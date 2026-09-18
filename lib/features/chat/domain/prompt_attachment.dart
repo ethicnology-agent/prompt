@@ -4,6 +4,8 @@ import 'dart:typed_data';
 ///
 /// The bytes are intentionally memory-only. Call [release] as soon as the
 /// selection is removed or its owning conversation leaves the foreground.
+/// A private mutable copy is owned here; platform/caller buffers may be
+/// immutable and remain the caller's responsibility.
 class PromptAttachment {
   factory PromptAttachment({
     required String name,
@@ -11,7 +13,7 @@ class PromptAttachment {
     String? mediaType,
   }) => PromptAttachment._(
     name: name,
-    bytes: bytes,
+    bytes: Uint8List.fromList(bytes),
     mediaType: mediaType ?? _detectMediaType(name, bytes),
   );
 
