@@ -1,0 +1,840 @@
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
+import 'package:prompt/core/security/credentials_store.dart';
+import 'package:prompt/core/ui/ui.dart';
+import 'package:prompt/data/remote/opencode_transport.dart';
+import 'package:prompt/features/capabilities/capabilities.dart';
+import 'package:prompt/features/capabilities/data/opencode_capabilities_service.dart';
+import 'package:prompt/features/connection/connection.dart';
+import 'package:prompt/features/connection/data/opencode_health_service.dart';
+import 'package:prompt/features/queue/queue.dart';
+import 'package:prompt/features/chat/chat.dart';
+import 'package:prompt/features/sessions/sessions.dart';
+import 'package:prompt/features/sessions/presentation/session_creation_dock.dart';
+
+void main() {
+  for (final width in [360.0, 400.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets(
+        'engine choices fit above keyboard width=$width scale=$scale',
+        (tester) async {
+          final fixture = _Fixture();
+          addTearDown(fixture.dispose);
+          final controller = TextEditingController(text: 'Preserve draft');
+          final focus = FocusNode();
+          addTearDown(controller.dispose);
+          addTearDown(focus.dispose);
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: promptTheme(),
+              home: Scaffold(
+                body: MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: Align(
+                    alignment: Alignment.bottomCenter,
+                    child: SizedBox(
+                      key: const ValueKey('available-dock'),
+                      width: width,
+                      height: 400,
+                      child: SessionCreationDock(
+                        profile: fixture.profile,
+                        viewModel: fixture.model,
+                        controller: controller,
+                        focusNode: focus,
+                        onLaunch: (_) {},
+                        onExpandedChanged: (_) {},
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.tap(find.byType(TextField));
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('Codex'));
+          await tester.tap(find.text('Codex'));
+          await tester.pumpAndSettle();
+          final available = tester.getRect(
+            find.byKey(const ValueKey('available-dock')),
+          );
+          final close = find.byTooltip('Close Coding engine choices');
+          expect(
+            tester.getRect(close).top,
+            greaterThanOrEqualTo(available.top),
+          );
+          expect(close.hitTestable(), findsOneWidget);
+          final list = find.byKey(
+            const ValueKey('inline-selection-Coding engine'),
+          );
+          expect(tester.getSize(list).height, lessThanOrEqualTo(112 * scale));
+          expect(focus.hasFocus, isTrue);
+          await tester.tap(close);
+          await tester.pumpAndSettle();
+          await tester.tap(find.text('Model default'));
+          await tester.pumpAndSettle();
+          final modelClose = find.byTooltip('Close Model choices');
+          expect(
+            tester.getRect(modelClose).top,
+            greaterThanOrEqualTo(available.top),
+          );
+          expect(modelClose.hitTestable(), findsOneWidget);
+          expect(find.text('Model').hitTestable(), findsOneWidget);
+          expect(focus.hasFocus, isTrue);
+          await tester.tap(modelClose);
+          await tester.pumpAndSettle();
+          fixture.model.updateOptions(
+            const PromptExecutionOptions(
+              modelProviderId: 'codex',
+              modelId: 'actual',
+              reasoningEffort: 'focused-custom',
+            ),
+          );
+          await tester.pumpAndSettle();
+          if (scale == 1) {
+            expect(
+              tester.getCenter(find.text('Available model')).dy,
+              tester.getCenter(find.text('Focused thinking')).dy,
+            );
+          }
+          await tester.ensureVisible(find.text('Available model'));
+          await tester.tap(find.text('Available model'));
+          await tester.pumpAndSettle();
+          expect(
+            tester.getRect(modelClose).top,
+            greaterThanOrEqualTo(available.top),
+          );
+          expect(modelClose.hitTestable(), findsOneWidget);
+          expect(find.text('Focused thinking'), findsOneWidget);
+          expect(focus.hasFocus, isTrue);
+          await tester.tap(modelClose);
+          await tester.pumpAndSettle();
+          fixture.model.updateOptions(
+            const PromptExecutionOptions(
+              modelProviderId: 'codex',
+              modelId: 'actual',
+            ),
+          );
+          await tester.pumpAndSettle();
+          if (scale == 1) {
+            expect(
+              tester.getCenter(find.text('Available model')).dy,
+              tester.getCenter(find.text('Default')).dy,
+            );
+          }
+          expect(controller.text, 'Preserve draft');
+          expect(fixture.created, isEmpty);
+          expect(tester.takeException(), isNull);
+        },
+      );
+    }
+  }
+  for (final compact in [false, true]) {
+    testWidgets(
+      'inline model and effort keep composer focus and close without mutation compact=$compact',
+      (tester) async {
+        final fixture = _Fixture();
+        addTearDown(fixture.dispose);
+        final controller = TextEditingController(text: 'Preserve this draft');
+        final focus = FocusNode();
+        addTearDown(controller.dispose);
+        addTearDown(focus.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: promptTheme(),
+            home: Scaffold(
+              body: MediaQuery(
+                data: MediaQueryData(
+                  textScaler: TextScaler.linear(compact ? 2 : 1),
+                  viewInsets: const EdgeInsets.only(bottom: 240),
+                ),
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox(
+                    width: compact ? 320 : 393,
+                    height: compact ? 160 : 580,
+                    child: SessionCreationDock(
+                      profile: fixture.profile,
+                      viewModel: fixture.model,
+                      controller: controller,
+                      focusNode: focus,
+                      onLaunch: (_) {},
+                      onExpandedChanged: (_) {},
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        Future<void> tapVisible(Finder finder) async {
+          await tester.pumpAndSettle();
+          if (finder.evaluate().isEmpty) {
+            final list = find.byType(ListView).last;
+            await tester.ensureVisible(list);
+            await tester.pumpAndSettle();
+            await tester.scrollUntilVisible(
+              finder,
+              80,
+              scrollable: find
+                  .descendant(of: list, matching: find.byType(Scrollable))
+                  .first,
+            );
+          }
+          final containingList = find.ancestor(
+            of: finder,
+            matching: find.byType(ListView),
+          );
+          if (containingList.evaluate().isNotEmpty) {
+            final list = containingList.first;
+            await Scrollable.of(
+              tester.element(list),
+            ).position.ensureVisible(tester.renderObject(list), alignment: 0.5);
+            await Scrollable.of(tester.element(finder)).position.ensureVisible(
+              tester.renderObject(finder),
+              alignment: 0.5,
+            );
+          } else {
+            await tester.ensureVisible(finder);
+          }
+          await tester.pumpAndSettle();
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+        }
+
+        await tapVisible(find.byType(TextField));
+        final editingState = tester.state<EditableTextState>(
+          find.byType(EditableText),
+        );
+        await tapVisible(find.text('Model default'));
+        expect(find.byType(BottomSheet), findsNothing);
+        expect(find.byType(Dialog), findsNothing);
+        expect(find.text('Apply'), findsNothing);
+        expect(find.text('Cancel'), findsNothing);
+        expect(find.byType(TextField), findsOneWidget);
+        expect(focus.hasFocus, isTrue);
+        expect(
+          identical(
+            editingState,
+            tester.state<EditableTextState>(find.byType(EditableText)),
+          ),
+          isTrue,
+        );
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(fixture.model.value.options.modelId, isNull);
+        expect(find.byType(SessionCreationDock), findsOneWidget);
+        await tapVisible(find.text('Model default'));
+        await tapVisible(find.text('Available model'));
+        expect(fixture.model.value.options.modelProviderId, 'codex');
+        expect(fixture.model.value.options.modelId, 'actual');
+        await tapVisible(
+          find.byKey(const ValueKey('creation-reasoning-effort')),
+        );
+        await tapVisible(find.text('Focused thinking'));
+        expect(fixture.model.value.options.reasoningEffort, 'focused-custom');
+        await tapVisible(
+          find.byKey(const ValueKey('creation-reasoning-effort')),
+        );
+        await tapVisible(find.byTooltip('Close Reasoning effort choices'));
+        expect(fixture.model.value.options.reasoningEffort, 'focused-custom');
+        expect(controller.text, 'Preserve this draft');
+        expect(focus.hasFocus, isTrue);
+        expect(
+          identical(
+            editingState,
+            tester.state<EditableTextState>(find.byType(EditableText)),
+          ),
+          isTrue,
+        );
+        expect(fixture.created, isEmpty);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+
+  testWidgets(
+    'obsolete inline model and effort callbacks cannot change another scope',
+    (tester) async {
+      final fixture = _Fixture();
+      addTearDown(fixture.dispose);
+      final controller = TextEditingController(text: 'Retained draft');
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SizedBox(
+              width: 393,
+              child: SessionCreationDock(
+                profile: fixture.profile,
+                viewModel: fixture.model,
+                controller: controller,
+                focusNode: focus,
+                onLaunch: (_) {},
+                onExpandedChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Model default'));
+      await tester.pumpAndSettle();
+      final staleModel = tester
+          .widget<InlineSelectionPanel<({String providerId, String modelId})?>>(
+            find.byType(
+              InlineSelectionPanel<({String providerId, String modelId})?>,
+            ),
+          )
+          .onSelected!;
+      await fixture.model.selectBackend(AgentBackend.gatewayClaude);
+      await tester.pumpAndSettle();
+      staleModel((providerId: 'codex', modelId: 'actual'));
+      expect(fixture.model.value.options.modelId, isNull);
+      await tester.tap(find.byTooltip('Close Model choices'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Model default'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Available model'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey('creation-reasoning-effort')));
+      await tester.pumpAndSettle();
+      final staleEffort = tester
+          .widget<InlineSelectionPanel<String?>>(
+            find.byType(InlineSelectionPanel<String?>),
+          )
+          .onSelected!;
+      fixture.model.updateOptions(
+        const PromptExecutionOptions(
+          modelProviderId: 'claude',
+          modelId: 'other',
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<InlineSelectionPanel<String?>>(
+              find.byType(InlineSelectionPanel<String?>),
+            )
+            .onSelected,
+        isNull,
+      );
+      staleEffort('focused-custom');
+      expect(fixture.model.value.options.reasoningEffort, isNull);
+      expect(fixture.model.value.options.modelId, 'other');
+      expect(controller.text, 'Retained draft');
+      expect(fixture.created, isEmpty);
+      await tester.pumpWidget(const SizedBox());
+    },
+  );
+  testWidgets('home image-only send picks once and launches exact selection', (
+    tester,
+  ) async {
+    final image = PromptAttachment(
+      name: 'fixture.png',
+      bytes: Uint8List.fromList([137, 80, 78, 71, 13, 10, 26, 10]),
+    );
+    final fixture = _Fixture(picker: _Picker(image));
+    addTearDown(fixture.dispose);
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    final launches = <SessionLaunch>[];
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: promptTheme(),
+        home: Scaffold(
+          body: SessionCreationDock(
+            profile: fixture.profile,
+            viewModel: fixture.model,
+            controller: controller,
+            focusNode: focus,
+            initialDirectory: '/workspace',
+            onLaunch: launches.add,
+            onExpandedChanged: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    await tester.ensureVisible(find.byTooltip('Attach files'));
+    await tester.tap(find.byTooltip('Attach files'));
+    await tester.pumpAndSettle();
+    expect(find.byKey(const ValueKey('composer-attachments')), findsOneWidget);
+    await tester.ensureVisible(find.byTooltip('New session from draft'));
+    await tester.tap(find.byTooltip('New session from draft'));
+    await tester.pumpAndSettle();
+    expect(launches, hasLength(1));
+    expect(launches.single.draft, isEmpty);
+    expect(launches.single.attachments, [image]);
+    expect(fixture.created, ['codex']);
+    image.release();
+  });
+  for (final compact in [false, true]) {
+    testWidgets(
+      'folder choices stay inline and preserve prepared execution compact=$compact',
+      (tester) async {
+        final fixture = _Fixture();
+        addTearDown(fixture.dispose);
+        final controller = TextEditingController(text: 'Keep prepared draft');
+        final focus = FocusNode();
+        addTearDown(controller.dispose);
+        addTearDown(focus.dispose);
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: promptTheme(),
+            home: Scaffold(
+              body: MediaQuery(
+                data: MediaQueryData(
+                  textScaler: TextScaler.linear(compact ? 2 : 1),
+                ),
+                child: Align(
+                  alignment: Alignment.bottomCenter,
+                  child: SizedBox(
+                    width: compact ? 320 : 393,
+                    height: compact ? 160 : 580,
+                    child: SessionCreationDock(
+                      profile: fixture.profile,
+                      viewModel: fixture.model,
+                      controller: controller,
+                      focusNode: focus,
+                      initialDirectory: '/original',
+                      onLaunch: (_) {},
+                      onExpandedChanged: (_) {},
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+        Future<void> tapVisible(Finder finder) async {
+          await tester.pumpAndSettle();
+          await tester.ensureVisible(finder);
+          await tester.pumpAndSettle();
+          await tester.tap(finder);
+          await tester.pumpAndSettle();
+        }
+
+        final folder = find.byWidgetPredicate(
+          (widget) =>
+              widget is CreationConfigurationRow && widget.label == 'Folder',
+        );
+        await tapVisible(find.byType(TextField));
+        const options = PromptExecutionOptions(
+          modelProviderId: 'codex',
+          modelId: 'actual',
+          reasoningEffort: 'focused-custom',
+        );
+        fixture.model.updateOptions(options);
+        await tester.pumpAndSettle();
+        await tapVisible(folder);
+        expect(find.byType(Dialog), findsNothing);
+        expect(find.byType(BottomSheet), findsNothing);
+        expect(find.byType(TextField), findsOneWidget);
+        expect(focus.hasFocus, isTrue);
+        expect(find.text('Project'), findsOneWidget);
+        expect(find.text('~'), findsNothing);
+        await tapVisible(find.text('/workspace'));
+        expect(fixture.model.value.directory, '/workspace');
+        expect(focus.hasFocus, isTrue);
+        await tapVisible(folder);
+        await tapVisible(find.text('Enter custom path'));
+        final custom = find.widgetWithText(
+          TextFormField,
+          'Absolute server path',
+        );
+        await tester.ensureVisible(custom);
+        await tester.enterText(custom, '~/not-an-absolute-server-path');
+        await tapVisible(find.text('Use folder'));
+        expect(fixture.model.value.directory, '/workspace');
+        expect(
+          find.text('Enter an absolute path on the connected machine.'),
+          findsOneWidget,
+        );
+        await tester.ensureVisible(custom);
+        await tester.enterText(custom, '/chosen/project');
+        await tapVisible(find.text('Use folder'));
+        expect(fixture.model.value.directory, '/chosen/project');
+        expect(focus.hasFocus, isTrue);
+        await tapVisible(folder);
+        await tapVisible(find.text('Enter custom path'));
+        await tester.ensureVisible(custom);
+        await tester.enterText(custom, '/discarded');
+        await tester.binding.handlePopRoute();
+        await tester.pumpAndSettle();
+        expect(find.byType(SessionCreationDock), findsOneWidget);
+        expect(find.text('Project'), findsNothing);
+        await tapVisible(folder);
+        await tapVisible(find.byTooltip('Close project choices'));
+        expect(fixture.model.value.directory, '/chosen/project');
+        expect(controller.text, 'Keep prepared draft');
+        expect(fixture.model.value.options.modelId, options.modelId);
+        expect(
+          fixture.model.value.options.reasoningEffort,
+          options.reasoningEffort,
+        );
+        expect(fixture.model.value.backend, AgentBackend.gatewayCodex);
+        expect(fixture.created, isEmpty);
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox());
+      },
+    );
+  }
+  testWidgets(
+    'advertised effort applies exactly, cancels safely and resets with model',
+    (tester) async {
+      final fixture = _Fixture();
+      addTearDown(fixture.dispose);
+      final controller = TextEditingController(text: 'Keep my draft');
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: promptTheme(),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: 393,
+                child: SessionCreationDock(
+                  profile: fixture.profile,
+                  viewModel: fixture.model,
+                  controller: controller,
+                  focusNode: focus,
+                  onLaunch: (_) {},
+                  onExpandedChanged: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('creation-reasoning-effort')),
+        findsNothing,
+      );
+      await tester.tap(find.text('Model default'));
+      await tester.pumpAndSettle();
+      expect(find.text('Default'), findsNothing);
+      expect(find.text('CLI default'), findsNothing);
+      expect(find.text('CLI / server default'), findsOneWidget);
+      await tester.tap(find.text('Available model'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('creation-reasoning-effort')),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey('creation-reasoning-effort')));
+      await tester.pumpAndSettle();
+      expect(find.text('Reported by the configured engine'), findsOneWidget);
+      await tester.tap(find.text('Focused thinking'));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.reasoningEffort, 'focused-custom');
+      expect(find.text('Focused thinking'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('creation-reasoning-effort')));
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<InlineSelectionPanel<String?>>(
+              find.byType(InlineSelectionPanel<String?>),
+            )
+            .selected,
+        'focused-custom',
+      );
+      await tester.tap(find.byTooltip('Close Reasoning effort choices'));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.reasoningEffort, 'focused-custom');
+      await tester.tap(find.byKey(const ValueKey('creation-reasoning-effort')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Engine default'));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.reasoningEffort, isNull);
+      await tester.tap(find.byKey(const ValueKey('creation-reasoning-effort')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Focused thinking'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Available model'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Other model'));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.modelId, 'other');
+      expect(fixture.model.value.options.reasoningEffort, isNull);
+      expect(
+        find.byKey(const ValueKey('creation-reasoning-effort')),
+        findsNothing,
+      );
+      expect(controller.text, 'Keep my draft');
+      expect(fixture.created, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'focused draft configures actual engine and sends one scoped launch',
+    (tester) async {
+      final fixture = _Fixture();
+      addTearDown(fixture.dispose);
+      final controller = TextEditingController();
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      SessionLaunch? launch;
+      bool expanded = false;
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: promptTheme(),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: 393,
+                child: SessionCreationDock(
+                  profile: fixture.profile,
+                  viewModel: fixture.model,
+                  controller: controller,
+                  focusNode: focus,
+                  onLaunch: (value) => launch = value,
+                  onExpandedChanged: (value) => expanded = value,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.enterText(find.byType(TextField), 'First message');
+      await tester.pumpAndSettle();
+      expect(expanded, isTrue);
+      expect(find.text('/workspace'), findsOneWidget);
+      expect(fixture.created, isEmpty);
+      await tester.tap(find.text('Codex'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Claude Code'));
+      await tester.pumpAndSettle();
+      expect(controller.text, 'First message');
+      expect(fixture.model.value.profile?.backend, AgentBackend.gatewayClaude);
+      expect(find.text('Claude Code'), findsOneWidget);
+      await tester.tap(find.text('Model default'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Available model'));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.modelId, 'actual');
+      await tester.tap(find.text('Available model'));
+      await tester.pumpAndSettle();
+      final picker = tester
+          .widget<InlineSelectionPanel<({String providerId, String modelId})?>>(
+            find.byType(
+              InlineSelectionPanel<({String providerId, String modelId})?>,
+            ),
+          );
+      expect(picker.selected, (providerId: 'claude', modelId: 'actual'));
+      await tester.tap(find.byTooltip('Close Model choices'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Select worktree'));
+      await tester.pumpAndSettle();
+      expect(
+        find.text('This server does not support creating worktrees.'),
+        findsOneWidget,
+      );
+      expect(fixture.created, isEmpty);
+      expect(controller.text, 'First message');
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('New session from draft'));
+      await tester.pumpAndSettle();
+      expect(fixture.created, ['claude']);
+      expect(launch?.profile.backend, AgentBackend.gatewayClaude);
+      expect(launch?.draft, 'First message');
+      expect(launch?.submitDraft, isTrue);
+      expect(launch?.options.modelId, 'actual');
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('inline draft fits tall keyboard and retains text on close', (
+    tester,
+  ) async {
+    final fixture = _Fixture();
+    addTearDown(fixture.dispose);
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    await tester.binding.setSurfaceSize(const Size(851, 393));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: promptTheme(),
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: SizedBox(
+              height: 140,
+              width: 500,
+              child: SessionCreationDock(
+                profile: fixture.profile,
+                viewModel: fixture.model,
+                controller: controller,
+                focusNode: focus,
+                onLaunch: (_) {},
+                onExpandedChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.enterText(find.byType(TextField), 'Keep draft');
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    await tester.ensureVisible(find.byTooltip('Close new session options'));
+    await tester.tap(find.byTooltip('Close new session options'));
+    await tester.pumpAndSettle();
+    expect(controller.text, 'Keep draft');
+    expect(fixture.created, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+}
+
+class _Picker implements AttachmentPicker {
+  _Picker(this.image);
+  final PromptAttachment image;
+  @override
+  Future<AttachmentPickResult> pick() async => AttachmentsPicked([image]);
+}
+
+class _Fixture {
+  _Fixture({AttachmentPicker? picker}) {
+    client = MockClient((request) async {
+      final path = request.url.path;
+      Object data = [];
+      if (path == '/prompt/capabilities') {
+        data = {
+          'protocolVersion': 1,
+          'engines': {
+            for (final engine in ['codex', 'claude'])
+              engine: {
+                'available': true,
+                'features': [
+                  'sessions',
+                  'text',
+                  'abort',
+                  if (picker != null) 'attachments',
+                  if (picker != null) 'imageAttachments',
+                ],
+                if (picker != null)
+                  'attachmentConstraints': {
+                    'mimeTypes': ['image/png'],
+                    'maxCount': 5,
+                    'maxBytesPerAttachment': 5242880,
+                    'maxTotalBytes': 10485760,
+                  },
+              },
+          },
+        };
+      } else if (path.endsWith('/global/health')) {
+        data = <String, Object>{};
+      } else if (path.endsWith('/project')) {
+        data = [
+          {'id': 'project', 'worktree': '/workspace'},
+        ];
+      } else if (path.endsWith('/session/status')) {
+        data = <String, Object>{};
+      } else if (path.endsWith('/session') && request.method == 'POST') {
+        final engine = request.url.pathSegments[1];
+        created.add(engine);
+        data = {
+          'id': '$engine-created',
+          'projectID': 'project',
+          'directory': '/workspace',
+          'title': 'New',
+          'time': {'created': 1, 'updated': 1},
+        };
+      } else if (path.endsWith('/provider')) {
+        final engine = request.url.pathSegments[1];
+        data = {
+          'all': [
+            {
+              'id': engine,
+              'models': {
+                'default': {'name': 'CLI default'},
+                'actual': {
+                  'name': 'Available model',
+                  'executionOptions': {
+                    'version': 1,
+                    'reasoningEfforts': [
+                      {
+                        'id': 'focused-custom',
+                        'label': 'Focused thinking',
+                        'description': 'Reported by the configured engine',
+                      },
+                    ],
+                    'defaultReasoningEffortId': 'focused-custom',
+                  },
+                },
+                'other': {'name': 'Other model'},
+              },
+            },
+          ],
+          'connected': [engine],
+        };
+      }
+      return http.Response(jsonEncode(data), 200);
+    });
+    final transport = OpenCodeTransport(client);
+    final credentials = _Credentials();
+    model = SessionCreationViewModel(
+      attachmentPicker: picker,
+      connections: ConnectionRepository(
+        OpenCodeHealthService(transport),
+        credentials,
+        InMemoryServerProfileStore(),
+      ),
+      sessions: SessionsRepository(
+        OpenCodeSessionsService(transport),
+        credentials,
+      ),
+      capabilities: CapabilitiesRepository(
+        OpenCodeCapabilitiesService(transport),
+        credentials,
+      ),
+    );
+  }
+  final profile = ServerProfile(
+    origin: Uri.parse('http://10.0.0.2:4097'),
+    username: 'operator',
+    backend: AgentBackend.gatewayCodex,
+  );
+  final created = <String>[];
+  late final http.Client client;
+  late final SessionCreationViewModel model;
+  void dispose() {
+    model.dispose();
+    client.close();
+  }
+}
+
+class _Credentials implements CredentialsStore {
+  @override
+  Future<String?> readPassword(String profileId) async => 'synthetic-password';
+  @override
+  Future<void> savePassword(String profileId, String? password) async {}
+  @override
+  Future<void> clearPassword(String profileId) async {}
+}

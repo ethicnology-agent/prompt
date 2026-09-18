@@ -1,5 +1,8 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:typed_data';
 
+import 'package:crypto/crypto.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
 
@@ -12,10 +15,8 @@ import '../data/remote/opencode_event_service.dart';
 import '../data/remote/opencode_transport.dart';
 import '../features/capabilities/capabilities.dart';
 import '../features/chat/chat.dart';
-import '../features/chat/data/attachment_picker.dart';
 import '../features/chat/data/opencode_chat_service.dart';
 import '../features/connection/connection.dart';
-import '../features/connection/data/connection_repository.dart';
 import '../features/connection/data/opencode_health_service.dart';
 import '../features/diagnostics/diagnostics.dart';
 import '../features/diagnostics/data/opencode_diagnostics_service.dart';
@@ -40,6 +41,7 @@ class AppDependencies {
   AppDependencies._({
     required this.connectionViewModel,
     required this.sessionsViewModel,
+    required this.sessionCreationViewModel,
     required this.conversationViewModel,
     required this.capabilitiesViewModel,
     required this.workspaceViewModel,
@@ -90,17 +92,37 @@ class AppDependencies {
           ),
     );
 
+    final connectionRepository = ConnectionRepository(
+      OpenCodeHealthService(resolvedTransport),
+      credentials,
+      LazyServerProfileStore(
+        () async => (await dependencies.ensureStorage()).serverProfiles,
+      ),
+    );
+    final capabilitiesRepository = CapabilitiesRepository(
+      OpenCodeCapabilitiesService(resolvedTransport),
+      credentials,
+    );
     dependencies = AppDependencies._(
-      connectionViewModel: ConnectionViewModel(
-        ConnectionRepository(
-          OpenCodeHealthService(resolvedTransport),
+      connectionViewModel: ConnectionViewModel(connectionRepository),
+      sessionCreationViewModel: SessionCreationViewModel(
+        connections: connectionRepository,
+        sessions: sessionsRepository,
+        capabilities: capabilitiesRepository,
+        attachmentPicker: attachmentPicker ?? createAttachmentPicker(),
+        queueLaunch: (launch) => dependencies.queueLaunchDraft(launch),
+        worktrees: WorktreeRepository(
+          WorktreeService(resolvedTransport),
           credentials,
-          LazyServerProfileStore(
-            () async => (await dependencies.ensureStorage()).serverProfiles,
-          ),
         ),
       ),
-      sessionsViewModel: SessionsViewModel(sessionsRepository),
+      sessionsViewModel: SessionsViewModel(
+        sessionsRepository,
+        catalogLoader: LoadSessionCatalog(
+          connectionRepository,
+          sessionsRepository,
+        ),
+      ),
       conversationViewModel: ConversationViewModel(
         chatRepository: chatRepository,
         sessionsRepository: sessionsRepository,
@@ -110,12 +132,7 @@ class AppDependencies {
         queueCoordinatorProvider: () => dependencies.ensureQueueCoordinator(),
         attachmentPicker: attachmentPicker ?? createAttachmentPicker(),
       ),
-      capabilitiesViewModel: CapabilitiesViewModel(
-        CapabilitiesRepository(
-          OpenCodeCapabilitiesService(resolvedTransport),
-          credentials,
-        ),
-      ),
+      capabilitiesViewModel: CapabilitiesViewModel(capabilitiesRepository),
       workspaceViewModel: WorkspaceViewModel(
         OpenCodeWorkspaceRepository(
           OpenCodeWorkspaceService(resolvedTransport),
@@ -156,6 +173,7 @@ class AppDependencies {
 
   final ConnectionViewModel connectionViewModel;
   final SessionsViewModel sessionsViewModel;
+  final SessionCreationViewModel sessionCreationViewModel;
   final ConversationViewModel conversationViewModel;
   final CapabilitiesViewModel capabilitiesViewModel;
   final WorkspaceViewModel workspaceViewModel;
@@ -183,6 +201,101 @@ class AppDependencies {
   QueueSendCoordinator? _queueCoordinator;
   Future<QueueSendCoordinator>? _queueCoordinatorFuture;
   bool _disposed = false;
+  final Map<(String, String), Future<bool>> _queuedLaunches = {};
+  final Set<(String, String)> _retryableLaunches = {};
+
+  /// Explicit send from creation is stored once before activating the target.
+  /// A rejected enqueue leaves the draft in presentation memory for recovery.
+  Future<bool> queueLaunchDraft(SessionLaunch launch) async {
+    if (!launch.submitDraft ||
+        (launch.draft.trim().isEmpty && launch.attachments.isEmpty)) {
+      return false;
+    }
+    final identity = (launch.profile.id, launch.session.id);
+    final pending = _queuedLaunches[identity];
+    if (pending != null) return pending;
+    final operation = _enqueueLaunch(launch);
+    _queuedLaunches[identity] = operation;
+    final accepted = await operation;
+    if (!accepted && _retryableLaunches.remove(identity)) {
+      _queuedLaunches.remove(identity);
+    }
+    return accepted;
+  }
+
+  Future<bool> _enqueueLaunch(SessionLaunch launch) async {
+    final identity = (launch.profile.id, launch.session.id);
+    final id = sha256
+        .convert(
+          utf8.encode(
+            jsonEncode([
+              'creation-prompt-v1',
+              launch.profile.id,
+              launch.session.id,
+            ]),
+          ),
+        )
+        .toString();
+    QueuePromptsRepository? repository;
+    final copies = <QueuedAttachment>[];
+    var attempted = false;
+    try {
+      if (launch.attachments.any((item) => item.isReleased)) return false;
+      if (launch.attachments.isNotEmpty &&
+          launch.profile.capabilities.supports(
+            BackendFeature.imageAttachments,
+          )) {
+        final constraints = launch.profile.capabilities.attachmentConstraints;
+        if (constraints == null ||
+            attachmentConstraintError(launch.attachments, constraints) !=
+                null) {
+          return false;
+        }
+      }
+      for (final item in launch.attachments) {
+        copies.add(
+          QueuedAttachment(
+            name: item.name,
+            mediaType: item.mediaType,
+            bytes: Uint8List.fromList(item.bytes),
+          ),
+        );
+      }
+      repository = QueuePromptsRepository(
+        (await ensureStorage()).queuedPrompts,
+        idGenerator: () => id,
+      );
+      attempted = true;
+      final result = await repository.enqueue(
+        profile: launch.profile,
+        session: launch.session,
+        promptText: launch.draft,
+        executionOptions: launch.options,
+        attachments: copies,
+      );
+      if (result case Err()) {
+        final stored = await repository
+            .watchQueue(profile: launch.profile, session: launch.session)
+            .first
+            .timeout(const Duration(seconds: 5));
+        if (!stored.any((item) => item.id == id)) {
+          _retryableLaunches.add(identity);
+          return false;
+        }
+      }
+      for (final item in launch.attachments) {
+        item.release();
+      }
+      return true;
+    } on Exception {
+      if (!attempted) _retryableLaunches.add(identity);
+      return false;
+    } finally {
+      for (final item in copies) {
+        item.bytes.fillRange(0, item.bytes.length, 0);
+      }
+    }
+  }
 
   Future<PromptLocalStorageHandle> ensureStorage() async {
     if (_disposed) {
@@ -268,6 +381,7 @@ class AppDependencies {
     _disposed = true;
     // Consumers first, then lazy resources, and the transport last.
     connectionViewModel.dispose();
+    sessionCreationViewModel.dispose();
     sessionsViewModel.dispose();
     await conversationViewModel.dispose();
     capabilitiesViewModel.dispose();

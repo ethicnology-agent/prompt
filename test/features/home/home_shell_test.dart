@@ -1,3 +1,5 @@
+import 'dart:convert';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +14,7 @@ import 'package:prompt/features/chat/domain/prompt_attachment.dart';
 import 'package:prompt/features/chat/presentation/conversation_view_model.dart';
 import 'package:prompt/features/chat/presentation/conversation_screen.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/home/presentation/home_shell.dart';
 import 'package:prompt/features/sessions/domain/open_code_session.dart';
 import 'package:prompt/features/sessions/domain/open_code_project.dart';
@@ -37,6 +40,7 @@ class _PasswordStore implements CredentialsStore {
 }
 
 class _FakeConversationViewModel extends ConversationViewModel {
+  final openedProfiles = <ServerProfile>[];
   _FakeConversationViewModel()
     : super(
         chatRepository: ChatRepository(
@@ -58,6 +62,7 @@ class _FakeConversationViewModel extends ConversationViewModel {
 
   @override
   Future<void> open(ServerProfile profile, OpenCodeSession session) async {
+    openedProfiles.add(profile);
     messages.value = const ConversationReady([]);
   }
 
@@ -66,6 +71,132 @@ class _FakeConversationViewModel extends ConversationViewModel {
 }
 
 void main() {
+  for (final width in [393.0, 1100.0]) {
+    testWidgets(
+      'gateway catalog opens same-ID rows with exact profile at width $width',
+      (tester) async {
+        final profile = ServerProfile(
+          origin: Uri.parse('http://10.0.0.5:4097'),
+          backend: AgentBackend.gatewayCodex,
+        );
+        final requested = <String>[];
+        final deps = AppDependencies.create(
+          credentialsStore: const _PasswordStore(),
+          httpClient: MockClient((request) async {
+            final path = request.url.path;
+            requested.add(path);
+            Object data = [];
+            if (path == '/prompt/capabilities') {
+              data = {
+                'protocolVersion': 1,
+                'engines': {
+                  for (final engine in ['codex', 'claude'])
+                    engine: {
+                      'available': true,
+                      'features': ['sessions', 'text', 'abort'],
+                    },
+                },
+              };
+            } else if (path.endsWith('/global/health')) {
+              data = {};
+            } else if (path.endsWith('/project')) {
+              data = [
+                {'id': 'same-project', 'worktree': '/workspace'},
+              ];
+            } else if (path.endsWith('/session/status')) {
+              data = {
+                'same': {'type': 'idle'},
+              };
+            } else if (path.endsWith('/session')) {
+              final engine = request.url.pathSegments[1];
+              data = [
+                {
+                  'id': 'same',
+                  'projectID': 'same-project',
+                  'directory': '/workspace',
+                  'title': '$engine title',
+                  'time': {'created': 1, 'updated': engine == 'codex' ? 2 : 1},
+                },
+              ];
+            }
+            return http.Response(jsonEncode(data), 200);
+          }),
+        );
+        final conversation = _FakeConversationViewModel();
+        await tester.binding.setSurfaceSize(Size(width, 800));
+        addTearDown(() async {
+          await deps.dispose();
+          await conversation.dispose();
+          await tester.binding.setSurfaceSize(null);
+        });
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: HomeShell(
+                profile: profile,
+                sessionsViewModel: deps.sessionsViewModel,
+                conversationViewModel: conversation,
+                capabilitiesViewModel: deps.capabilitiesViewModel,
+                workspaceViewModel: deps.workspaceViewModel,
+                terminalViewModel: deps.terminalViewModel,
+                diagnosticsViewModel: deps.diagnosticsViewModel,
+                voiceViewModel: deps.voiceViewModel,
+                localNotificationService: deps.localNotificationService,
+                themeViewModel: deps.themeViewModel,
+                onReconnect: () async => true,
+                onDisconnect: () {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(find.text('codex title'), findsWidgets);
+        expect(find.text('claude title'), findsOneWidget);
+        await tester.tap(find.text('claude title'));
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<ConversationScreen>(find.byType(ConversationScreen))
+              .profile
+              .backend,
+          AgentBackend.gatewayClaude,
+        );
+        expect(
+          conversation.openedProfiles.last.backend,
+          AgentBackend.gatewayClaude,
+        );
+        if (width < 1000) {
+          await tester.pageBack();
+          await tester.pumpAndSettle();
+        }
+        final claudeProfile = ServerProfile(
+          origin: profile.origin,
+          backend: AgentBackend.gatewayClaude,
+        );
+        await deps.sessionsViewModel.load(claudeProfile);
+        await tester.pumpAndSettle();
+        expect(find.text('codex title'), findsWidgets);
+        await tester.tap(find.text('codex title').first);
+        await tester.pumpAndSettle();
+        expect(
+          tester
+              .widget<ConversationScreen>(find.byType(ConversationScreen))
+              .profile
+              .backend,
+          AgentBackend.gatewayCodex,
+        );
+        expect(
+          conversation.openedProfiles.last.backend,
+          AgentBackend.gatewayCodex,
+        );
+        expect(
+          requested.any((path) => path.endsWith('/global/event')),
+          isFalse,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
   final profile = ServerProfile(
     origin: Uri.parse('http://10.80.0.1:4096'),
     username: 'opencode',

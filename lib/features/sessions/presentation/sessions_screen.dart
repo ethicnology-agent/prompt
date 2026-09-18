@@ -7,12 +7,18 @@ import 'package:flutter/services.dart';
 import '../../../core/async/result.dart';
 import '../../../core/ui/ui.dart';
 import '../../connection/connection.dart';
+import '../../capabilities/capabilities.dart';
+import '../../queue/queue.dart';
 import '../domain/open_code_project.dart';
 import '../domain/open_code_session.dart';
 import '../domain/session_load_result.dart';
 import '../domain/session_activity.dart';
 import 'sessions_view_model.dart';
 import 'new_session_dock.dart';
+import 'session_creation_dock.dart';
+import 'session_creation_view_model.dart';
+import '../domain/session_launch.dart';
+import '../domain/scoped_session.dart';
 
 enum _CatalogAction {
   filters,
@@ -37,12 +43,18 @@ class SessionsScreen extends StatefulWidget {
     this.embedded = false,
     this.onOpenSettings,
     this.onOpenSessionWithDraft,
+    this.capabilitiesViewModel,
+    this.onSessionCreated,
+    this.sessionCreationViewModel,
+    this.onSessionLaunched,
+    this.onOpenScopedSession,
     super.key,
   });
 
   final ServerProfile profile;
   final SessionsViewModel viewModel;
   final ValueChanged<OpenCodeSession> onOpenSession;
+  final ValueChanged<ScopedSession>? onOpenScopedSession;
   final ValueChanged<List<OpenCodeProject>> onOpenWorkspace;
   final VoidCallback onOpenTerminal;
   final VoidCallback onOpenDiagnostics;
@@ -52,6 +64,15 @@ class SessionsScreen extends StatefulWidget {
   final VoidCallback? onOpenSettings;
   final void Function(OpenCodeSession session, String draft)?
   onOpenSessionWithDraft;
+  final CapabilitiesViewModel? capabilitiesViewModel;
+  final SessionCreationViewModel? sessionCreationViewModel;
+  final ValueChanged<SessionLaunch>? onSessionLaunched;
+  final void Function(
+    OpenCodeSession session,
+    String draft,
+    PromptExecutionOptions options,
+  )?
+  onSessionCreated;
 
   @override
   State<SessionsScreen> createState() => _SessionsScreenState();
@@ -71,9 +92,13 @@ class _SessionsScreenState extends State<SessionsScreen> {
   final _draftFocus = FocusNode();
   final _draftDockKey = GlobalKey();
   String? _selectedProjectId;
+  String? _creationDirectory;
+  String _creationTitle = '';
+  PromptExecutionOptions _creationOptions = const PromptExecutionOptions();
   late final AppLifecycleListener _lifecycleListener;
   Timer? _focusCooldown;
   bool _showFilters = false;
+  bool _creationExpanded = false;
 
   @override
   void initState() {
@@ -123,7 +148,16 @@ class _SessionsScreenState extends State<SessionsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final body = _buildBody();
+    final body = IgnorePointer(
+      ignoring: _creationExpanded,
+      child: AnimatedOpacity(
+        opacity: _creationExpanded ? .15 : 1,
+        duration: MediaQuery.disableAnimationsOf(context)
+            ? Duration.zero
+            : const Duration(milliseconds: 160),
+        child: _buildBody(),
+      ),
+    );
     final media = MediaQuery.of(context);
     final compactKeyboard =
         media.viewInsets.bottom > 0 &&
@@ -160,16 +194,36 @@ class _SessionsScreenState extends State<SessionsScreen> {
       body: SafeArea(
         top: compactKeyboard,
         bottom: false,
-        child: Column(
-          children: [
-            if (!compactKeyboard || prioritizeSearch) Expanded(child: body),
-            if (!compactKeyboard || !prioritizeSearch)
-              if (compactKeyboard)
-                Expanded(child: SingleChildScrollView(child: _buildDraftDock()))
-              else
-                _buildDraftDock(),
-          ],
-        ),
+        child: _creationExpanded && widget.sessionCreationViewModel != null
+            ? LayoutBuilder(
+                builder: (context, constraints) => Stack(
+                  children: [
+                    Positioned.fill(child: body),
+                    Align(
+                      alignment: Alignment.bottomCenter,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(
+                          maxHeight: constraints.maxHeight,
+                        ),
+                        child: _buildDraftDock(),
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            : Column(
+                children: [
+                  if (!compactKeyboard || prioritizeSearch)
+                    Expanded(child: body),
+                  if (!compactKeyboard || !prioritizeSearch)
+                    if (compactKeyboard)
+                      Expanded(
+                        child: SingleChildScrollView(child: _buildDraftDock()),
+                      )
+                    else
+                      _buildDraftDock(),
+                ],
+              ),
       ),
     );
   }
@@ -180,21 +234,65 @@ class _SessionsScreenState extends State<SessionsScreen> {
     minimum: const EdgeInsets.fromLTRB(16, 8, 16, 12),
     child: ValueListenableBuilder<SessionsUiState>(
       valueListenable: widget.viewModel,
-      builder: (context, state, _) => NewSessionDock(
-        focusNode: _draftFocus,
-        draftController: widget.onOpenSessionWithDraft == null
-            ? null
-            : _newDraftController,
-        onCreate: state is SessionsReady || state is SessionsEmpty
-            ? () => _createSession(
-                state is SessionsReady ? state.projects : const [],
-              )
-            : null,
-        onTerminal:
-            widget.profile.capabilities.supports(BackendFeature.terminal)
-            ? widget.onOpenTerminal
-            : null,
-      ),
+      builder: (context, state, _) {
+        final creation = widget.sessionCreationViewModel;
+        if (creation != null && widget.onSessionLaunched != null) {
+          final groups = state is SessionsReady ? state.catalogGroups : null;
+          // Catalog IDs are scoped for filtering; creation must use the
+          // active engine's original project IDs and roots, not another
+          // engine's synthetic global project.
+          final projects = groups != null
+              ? groups
+                        .where((group) => group.profile.id == widget.profile.id)
+                        .firstOrNull
+                        ?.projects ??
+                    const <OpenCodeProject>[]
+              : state is SessionsReady
+              ? state.projects
+              : const <OpenCodeProject>[];
+          final initial =
+              projects
+                  .where(
+                    (project) =>
+                        (groups == null
+                            ? project.id
+                            : scopedProjectKey(widget.profile, project.id)) ==
+                        _selectedProjectId,
+                  )
+                  .firstOrNull ??
+              projects.where((project) => project.id != 'global').firstOrNull ??
+              projects.firstOrNull;
+          return SessionCreationDock(
+            key: ValueKey('creation:${widget.profile.id}'),
+            profile: widget.profile,
+            viewModel: creation,
+            controller: _newDraftController,
+            focusNode: _draftFocus,
+            initialDirectory: initial?.directory ?? '',
+            onLaunch: widget.onSessionLaunched!,
+            onExpandedChanged: (expanded) {
+              if (mounted && _creationExpanded != expanded) {
+                setState(() => _creationExpanded = expanded);
+              }
+            },
+          );
+        }
+        return NewSessionDock(
+          focusNode: _draftFocus,
+          draftController: widget.onOpenSessionWithDraft == null
+              ? null
+              : _newDraftController,
+          onCreate: state is SessionsReady || state is SessionsEmpty
+              ? () => _createSession(
+                  state is SessionsReady ? state.projects : const [],
+                )
+              : null,
+          onTerminal:
+              widget.profile.capabilities.supports(BackendFeature.terminal)
+              ? widget.onOpenTerminal
+              : null,
+        );
+      },
     ),
   );
 
@@ -241,7 +339,15 @@ class _SessionsScreenState extends State<SessionsScreen> {
       case _CatalogAction.workspace:
         final state = widget.viewModel.value;
         if (state case SessionsReady(:final projects)) {
-          widget.onOpenWorkspace(projects);
+          widget.onOpenWorkspace(
+            state.catalogGroups == null
+                ? projects
+                : [
+                    for (final group in state.catalogGroups!)
+                      if (group.profile.id == widget.profile.id)
+                        ...group.projects,
+                  ],
+          );
         }
       case _CatalogAction.terminal:
         widget.onOpenTerminal();
@@ -335,27 +441,19 @@ class _SessionsScreenState extends State<SessionsScreen> {
             failure: failure,
             onRetry: _load,
           ),
-          SessionsReady(
-            :final sessions,
-            :final projects,
-            :final activities,
-            :final unavailableDirectories,
-          ) =>
-            _buildReady(sessions, projects, activities, unavailableDirectories),
+          SessionsReady() => _buildReady(state),
         };
       },
     );
   }
 
-  Widget _buildReady(
-    List<OpenCodeSession> sessions,
-    List<OpenCodeProject> projects,
-    Map<String, SessionActivity> activities,
-    Set<String> unavailableDirectories,
-  ) {
-    final projectIdsWithSessions = sessions
-        .map((session) => session.projectId)
-        .toSet();
+  Widget _buildReady(SessionsReady state) {
+    final entries = state.entriesFor(widget.profile);
+    final projects = state.projects;
+    final scoped = state.catalogGroups != null;
+    String projectKey(ScopedSession entry) =>
+        scoped ? entry.projectKey : entry.session.projectId;
+    final projectIdsWithSessions = entries.map(projectKey).toSet();
     final filterProjects = projects
         .where((project) => projectIdsWithSessions.contains(project.id))
         .toList(growable: false);
@@ -364,10 +462,11 @@ class _SessionsScreenState extends State<SessionsScreen> {
         ? _selectedProjectId
         : null;
     final query = _searchController.text.trim().toLowerCase();
-    final filtered = sessions
-        .where((session) {
+    final filtered = entries
+        .where((entry) {
+          final session = entry.session;
           if (selectedProjectId != null &&
-              session.projectId != selectedProjectId) {
+              projectKey(entry) != selectedProjectId) {
             return false;
           }
           if (query.isEmpty) {
@@ -375,19 +474,21 @@ class _SessionsScreenState extends State<SessionsScreen> {
           }
           return session.title.toLowerCase().contains(query) ||
               session.directory.toLowerCase().contains(query) ||
-              session.id.toLowerCase().contains(query);
+              session.id.toLowerCase().contains(query) ||
+              (scoped &&
+                  entry.profile.backend.label.toLowerCase().contains(query));
         })
         .toList(growable: false);
     final primary = filtered
-        .where((session) => session.parentId?.isNotEmpty != true)
+        .where((entry) => entry.session.parentId?.isNotEmpty != true)
         .toList(growable: false);
     final visibleSessions = query.isEmpty ? primary : filtered;
-    final childrenByParent = <String, int>{};
-    for (final session in sessions) {
-      final parentId = session.parentId;
+    final childrenByParent = <(String, String), int>{};
+    for (final entry in entries) {
+      final parentId = entry.session.parentId;
       if (parentId != null && parentId.isNotEmpty) {
         childrenByParent.update(
-          parentId,
+          (entry.profile.id, parentId),
           (count) => count + 1,
           ifAbsent: () => 1,
         );
@@ -400,12 +501,30 @@ class _SessionsScreenState extends State<SessionsScreen> {
         keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
         physics: const AlwaysScrollableScrollPhysics(),
         slivers: [
+          for (final group
+              in state.catalogGroups ?? const <SessionCatalogGroup>[])
+            if (group.failure != null)
+              SliverToBoxAdapter(
+                child: Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Text(
+                    '${group.profile.backend.label}: ${group.failure!.message} Previously loaded sessions may be out of date.',
+                  ),
+                ),
+              ),
           if (widget.embedded || _showFilters)
             SliverToBoxAdapter(
               child: _CatalogControls(
                 searchController: _searchController,
                 searchFocus: _searchFocus,
                 projects: filterProjects,
+                projectLabels: {
+                  for (final group
+                      in state.catalogGroups ?? const <SessionCatalogGroup>[])
+                    for (final project in group.projects)
+                      scopedProjectKey(group.profile, project.id):
+                          '${group.profile.backend.label} · ${project.name}',
+                },
                 selectedProjectId: selectedProjectId,
                 onSelectProject: (id) =>
                     setState(() => _selectedProjectId = id),
@@ -435,23 +554,30 @@ class _SessionsScreenState extends State<SessionsScreen> {
                   child: Divider(height: 1, thickness: 0.5),
                 ),
                 itemBuilder: (context, index) {
-                  final session = visibleSessions[index];
+                  final entry = visibleSessions[index];
+                  final session = entry.session;
                   return _SessionCard(
+                    key: ValueKey(entry.identity),
                     session: session,
-                    activity:
-                        activities[session.id] ??
-                        (unavailableDirectories.contains(session.directory)
-                            ? SessionActivity.unavailable
-                            : SessionActivity.unknown),
-                    childCount: childrenByParent[session.id] ?? 0,
-                    onTap: () => widget.onOpenSession(session),
+                    engineLabel: scoped ? entry.profile.backend.label : null,
+                    activity: entry.activity,
+                    childCount: childrenByParent[entry.identity] ?? 0,
+                    onTap: () {
+                      if (widget.onOpenScopedSession case final open?) {
+                        open(entry);
+                      } else if (entry.profile.id == widget.profile.id) {
+                        widget.onOpenSession(session);
+                      }
+                    },
                     onCopyId: () => _copySessionId(session),
-                    onRename: () => _renameSession(session),
-                    onDelete: () => _deleteSession(session),
-                    canRename: widget.profile.capabilities.supports(
+                    onRename: () =>
+                        _renameSession(session, profile: entry.profile),
+                    onDelete: () =>
+                        _deleteSession(session, profile: entry.profile),
+                    canRename: entry.profile.capabilities.supports(
                       BackendFeature.sessionRename,
                     ),
-                    canDelete: widget.profile.capabilities.supports(
+                    canDelete: entry.profile.capabilities.supports(
                       BackendFeature.sessionDelete,
                     ),
                   );
@@ -464,6 +590,22 @@ class _SessionsScreenState extends State<SessionsScreen> {
   }
 
   Future<void> _createSession(List<OpenCodeProject> projects) async {
+    if (widget.sessionCreationViewModel != null) {
+      _draftFocus.requestFocus();
+      return;
+    }
+    final state = widget.viewModel.value;
+    final selectedId =
+        state is SessionsReady &&
+            state.sessions.any(
+              (session) => session.projectId == _selectedProjectId,
+            )
+        ? _selectedProjectId
+        : null;
+    final initialProject =
+        projects.where((project) => project.id == selectedId).firstOrNull ??
+        projects.where((project) => project.id != 'global').firstOrNull ??
+        projects.firstOrNull;
     final session = await showModalBottomSheet<OpenCodeSession>(
       context: context,
       isScrollControlled: true,
@@ -474,13 +616,29 @@ class _SessionsScreenState extends State<SessionsScreen> {
         profile: widget.profile,
         viewModel: widget.viewModel,
         projects: projects,
+        initialDirectory: _creationDirectory ?? initialProject?.directory ?? '',
+        initialTitle: _creationTitle,
+        capabilitiesViewModel: widget.capabilitiesViewModel,
+        initialOptions: _creationOptions,
+        onOptionsChanged: (options) => _creationOptions = options,
+        onDraftChanged: (directory, title) {
+          _creationDirectory = directory;
+          _creationTitle = title;
+        },
       ),
     );
     if (!mounted || session == null) {
       return;
     }
+    _creationDirectory = null;
+    _creationTitle = '';
+    final options = _creationOptions;
+    _creationOptions = const PromptExecutionOptions();
     final draft = _newDraftController.text;
-    if (draft.isNotEmpty && widget.onOpenSessionWithDraft != null) {
+    if (widget.onSessionCreated != null) {
+      widget.onSessionCreated!(session, draft, options);
+      _newDraftController.clear();
+    } else if (draft.isNotEmpty && widget.onOpenSessionWithDraft != null) {
       widget.onOpenSessionWithDraft!(session, draft);
       _newDraftController.clear();
     } else {
@@ -495,7 +653,10 @@ class _SessionsScreenState extends State<SessionsScreen> {
     ).showSnackBar(const SnackBar(content: Text('Session ID copied')));
   }
 
-  Future<void> _renameSession(OpenCodeSession session) async {
+  Future<void> _renameSession(
+    OpenCodeSession session, {
+    ServerProfile? profile,
+  }) async {
     final title = await showDialog<String>(
       context: context,
       builder: (context) => _RenameSessionDialog(initialTitle: session.title),
@@ -504,7 +665,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
       return;
     }
     final failure = await widget.viewModel.rename(
-      widget.profile,
+      profile ?? widget.profile,
       session,
       title,
     );
@@ -515,13 +676,16 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }
   }
 
-  Future<void> _deleteSession(OpenCodeSession session) async {
+  Future<void> _deleteSession(
+    OpenCodeSession session, {
+    ServerProfile? profile,
+  }) async {
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (context) => AppDialog(
         title: const Text('Delete session?'),
         content: Text(
-          'Delete "${session.title}" from OpenCode? This cannot be undone.',
+          'Delete "${session.title}" from ${(profile ?? widget.profile).backend.label}? This cannot be undone.',
         ),
         actions: [
           AppButton(
@@ -539,7 +703,10 @@ class _SessionsScreenState extends State<SessionsScreen> {
     if (confirmed != true) {
       return;
     }
-    final failure = await widget.viewModel.delete(widget.profile, session);
+    final failure = await widget.viewModel.delete(
+      profile ?? widget.profile,
+      session,
+    );
     if (mounted && failure != null) {
       ScaffoldMessenger.of(
         context,
@@ -603,11 +770,23 @@ class _NewSessionSheet extends StatefulWidget {
     required this.profile,
     required this.viewModel,
     required this.projects,
+    required this.initialDirectory,
+    required this.initialTitle,
+    required this.onDraftChanged,
+    required this.initialOptions,
+    required this.onOptionsChanged,
+    this.capabilitiesViewModel,
   });
 
   final ServerProfile profile;
   final SessionsViewModel viewModel;
   final List<OpenCodeProject> projects;
+  final String initialDirectory;
+  final String initialTitle;
+  final void Function(String directory, String title) onDraftChanged;
+  final PromptExecutionOptions initialOptions;
+  final ValueChanged<PromptExecutionOptions> onOptionsChanged;
+  final CapabilitiesViewModel? capabilitiesViewModel;
 
   @override
   State<_NewSessionSheet> createState() => _NewSessionSheetState();
@@ -623,21 +802,17 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
   bool _submitting = false;
   SessionsFailure? _creationFailure;
   int _suggestionRevision = 0;
+  late PromptExecutionOptions _options;
 
   @override
   void initState() {
     super.initState();
-    final initial = widget.projects
-        .firstWhere(
-          (project) => project.id != 'global',
-          orElse: () => widget.projects.isEmpty
-              ? const OpenCodeProject(id: '', directory: '')
-              : widget.projects.first,
-        )
-        .directory;
-    _directoryController = TextEditingController(text: initial)
+    _directoryController = TextEditingController(text: widget.initialDirectory)
       ..addListener(_directoryChanged);
-    _titleController = TextEditingController();
+    _titleController = TextEditingController(text: widget.initialTitle)
+      ..addListener(_rememberDraft);
+    _options = widget.initialOptions;
+    widget.capabilitiesViewModel?.addListener(_capabilitiesChanged);
     _suggestions = widget.projects
         .map((project) => project.directory)
         .where((directory) => directory.isNotEmpty)
@@ -648,15 +823,187 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
   @override
   void dispose() {
     _suggestionRevision++;
+    widget.capabilitiesViewModel?.removeListener(_capabilitiesChanged);
     _debounce?.cancel();
     _directoryController
       ..removeListener(_directoryChanged)
       ..dispose();
-    _titleController.dispose();
+    _titleController
+      ..removeListener(_rememberDraft)
+      ..dispose();
     super.dispose();
   }
 
+  void _rememberDraft() =>
+      widget.onDraftChanged(_directoryController.text, _titleController.text);
+
+  void _capabilitiesChanged() {
+    if (mounted) setState(() {});
+  }
+
+  OpenCodeCapabilities? get _capabilities {
+    final state = widget.capabilitiesViewModel?.value;
+    return state is CapabilitiesReady ? state.capabilities : null;
+  }
+
+  bool get _optionsValid {
+    if (_options.isEmpty) return true;
+    final capabilities = _capabilities;
+    if (capabilities == null) return false;
+    return (!_options.hasModel ||
+            capabilities.models.any(
+              (model) =>
+                  model.isProviderConnected &&
+                  model.providerId == _options.modelProviderId &&
+                  model.id == _options.modelId,
+            )) &&
+        (_options.agentName == null ||
+            capabilities.agents.any(
+              (agent) => agent.name == _options.agentName,
+            ));
+  }
+
+  Future<void> _pick<T>({
+    required String title,
+    required T? selected,
+    required List<SelectionOption<T>> choices,
+    required void Function(T?) apply,
+  }) async {
+    FocusManager.instance.primaryFocus?.unfocus();
+    final result = await showModalBottomSheet<(T?,)>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: false,
+      constraints: const BoxConstraints(maxWidth: 560),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SizedBox(
+          height:
+              (MediaQuery.sizeOf(context).height -
+                      MediaQuery.viewInsetsOf(context).bottom -
+                      MediaQuery.paddingOf(context).top)
+                  .clamp(0.0, 560.0),
+          child: SelectionPicker<T>(
+            title: title,
+            options: choices,
+            selected: selected,
+            onApply: (value) => Navigator.of(context).pop((value,)),
+            onCancel: () => Navigator.of(context).pop(),
+          ),
+        ),
+      ),
+    );
+    if (result == null || !mounted || _submitting) return;
+    setState(() => apply(result.$1));
+    widget.onOptionsChanged(_options);
+  }
+
+  Widget _executionSettings() {
+    final state = widget.capabilitiesViewModel?.value;
+    final capabilities = _capabilities;
+    final model = capabilities?.models
+        .where(
+          (model) =>
+              model.providerId == _options.modelProviderId &&
+              model.id == _options.modelId,
+        )
+        .firstOrNull;
+    final agent = capabilities?.agents
+        .where((agent) => agent.name == _options.agentName)
+        .firstOrNull;
+    final defaultLabel =
+        widget.profile.backend == AgentBackend.gatewayClaude ||
+            widget.profile.backend == AgentBackend.gatewayCodex
+        ? 'CLI default'
+        : 'Server default';
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Model'),
+          subtitle: Text(
+            model?.name ??
+                (_options.hasModel
+                    ? 'Selected model unavailable'
+                    : defaultLabel),
+          ),
+          trailing: const Icon(Icons.expand_more),
+          onTap: _submitting || capabilities == null
+              ? null
+              : () => _pick<OpenCodeModel>(
+                  title: 'Model',
+                  selected: model,
+                  choices: [
+                    for (final item in capabilities.models.where(
+                      (model) => model.isProviderConnected,
+                    ))
+                      SelectionOption(
+                        value: item,
+                        label: item.name,
+                        description: '${item.providerId} / ${item.id}',
+                      ),
+                  ],
+                  apply: (value) => _options = PromptExecutionOptions(
+                    modelProviderId: value?.providerId,
+                    modelId: value?.id,
+                    agentName: _options.agentName,
+                  ),
+                ),
+        ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Agent'),
+          subtitle: Text(
+            agent?.name ??
+                (_options.agentName != null
+                    ? 'Selected agent unavailable'
+                    : defaultLabel),
+          ),
+          trailing: const Icon(Icons.expand_more),
+          onTap: _submitting || capabilities == null
+              ? null
+              : () => _pick<OpenCodeAgent>(
+                  title: 'Agent',
+                  selected: agent,
+                  choices: [
+                    for (final item in capabilities.agents)
+                      SelectionOption(value: item, label: item.name),
+                  ],
+                  apply: (value) => _options = PromptExecutionOptions(
+                    modelProviderId: _options.modelProviderId,
+                    modelId: _options.modelId,
+                    agentName: value?.name,
+                  ),
+                ),
+        ),
+        if (state is CapabilitiesLoading || state is CapabilitiesIdle)
+          const LinearProgressIndicator(
+            semanticsLabel: 'Loading execution choices',
+          ),
+        if (state is CapabilitiesError) ...[
+          const Text(
+            'Execution choices unavailable. You can use the server default.',
+          ),
+          AppButton(
+            label: 'Retry execution choices',
+            variant: AppButtonVariant.tertiary,
+            onPressed: _submitting ? null : widget.capabilitiesViewModel!.retry,
+          ),
+        ],
+        if (!_optionsValid)
+          const Text(
+            'Refresh execution choices or select an available model and agent before creating.',
+          ),
+      ],
+    );
+  }
+
   void _directoryChanged() {
+    _rememberDraft();
     final revision = ++_suggestionRevision;
     _debounce?.cancel();
     final input = _directoryController.text.trim();
@@ -666,7 +1013,9 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
       _suggestionFailure = null;
       _suggestions = _knownSuggestions(input);
     });
-    if (input.isEmpty || !_isAbsoluteServerPath(input)) {
+    if (input.isEmpty ||
+        !_isAbsoluteServerPath(input) ||
+        !widget.profile.capabilities.supports(BackendFeature.workspace)) {
       return;
     }
     _debounce = Timer(const Duration(milliseconds: 250), () async {
@@ -709,7 +1058,9 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
 
   Future<void> _create() async {
     final directory = _directoryController.text.trim();
-    if (_submitting || !_isAbsoluteServerPath(directory)) return;
+    if (_submitting || !_isAbsoluteServerPath(directory) || !_optionsValid) {
+      return;
+    }
     setState(() {
       _submitting = true;
       _creationFailure = null;
@@ -733,7 +1084,7 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
   @override
   Widget build(BuildContext context) {
     final directory = _directoryController.text.trim();
-    final valid = _isAbsoluteServerPath(directory);
+    final valid = _isAbsoluteServerPath(directory) && _optionsValid;
     return PopScope(
       canPop: !_submitting,
       child: SafeArea(
@@ -779,7 +1130,8 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
                           ),
                         )
                       : null,
-                  errorText: directory.isNotEmpty && !valid
+                  errorText:
+                      directory.isNotEmpty && !_isAbsoluteServerPath(directory)
                       ? 'Use an absolute Unix or Windows path.'
                       : null,
                 ),
@@ -834,6 +1186,7 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
                   hint: 'What are we working on?',
                 ),
                 const SizedBox(height: 16),
+                if (widget.capabilitiesViewModel != null) _executionSettings(),
                 if (_creationFailure case final failure?) ...[
                   Semantics(liveRegion: true, child: Text(failure.message)),
                   const SizedBox(height: 12),
@@ -874,11 +1227,13 @@ class _CatalogControls extends StatelessWidget {
     required this.onSelectProject,
     required this.onCreate,
     required this.onRefresh,
+    this.projectLabels = const {},
   });
 
   final TextEditingController searchController;
   final FocusNode searchFocus;
   final List<OpenCodeProject> projects;
+  final Map<String, String> projectLabels;
   final String? selectedProjectId;
   final ValueChanged<String?> onSelectProject;
   final VoidCallback? onCreate;
@@ -956,7 +1311,9 @@ class _CatalogControls extends StatelessWidget {
                   for (final project in projects) ...[
                     const SizedBox(width: 8),
                     ChoiceChip(
-                      label: Text(_projectLabel(project)),
+                      label: Text(
+                        projectLabels[project.id] ?? _projectLabel(project),
+                      ),
                       selected: selectedProjectId == project.id,
                       onSelected: (_) => onSelectProject(project.id),
                       materialTapTargetSize: MaterialTapTargetSize.padded,
@@ -983,6 +1340,8 @@ class _SessionCard extends StatelessWidget {
     required this.onDelete,
     required this.canRename,
     required this.canDelete,
+    this.engineLabel,
+    super.key,
   });
 
   final OpenCodeSession session;
@@ -994,6 +1353,7 @@ class _SessionCard extends StatelessWidget {
   final VoidCallback onDelete;
   final bool canRename;
   final bool canDelete;
+  final String? engineLabel;
 
   @override
   Widget build(BuildContext context) {
@@ -1004,7 +1364,10 @@ class _SessionCard extends StatelessWidget {
       SessionActivity.unknown => ('Activity unknown', Icons.help_outline),
       SessionActivity.unavailable => ('Status unavailable', Icons.sync_problem),
     };
-    final project = _directoryName(session.directory);
+    final project = [
+      ?engineLabel,
+      _directoryName(session.directory),
+    ].join(' · ');
     return SessionListTile(
       identifier: session.id,
       title: session.title.isEmpty ? 'Untitled session' : session.title,

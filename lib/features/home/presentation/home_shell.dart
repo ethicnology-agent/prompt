@@ -29,6 +29,9 @@ class HomeShell extends StatefulWidget {
     required this.onReconnect,
     required this.onDisconnect,
     this.reviewViewModelFactory,
+    this.sessionCreationViewModel,
+    this.onSessionLaunched,
+    this.initialLaunch,
     super.key,
   });
 
@@ -45,23 +48,41 @@ class HomeShell extends StatefulWidget {
   final Future<bool> Function() onReconnect;
   final VoidCallback onDisconnect;
   final ReviewViewModel Function()? reviewViewModelFactory;
+  final SessionCreationViewModel? sessionCreationViewModel;
+  final ValueChanged<SessionLaunch>? onSessionLaunched;
+  final SessionLaunch? initialLaunch;
 
   @override
   State<HomeShell> createState() => _HomeShellState();
 }
 
 class _HomeShellState extends State<HomeShell> {
-  OpenCodeSession? _selectedSession;
+  ScopedSession? _selectedSession;
   double? _catalogWidth;
 
   @override
   void initState() {
     super.initState();
-    _selectedSession = _resolvedSelection(
-      widget.sessionsViewModel.value,
-      _selectedSession,
-    );
+    _selectedSession =
+        (widget.initialLaunch == null
+            ? null
+            : ScopedSession(
+                widget.initialLaunch!.profile,
+                widget.initialLaunch!.session,
+              )) ??
+        _resolvedSelection(widget.sessionsViewModel.value, _selectedSession);
     widget.sessionsViewModel.addListener(_reconcileSelectedSession);
+    if (widget.initialLaunch case final launch?) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        if (MediaQuery.sizeOf(context).width < PromptBreakpoints.desktop) {
+          _openConversation(
+            context,
+            ScopedSession(launch.profile, launch.session),
+          );
+        }
+      });
+    }
   }
 
   @override
@@ -94,28 +115,30 @@ class _HomeShellState extends State<HomeShell> {
     }
   }
 
-  OpenCodeSession? _resolvedSelection(
+  ScopedSession? _resolvedSelection(
     SessionsUiState state,
-    OpenCodeSession? selected,
+    ScopedSession? selected,
   ) {
     if (state is! SessionsReady) {
       return selected;
     }
-    if (state.sessions.isEmpty) {
+    final entries = state.entriesFor(widget.profile);
+    if (entries.isEmpty) {
       return null;
     }
     if (selected != null) {
-      for (final session in state.sessions) {
+      for (final session in entries) {
         if (_hasSameIdentity(session, selected)) {
           return session;
         }
       }
     }
-    return state.sessions.first;
+    return entries.first;
   }
 
-  bool _hasSameIdentity(OpenCodeSession left, OpenCodeSession right) {
-    return left.id == right.id && left.directory == right.directory;
+  bool _hasSameIdentity(ScopedSession left, ScopedSession right) {
+    return left.identity == right.identity &&
+        left.session.directory == right.session.directory;
   }
 
   @override
@@ -127,24 +150,49 @@ class _HomeShellState extends State<HomeShell> {
           embedded: desktop,
           profile: widget.profile,
           viewModel: widget.sessionsViewModel,
+          capabilitiesViewModel: widget.capabilitiesViewModel,
+          sessionCreationViewModel: widget.sessionCreationViewModel,
+          onSessionLaunched: widget.onSessionLaunched,
           onDisconnect: widget.onDisconnect,
           onOpenSession: (session) {
             if (desktop) {
-              setState(() => _selectedSession = session);
+              setState(
+                () => _selectedSession = ScopedSession(widget.profile, session),
+              );
             } else {
-              _openConversation(context, session);
+              _openConversation(
+                context,
+                ScopedSession(widget.profile, session),
+              );
             }
           },
-          onOpenSessionWithDraft: (session, draft) {
+          onOpenScopedSession: (entry) {
+            if (desktop) {
+              setState(() => _selectedSession = entry);
+            } else {
+              _openConversation(context, entry);
+            }
+          },
+          onSessionCreated: (session, draft, options) {
+            widget.conversationViewModel.rememberExecutionOptions(
+              widget.profile,
+              session,
+              options,
+            );
             widget.conversationViewModel.rememberDraft(
               widget.profile,
               session,
               draft,
             );
             if (desktop) {
-              setState(() => _selectedSession = session);
+              setState(
+                () => _selectedSession = ScopedSession(widget.profile, session),
+              );
             } else {
-              _openConversation(context, session);
+              _openConversation(
+                context,
+                ScopedSession(widget.profile, session),
+              );
             }
           },
           onOpenWorkspace: (projects) => _openWorkspace(context, projects),
@@ -171,17 +219,22 @@ class _HomeShellState extends State<HomeShell> {
             resizeHandle,
             Expanded(
               child: switch (_selectedSession) {
-                final session? => ConversationScreen(
-                  key: ValueKey('conversation:${session.id}'),
-                  profile: widget.profile,
-                  session: session,
+                final entry? => ConversationScreen(
+                  key: ValueKey((
+                    'conversation',
+                    entry.identity,
+                    entry.session.directory,
+                  )),
+                  profile: entry.profile,
+                  session: entry.session,
                   viewModel: widget.conversationViewModel,
                   capabilitiesViewModel: widget.capabilitiesViewModel,
                   voiceViewModel: widget.voiceViewModel,
-                  onOpenFork: (forked) =>
-                      setState(() => _selectedSession = forked),
-                  onOpenFile: (path) =>
-                      _openSessionFile(context, session, path),
+                  onOpenFork: (forked) => setState(
+                    () =>
+                        _selectedSession = ScopedSession(entry.profile, forked),
+                  ),
+                  onOpenFile: (path) => _openSessionFile(context, entry, path),
                   reviewViewModelFactory: widget.reviewViewModelFactory,
                 ),
                 _ => const _EmptyMasterDetail(),
@@ -298,15 +351,15 @@ class _HomeShellState extends State<HomeShell> {
 
   void _openSessionFile(
     BuildContext context,
-    OpenCodeSession session,
+    ScopedSession entry,
     String path,
   ) {
-    if (!widget.profile.capabilities.supports(BackendFeature.workspace)) return;
+    if (!entry.profile.capabilities.supports(BackendFeature.workspace)) return;
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
         builder: (_) => WorkspaceFileScreen(
-          profile: widget.profile,
-          directory: session.directory,
+          profile: entry.profile,
+          directory: entry.session.directory,
           path: path,
           viewModel: widget.workspaceViewModel.createFileViewModel(),
         ),
@@ -316,18 +369,21 @@ class _HomeShellState extends State<HomeShell> {
 
   Future<void> _openConversation(
     BuildContext context,
-    OpenCodeSession session,
+    ScopedSession entry,
   ) async {
     await Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) => ConversationScreen(
-          profile: widget.profile,
-          session: session,
+          profile: entry.profile,
+          session: entry.session,
           viewModel: widget.conversationViewModel,
           capabilitiesViewModel: widget.capabilitiesViewModel,
           voiceViewModel: widget.voiceViewModel,
-          onOpenFork: (forked) => _replaceConversation(context, forked),
-          onOpenFile: (path) => _openSessionFile(context, session, path),
+          onOpenFork: (forked) => _replaceConversation(
+            context,
+            ScopedSession(entry.profile, forked),
+          ),
+          onOpenFile: (path) => _openSessionFile(context, entry, path),
           reviewViewModelFactory: widget.reviewViewModelFactory,
         ),
       ),
@@ -335,17 +391,20 @@ class _HomeShellState extends State<HomeShell> {
     await widget.sessionsViewModel.load(widget.profile);
   }
 
-  void _replaceConversation(BuildContext context, OpenCodeSession session) {
+  void _replaceConversation(BuildContext context, ScopedSession entry) {
     Navigator.of(context).pushReplacement(
       MaterialPageRoute<void>(
         builder: (_) => ConversationScreen(
-          profile: widget.profile,
-          session: session,
+          profile: entry.profile,
+          session: entry.session,
           viewModel: widget.conversationViewModel,
           capabilitiesViewModel: widget.capabilitiesViewModel,
           voiceViewModel: widget.voiceViewModel,
-          onOpenFork: (forked) => _replaceConversation(context, forked),
-          onOpenFile: (path) => _openSessionFile(context, session, path),
+          onOpenFork: (forked) => _replaceConversation(
+            context,
+            ScopedSession(entry.profile, forked),
+          ),
+          onOpenFile: (path) => _openSessionFile(context, entry, path),
           reviewViewModelFactory: widget.reviewViewModelFactory,
         ),
       ),

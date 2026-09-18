@@ -6,6 +6,7 @@ import '../features/connection/connection.dart';
 import '../features/connection/presentation/connection_screen.dart';
 import '../features/home/presentation/home_shell.dart';
 import '../features/settings/settings.dart';
+import '../features/sessions/sessions.dart';
 import 'app_dependencies.dart';
 import 'prompt_theme.dart';
 import 'third_party_licenses.dart';
@@ -29,6 +30,13 @@ class PromptApp extends StatefulWidget {
 class _PromptAppState extends State<PromptApp> {
   late final AppDependencies _dependencies;
   ServerProfile? _connectedProfile;
+  ServerProfile? _disconnectedProfile;
+  bool _restoreAutomatically = true;
+  Future<void>? _disconnectCleanup;
+  SessionLaunch? _initialLaunch;
+  bool _openingLaunch = false;
+  int _launchRevision = 0;
+  final Set<(String, String)> _openedLaunches = {};
   late final AppLifecycleListener _appLifecycleListener;
 
   @override
@@ -60,6 +68,10 @@ class _PromptAppState extends State<PromptApp> {
     }
     final coordinator = _dependencies.queueCoordinator;
     if (coordinator == null) return;
+    if (_connectedProfile == null || _openingLaunch) {
+      coordinator.notifyAppInactive();
+      return;
+    }
     if (state == AppLifecycleState.resumed) {
       coordinator.notifyAppForeground();
     } else {
@@ -67,20 +79,84 @@ class _PromptAppState extends State<PromptApp> {
     }
   }
 
-  void _openConnectedServer(ServerProfile profile) {
+  void _openConnectedServer(ServerProfile profile) async {
+    final generation = _dependencies.connectionViewModel.operationGeneration;
+    await _disconnectCleanup;
+    if (!mounted ||
+        generation != _dependencies.connectionViewModel.operationGeneration ||
+        _dependencies.connectionViewModel.value is! ConnectionReady) {
+      return;
+    }
+    _dependencies.queueCoordinator?.notifyAppForeground();
     setState(() => _connectedProfile = profile);
   }
 
   void _disconnect() {
+    _launchRevision++;
+    _openingLaunch = false;
+    _initialLaunch = null;
+    _disconnectedProfile = _connectedProfile;
+    _restoreAutomatically = false;
     _dependencies.connectionViewModel.reset();
+    // Suspend dispatch synchronously. A new connection waits for the old
+    // conversation's asynchronous teardown before mounting another session.
+    _dependencies.queueCoordinator?.notifyAppInactive();
+    _disconnectCleanup = Future.wait([
+      _dependencies.conversationViewModel.leave(),
+      _dependencies.voiceViewModel.notifyAppInactive(),
+    ]).then((_) {});
     setState(() => _connectedProfile = null);
+  }
+
+  void _openSessionLaunch(SessionLaunch launch) async {
+    final identity = (launch.profile.id, launch.session.id);
+    if (!_openedLaunches.add(identity)) return;
+    final revision = ++_launchRevision;
+    _dependencies.connectionViewModel.reset();
+    _dependencies.queueCoordinator?.notifyAppInactive();
+    setState(() => _openingLaunch = true);
+    await _dependencies.conversationViewModel.leave();
+    await _dependencies.voiceViewModel.notifyAppInactive();
+    if (!mounted || revision != _launchRevision) return;
+    _dependencies.conversationViewModel.rememberExecutionOptions(
+      launch.profile,
+      launch.session,
+      launch.options,
+    );
+    _dependencies.conversationViewModel.rememberDraft(
+      launch.profile,
+      launch.session,
+      launch.draft,
+    );
+    final accepted = await _dependencies.queueLaunchDraft(launch);
+    if (accepted) {
+      _dependencies.conversationViewModel.rememberDraft(
+        launch.profile,
+        launch.session,
+        '',
+      );
+    }
+    if (!mounted || revision != _launchRevision) return;
+    await Future.wait([
+      _dependencies.sessionsViewModel.load(launch.profile),
+      _dependencies.capabilitiesViewModel.load(launch.profile),
+    ]);
+    if (!mounted || revision != _launchRevision) return;
+    _dependencies.queueCoordinator?.notifyAppForeground();
+    setState(() {
+      _connectedProfile = launch.profile;
+      _initialLaunch = launch;
+      _openingLaunch = false;
+    });
   }
 
   Future<bool> _reconnect() async {
     final profile = _connectedProfile;
     if (profile == null) return false;
     await _dependencies.connectionViewModel.restore(profile);
-    return _dependencies.connectionViewModel.value is ConnectionReady;
+    return mounted &&
+        identical(profile, _connectedProfile) &&
+        _dependencies.connectionViewModel.value is ConnectionReady;
   }
 
   Future<ServerProfile?> _loadLastProfile() async {
@@ -97,14 +173,33 @@ class _PromptAppState extends State<PromptApp> {
         theme: promptTheme(),
         darkTheme: promptDarkTheme(),
         themeMode: themeMode,
-        home: _connectedProfile == null
+        home: _openingLaunch
+            ? const Scaffold(
+                body: Center(
+                  child: CircularProgressIndicator(
+                    semanticsLabel: 'Opening session',
+                  ),
+                ),
+              )
+            : _connectedProfile == null
             ? ConnectionScreen(
                 viewModel: _dependencies.connectionViewModel,
-                profileLoader: widget.lastProfileLoader ?? _loadLastProfile,
+                profileLoader: _disconnectedProfile != null
+                    ? () async => _disconnectedProfile
+                    : widget.lastProfileLoader ?? _loadLastProfile,
+                restoreAutomatically: _restoreAutomatically,
                 onConnected: _openConnectedServer,
               )
             : HomeShell(
+                key: ValueKey((
+                  _connectedProfile!.id,
+                  _initialLaunch?.session.id,
+                )),
                 profile: _connectedProfile!,
+                sessionCreationViewModel:
+                    _dependencies.sessionCreationViewModel,
+                onSessionLaunched: _openSessionLaunch,
+                initialLaunch: _initialLaunch,
                 sessionsViewModel: _dependencies.sessionsViewModel,
                 conversationViewModel: _dependencies.conversationViewModel,
                 capabilitiesViewModel: _dependencies.capabilitiesViewModel,
