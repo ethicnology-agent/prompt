@@ -10,6 +10,30 @@ class Specimen {
 
 final specimens = <Specimen>[
   Specimen(
+    'Selection picker',
+    (_) => SizedBox(
+      height: 360,
+      child: SelectionPicker<String>(
+        title: 'Model',
+        selected: 'provider-a/model-a',
+        options: const [
+          SelectionOption(
+            value: 'provider-a/model-a',
+            label: 'Reasoning model',
+            description: 'Provider A · model-a',
+          ),
+          SelectionOption(
+            value: 'provider-b/model-b',
+            label: 'Fast model',
+            description: 'Provider B · model-b',
+          ),
+        ],
+        onApply: (_) {},
+        onCancel: () {},
+      ),
+    ),
+  ),
+  Specimen(
     'Composer actions',
     (_) => ComposerActionBar(
       leading: [
@@ -271,12 +295,17 @@ final specimens = <Specimen>[
   ),
   Specimen(
     'Identity avatar',
-    (_) => const Wrap(
+    (_) => Wrap(
       spacing: 16,
       children: [
-        IdentityAvatar(identifier: 'sample-one', size: 40),
-        IdentityAvatar(identifier: 'sample-two'),
-        IdentityAvatar(identifier: 'sample-three', size: 80),
+        const IdentityAvatar(identifier: 'sample-one', size: 40),
+        const IdentityAvatar(identifier: 'sample-two'),
+        const IdentityAvatar(identifier: 'sample-three', size: 80),
+        IdentityAvatarButton(
+          identifier: 'sample-action',
+          tooltip: 'Session details',
+          onPressed: () {},
+        ),
       ],
     ),
   ),

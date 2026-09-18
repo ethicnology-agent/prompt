@@ -1,5 +1,29 @@
 import 'package:flutter/material.dart';
 
+class IdentityAvatarButton extends StatelessWidget {
+  const IdentityAvatarButton({
+    required this.identifier,
+    required this.tooltip,
+    required this.onPressed,
+    super.key,
+  });
+
+  final String identifier;
+  final String tooltip;
+  final VoidCallback? onPressed;
+
+  @override
+  Widget build(BuildContext context) => IconButton(
+    tooltip: tooltip,
+    onPressed: onPressed,
+    constraints: const BoxConstraints(minWidth: 48, minHeight: 48),
+    icon: Semantics(
+      label: tooltip,
+      child: IdentityAvatar(identifier: identifier, size: 32),
+    ),
+  );
+}
+
 /// A stable, local identity mark. Never downloads a profile image or discloses
 /// the identifier to a third-party avatar service.
 class IdentityAvatar extends StatelessWidget {

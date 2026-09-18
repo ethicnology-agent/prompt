@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../../../core/async/result.dart';
 import '../../../core/ui/ui.dart';
 import '../../connection/connection.dart';
 import '../../capabilities/capabilities.dart';
@@ -16,6 +17,7 @@ import '../domain/prompt_attachment.dart';
 import '../domain/session_artifacts.dart';
 import '../domain/session_execution_state.dart';
 import 'conversation_view_model.dart';
+import 'session_details_screen.dart';
 import 'widgets/approval_dock.dart';
 import 'widgets/composer.dart';
 import 'widgets/connection_status_banner.dart';
@@ -84,6 +86,7 @@ class _ConversationScreenState extends State<ConversationScreen>
   StreamSubscription<String>? _queueErrorSubscription;
   StreamSubscription<String>? _transcriptErrorSubscription;
   bool _showJumpToLatest = false;
+  final _forkInProgress = ValueNotifier<bool>(false);
   bool? _artifactsPanelOverride;
   double? _artifactsWidth;
   late final ValueNotifier<PromptExecutionOptions> _executionOptions;
@@ -129,6 +132,7 @@ class _ConversationScreenState extends State<ConversationScreen>
 
   @override
   void dispose() {
+    _forkInProgress.dispose();
     WidgetsBinding.instance.removeObserver(this);
     _queueErrorSubscription?.cancel();
     _transcriptErrorSubscription?.cancel();
@@ -419,50 +423,106 @@ class _ConversationScreenState extends State<ConversationScreen>
   Future<_Selection<OpenCodeModel>?> _chooseModel(
     List<OpenCodeModel> models,
     OpenCodeModel? selected,
-  ) => _showAdaptiveChoice<OpenCodeModel>(
+  ) => _showSelectionPicker<OpenCodeModel>(
     title: 'Model',
-    builder: (context, controller) => ListView(
-      controller: controller,
-      children: [
-        ListTile(
-          title: const Text('Default'),
-          selected: selected == null,
-          onTap: () => Navigator.of(context).pop(const _Selection(null)),
+    selected: selected,
+    options: [
+      for (final candidate in models.where(
+        (model) => model.isProviderConnected,
+      ))
+        SelectionOption(
+          value: candidate,
+          label: candidate.name,
+          description: '${candidate.providerId} / ${candidate.id}',
         ),
-        for (final candidate in models.where(
-          (model) => model.isProviderConnected,
-        ))
-          ListTile(
-            title: Text(candidate.name),
-            selected: candidate == selected,
-            onTap: () => Navigator.of(context).pop(_Selection(candidate)),
-          ),
-      ],
-    ),
+    ],
   );
 
   Future<_Selection<OpenCodeAgent>?> _chooseAgent(
     List<OpenCodeAgent> agents,
     OpenCodeAgent? selected,
-  ) => _showAdaptiveChoice<OpenCodeAgent>(
+  ) => _showSelectionPicker<OpenCodeAgent>(
     title: 'Agent',
-    builder: (context, controller) => ListView(
-      controller: controller,
-      children: [
-        ListTile(
-          title: const Text('Default'),
-          selected: selected == null,
-          onTap: () => Navigator.of(context).pop(const _Selection(null)),
-        ),
-        for (final candidate in agents)
-          ListTile(
-            title: Text(candidate.name),
-            selected: candidate == selected,
-            onTap: () => Navigator.of(context).pop(_Selection(candidate)),
-          ),
-      ],
-    ),
+    selected: selected,
+    options: [
+      for (final candidate in agents)
+        SelectionOption(value: candidate, label: candidate.name),
+    ],
   );
+
+  Future<_Selection<T>?> _showSelectionPicker<T>({
+    required String title,
+    required T? selected,
+    required List<SelectionOption<T>> options,
+  }) {
+    Widget picker(BuildContext context) => SelectionPicker<T>(
+      title: title,
+      options: options,
+      selected: selected,
+      onApply: (value) => Navigator.of(context).pop(_Selection(value)),
+      onCancel: () => Navigator.of(context).pop(),
+    );
+    return showModalBottomSheet<_Selection<T>>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: false,
+      constraints: const BoxConstraints(maxWidth: 560),
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+          bottom: MediaQuery.viewInsetsOf(context).bottom,
+        ),
+        child: SizedBox(
+          height:
+              (MediaQuery.sizeOf(context).height -
+                      MediaQuery.viewInsetsOf(context).bottom -
+                      MediaQuery.paddingOf(context).top)
+                  .clamp(0.0, 560.0),
+          child: picker(context),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _selectComposerModel(OpenCodeCapabilities capabilities) async {
+    final choice = await _chooseModel(
+      capabilities.models,
+      _selectedModel(capabilities.models),
+    );
+    if (choice == null || !mounted) return;
+    final current = _executionOptions.value;
+    final options = PromptExecutionOptions(
+      modelProviderId: choice.value?.providerId,
+      modelId: choice.value?.id,
+      agentName: current.agentName,
+    );
+    _executionOptions.value = options;
+    widget.viewModel.rememberExecutionOptions(
+      widget.profile,
+      widget.session,
+      options,
+    );
+  }
+
+  Future<void> _selectComposerAgent(OpenCodeCapabilities capabilities) async {
+    final choice = await _chooseAgent(
+      capabilities.agents,
+      _selectedAgent(capabilities.agents),
+    );
+    if (choice == null || !mounted) return;
+    final current = _executionOptions.value;
+    final options = PromptExecutionOptions(
+      modelProviderId: current.modelProviderId,
+      modelId: current.modelId,
+      agentName: choice.value?.name,
+    );
+    _executionOptions.value = options;
+    widget.viewModel.rememberExecutionOptions(
+      widget.profile,
+      widget.session,
+      options,
+    );
+  }
 
   OpenCodeModel? _selectedModel(List<OpenCodeModel> models) {
     for (final model in models) {
@@ -700,23 +760,38 @@ class _ConversationScreenState extends State<ConversationScreen>
       key: const ValueKey('composer-action-toolbar'),
       controls:
           capabilities == null ||
-              (capabilities.models.isEmpty && capabilities.agents.isEmpty)
+              (!capabilities.models.any((model) => model.isProviderConnected) &&
+                  capabilities.agents.isEmpty)
           ? null
           : ValueListenableBuilder<PromptExecutionOptions>(
               valueListenable: _executionOptions,
-              builder: (context, options, _) => AppButton(
-                label: [
+              builder: (context, options, _) => Wrap(
+                spacing: 4,
+                runSpacing: 4,
+                children: [
                   if (capabilities.agents.isNotEmpty)
-                    _selectedAgent(capabilities.agents)?.name ??
-                        options.agentName ??
-                        'Agent default',
-                  if (capabilities.models.isNotEmpty)
-                    _selectedModel(capabilities.models)?.name ??
-                        options.modelId ??
-                        'Model default',
-                ].join(' · '),
-                variant: AppButtonVariant.tertiary,
-                onPressed: () => _selectExecutionOptions(capabilities),
+                    AppButton(
+                      key: const ValueKey('composer-agent-picker'),
+                      label:
+                          _selectedAgent(capabilities.agents)?.name ??
+                          options.agentName ??
+                          'Agent default',
+                      variant: AppButtonVariant.tertiary,
+                      onPressed: () => _selectComposerAgent(capabilities),
+                    ),
+                  if (capabilities.models.any(
+                    (model) => model.isProviderConnected,
+                  ))
+                    AppButton(
+                      key: const ValueKey('composer-model-picker'),
+                      label:
+                          _selectedModel(capabilities.models)?.name ??
+                          options.modelId ??
+                          'Model default',
+                      variant: AppButtonVariant.tertiary,
+                      onPressed: () => _selectComposerModel(capabilities),
+                    ),
+                ],
               ),
             ),
       leading: [
@@ -902,6 +977,86 @@ class _ConversationScreenState extends State<ConversationScreen>
     ),
   );
 
+  void _openSessionDetails() {
+    Navigator.of(context).push<void>(
+      MaterialPageRoute<void>(
+        builder: (_) => ValueListenableBuilder<bool>(
+          valueListenable: _forkInProgress,
+          builder: (detailsContext, forkInProgress, _) =>
+              ValueListenableBuilder<SessionExecutionState>(
+                valueListenable: widget.viewModel.executionState,
+                builder: (context, state, _) => SessionDetailsScreen(
+                  session: widget.session,
+                  backendLabel: widget.profile.backend.label,
+                  serverOriginLabel: widget.profile.displayOrigin,
+                  executionLabel: _executionLabel(state),
+                  forkInProgress: forkInProgress,
+                  onFork:
+                      widget.onOpenFork != null &&
+                          widget.profile.capabilities.supports(
+                            BackendFeature.sessionFork,
+                          )
+                      ? () => unawaited(_forkSession(detailsContext))
+                      : null,
+                  onRefresh: () {
+                    Navigator.of(detailsContext).pop();
+                    unawaited(widget.viewModel.refreshFromUserAction());
+                  },
+                  onReview:
+                      widget.profile.capabilities.supports(
+                            BackendFeature.review,
+                          ) &&
+                          widget.reviewViewModelFactory != null &&
+                          widget.capabilitiesViewModel != null
+                      ? () {
+                          Navigator.of(detailsContext).pop();
+                          _openReview();
+                        }
+                      : null,
+                  onOpenArtifacts:
+                      widget.profile.capabilities.supports(
+                        BackendFeature.workspace,
+                      )
+                      ? () {
+                          Navigator.of(detailsContext).pop();
+                          unawaited(_showArtifacts());
+                        }
+                      : null,
+                ),
+              ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _forkSession(BuildContext detailsContext) async {
+    if (_forkInProgress.value ||
+        widget.onOpenFork == null ||
+        !widget.profile.capabilities.supports(BackendFeature.sessionFork)) {
+      return;
+    }
+    _forkInProgress.value = true;
+    try {
+      final result = await widget.viewModel.fork();
+      if (!mounted || !detailsContext.mounted) return;
+      switch (result) {
+        case Ok(:final value):
+          Navigator.of(detailsContext).pop();
+          widget.onOpenFork!(value);
+        case Err(:final failure):
+          ScaffoldMessenger.of(
+            detailsContext,
+          ).showSnackBar(SnackBar(content: Text(failure.message)));
+        case null:
+          ScaffoldMessenger.of(detailsContext).showSnackBar(
+            SnackBar(content: Text(SessionsFailure.unexpectedResponse.message)),
+          );
+      }
+    } finally {
+      if (mounted) _forkInProgress.value = false;
+    }
+  }
+
   void _toggleArtifactsPanel({required bool isDesktop, required bool showing}) {
     if (!isDesktop) {
       unawaited(_showArtifacts());
@@ -969,9 +1124,11 @@ class _ConversationScreenState extends State<ConversationScreen>
                   ),
                 ),
               );
-              return flexible
-                  ? Flexible(fit: FlexFit.loose, child: panel)
-                  : panel;
+              return Flexible(
+                flex: flexible ? 1 : 0,
+                fit: FlexFit.loose,
+                child: panel,
+              );
             },
           ),
     );
@@ -1120,71 +1277,10 @@ class _ConversationScreenState extends State<ConversationScreen>
                   ),
             actions: [
               if (isPhone)
-                ValueListenableBuilder<SessionExecutionState>(
-                  valueListenable: widget.viewModel.executionState,
-                  builder: (context, state, _) =>
-                      PopupMenuButton<_HeaderAction>(
-                        tooltip: 'Session details and actions',
-                        onSelected: (action) {
-                          switch (action) {
-                            case _HeaderAction.review:
-                              _openReview();
-                            case _HeaderAction.refresh:
-                              unawaited(
-                                widget.viewModel.refreshFromUserAction(),
-                              );
-                            case _HeaderAction.artifacts:
-                              _toggleArtifactsPanel(
-                                isDesktop: false,
-                                showing: false,
-                              );
-                          }
-                        },
-                        itemBuilder: (context) => [
-                          PopupMenuItem<_HeaderAction>(
-                            enabled: false,
-                            child: Text(widget.session.directory),
-                          ),
-                          PopupMenuItem<_HeaderAction>(
-                            enabled: false,
-                            child: Text(
-                              'Execution status: ${_executionLabel(state)}',
-                            ),
-                          ),
-                          const PopupMenuDivider(),
-                          if (widget.profile.capabilities.supports(
-                                BackendFeature.review,
-                              ) &&
-                              widget.reviewViewModelFactory != null &&
-                              widget.capabilitiesViewModel != null)
-                            const PopupMenuItem(
-                              value: _HeaderAction.review,
-                              child: Text('Review diff'),
-                            ),
-                          const PopupMenuItem(
-                            value: _HeaderAction.refresh,
-                            child: Text('Refresh transcript'),
-                          ),
-                          if (widget.profile.capabilities.supports(
-                            BackendFeature.workspace,
-                          ))
-                            const PopupMenuItem(
-                              value: _HeaderAction.artifacts,
-                              child: Text('Session artifacts'),
-                            ),
-                        ],
-                        child: Semantics(
-                          label: 'Session details and actions',
-                          value: 'Execution status: ${_executionLabel(state)}',
-                          child: Padding(
-                            padding: const EdgeInsets.all(8),
-                            child: IdentityAvatar(
-                              identifier: widget.session.id,
-                              size: 32,
-                            ),
-                          ),
-                        ),
-                      ),
+                IdentityAvatarButton(
+                  identifier: widget.session.id,
+                  tooltip: 'Session details and actions',
+                  onPressed: _openSessionDetails,
                 )
               else ...[
                 if (widget.profile.capabilities.supports(
@@ -1227,95 +1323,116 @@ class _ConversationScreenState extends State<ConversationScreen>
               const SizedBox(width: 8),
             ],
           ),
-          body: Column(
-            children: [
-              ValueListenableBuilder<SseConnectionState>(
-                valueListenable: widget.viewModel.connectionState,
-                builder: (context, state, _) {
-                  final banner = _connectionBanner(state);
-                  if (banner == null) {
-                    return const SizedBox.shrink();
-                  }
-                  return ConnectionStatusBanner(
-                    banner,
-                    reconnecting:
-                        state is SseReconnecting || state is SseReconciling,
-                    onRetry: state is SseDisconnected
-                        ? widget.viewModel.retryConnection
-                        : null,
-                  );
-                },
-              ),
-              Expanded(
-                child: isDesktop
-                    ? Row(
-                        children: [
-                          Expanded(
-                            child: Row(
-                              children: [
-                                Expanded(
-                                  child: Column(
-                                    children: [
-                                      Expanded(
-                                        child: _transcriptPanel(
-                                          showComposerActions: false,
-                                          desktop: true,
-                                        ),
+          body: LayoutBuilder(
+            builder: (context, bodyConstraints) {
+              final compactHeight =
+                  bodyConstraints.maxHeight <
+                  240 * MediaQuery.textScalerOf(context).scale(14) / 14;
+              Widget footer(Widget child) => Flexible(
+                flex: compactHeight ? 3 : 0,
+                fit: FlexFit.loose,
+                child: SingleChildScrollView(
+                  key: const ValueKey('conversation-composer-viewport'),
+                  child: child,
+                ),
+              );
+              return Column(
+                children: [
+                  ValueListenableBuilder<SseConnectionState>(
+                    valueListenable: widget.viewModel.connectionState,
+                    builder: (context, state, _) {
+                      final banner = _connectionBanner(state);
+                      if (banner == null) {
+                        return const SizedBox.shrink();
+                      }
+                      return ConnectionStatusBanner(
+                        banner,
+                        reconnecting:
+                            state is SseReconnecting || state is SseReconciling,
+                        onRetry: state is SseDisconnected
+                            ? widget.viewModel.retryConnection
+                            : null,
+                      );
+                    },
+                  ),
+                  Expanded(
+                    child: isDesktop
+                        ? Row(
+                            children: [
+                              Expanded(
+                                child: Row(
+                                  children: [
+                                    Expanded(
+                                      child: Column(
+                                        children: [
+                                          Expanded(
+                                            child: _transcriptPanel(
+                                              showComposerActions: false,
+                                              desktop: true,
+                                            ),
+                                          ),
+                                          _activityPanel(
+                                            maxHeight: constraints.maxHeight,
+                                          ),
+                                          footer(
+                                            _composerPanel(
+                                              constrainWidth: true,
+                                            ),
+                                          ),
+                                        ],
                                       ),
-                                      _activityPanel(
-                                        maxHeight: constraints.maxHeight,
-                                      ),
-                                      _composerPanel(constrainWidth: true),
-                                    ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              if (showArtifactsPanel) ...[
+                                _DesktopResizeHandle(
+                                  key: const ValueKey(
+                                    'desktop-session-details-divider',
+                                  ),
+                                  label: 'Resize session details',
+                                  onDelta: (delta) => setState(() {
+                                    _artifactsWidth =
+                                        _artifactsWidthFor(
+                                          constraints.maxWidth,
+                                        ) -
+                                        delta;
+                                  }),
+                                ),
+                                SizedBox(
+                                  width: _artifactsWidthFor(
+                                    constraints.maxWidth,
+                                  ),
+                                  child: Padding(
+                                    padding: const EdgeInsets.fromLTRB(
+                                      12,
+                                      12,
+                                      12,
+                                      24,
+                                    ),
+                                    child: _artifactsPanel(lazy: true),
                                   ),
                                 ),
                               ],
-                            ),
-                          ),
-                          if (showArtifactsPanel) ...[
-                            _DesktopResizeHandle(
-                              key: const ValueKey(
-                                'desktop-session-details-divider',
-                              ),
-                              label: 'Resize session details',
-                              onDelta: (delta) => setState(() {
-                                _artifactsWidth =
-                                    _artifactsWidthFor(constraints.maxWidth) -
-                                    delta;
-                              }),
-                            ),
-                            SizedBox(
-                              width: _artifactsWidthFor(constraints.maxWidth),
-                              child: Padding(
-                                padding: const EdgeInsets.fromLTRB(
-                                  12,
-                                  12,
-                                  12,
-                                  24,
-                                ),
-                                child: _artifactsPanel(lazy: true),
-                              ),
-                            ),
-                          ],
-                        ],
-                      )
-                    : _transcriptPanel(showComposerActions: false),
-              ),
-              if (!isDesktop)
-                _activityPanel(
-                  maxHeight: constraints.maxHeight,
-                  flexible: true,
-                ),
-              if (!isDesktop) _composerPanel(),
-            ],
+                            ],
+                          )
+                        : _transcriptPanel(showComposerActions: false),
+                  ),
+                  if (!isDesktop)
+                    _activityPanel(
+                      maxHeight: constraints.maxHeight,
+                      flexible: compactHeight,
+                    ),
+                  if (!isDesktop) footer(_composerPanel()),
+                ],
+              );
+            },
           ),
         );
       },
     );
   }
 }
-
-enum _HeaderAction { review, refresh, artifacts }
 
 String _executionLabel(SessionExecutionState state) => switch (state) {
   SessionBusy() => 'Working',

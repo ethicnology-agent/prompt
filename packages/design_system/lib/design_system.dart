@@ -7,6 +7,7 @@ export 'src/components/composer_action_bar.dart';
 export 'src/components/identity_avatar.dart';
 export 'src/components/prompt_panel.dart';
 export 'src/components/session_list_tile.dart';
+export 'src/components/selection_picker.dart';
 export 'src/components/settings_group.dart';
 export 'src/prompt_color_tokens.dart';
 export 'src/prompt_ui_tokens.dart';
