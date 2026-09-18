@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
@@ -28,6 +29,24 @@ class _TerminalScreenState extends State<TerminalScreen>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    widget.viewModel.reset(widget.profile);
+    _directory.addListener(_directoryChanged);
+  }
+
+  void _directoryChanged() => setState(() {});
+
+  @override
+  void didUpdateWidget(covariant TerminalScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.viewModel != widget.viewModel ||
+        oldWidget.profile.id != widget.profile.id) {
+      if (oldWidget.viewModel != widget.viewModel) {
+        unawaited(oldWidget.viewModel.deactivate());
+      }
+      _directory.clear();
+      _input.clear();
+      widget.viewModel.reset(widget.profile);
+    }
   }
 
   @override
@@ -54,54 +73,72 @@ class _TerminalScreenState extends State<TerminalScreen>
         AppIconButton(
           icon: Icons.refresh_rounded,
           tooltip: 'Refresh terminals',
-          onPressed: _load,
+          onPressed: _directory.text.trim().isEmpty ? null : _load,
         ),
       ],
     ),
-    body: Padding(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        children: [
-          const Text(
-            'Experimental: commands run on the selected server directory. Output stays only in memory and is limited to 100 KiB.',
-          ),
-          const SizedBox(height: 12),
-          AppTextField(
-            controller: _directory,
-            textInputAction: TextInputAction.search,
-            onSubmitted: (_) => _load(),
-            label: 'Server directory',
-            hint: '/path/on/server',
-            prefixIcon: Icons.folder_outlined,
-          ),
-          const SizedBox(height: 12),
-          Expanded(
-            child: ValueListenableBuilder<TerminalUiState>(
-              valueListenable: widget.viewModel,
-              builder: (context, state, _) => switch (state) {
-                TerminalIdle() => const Center(
-                  child: Text('Choose a server directory to list terminals.'),
-                ),
-                TerminalLoading() => const Center(
-                  child: CircularProgressIndicator(),
-                ),
-                TerminalUnavailable(:final failure) => _Unavailable(
-                  failure: failure,
-                  onRetry: _load,
-                ),
-                TerminalReady() => _Ready(
-                  state: state,
-                  onCreate: () => widget.viewModel.create(widget.profile),
-                  onConnect: (id) =>
-                      widget.viewModel.connect(widget.profile, id),
-                  onClose: (id) => widget.viewModel.close(widget.profile, id),
-                  input: _input,
-                  onSend: _send,
-                ),
-              },
+    body: SafeArea(
+      top: false,
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+          child: SizedBox(
+            height: math.max(
+              constraints.maxHeight,
+              600 * MediaQuery.textScalerOf(context).scale(14) / 14,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                children: [
+                  const Text(
+                    'Experimental: commands run on the selected server directory. Output stays only in memory and is limited to 100 KiB.',
+                  ),
+                  const SizedBox(height: 12),
+                  AppTextField(
+                    controller: _directory,
+                    textInputAction: TextInputAction.search,
+                    onSubmitted: (_) => _load(),
+                    label: 'Server directory',
+                    hint: '/path/on/server',
+                    prefixIcon: Icons.folder_outlined,
+                  ),
+                  const SizedBox(height: 12),
+                  Expanded(
+                    child: ValueListenableBuilder<TerminalUiState>(
+                      valueListenable: widget.viewModel,
+                      builder: (context, state, _) => switch (state) {
+                        TerminalIdle() => const Center(
+                          child: Text(
+                            'Choose a server directory to list terminals.',
+                          ),
+                        ),
+                        TerminalLoading() => const Center(
+                          child: CircularProgressIndicator(),
+                        ),
+                        TerminalUnavailable(:final failure) => _Unavailable(
+                          failure: failure,
+                          onRetry: _load,
+                        ),
+                        TerminalReady() => _Ready(
+                          state: state,
+                          onCreate: () =>
+                              widget.viewModel.create(widget.profile),
+                          onConnect: (id) =>
+                              widget.viewModel.connect(widget.profile, id),
+                          onClose: (id) =>
+                              widget.viewModel.close(widget.profile, id),
+                          input: _input,
+                          onSend: _send,
+                        ),
+                      },
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ],
+        ),
       ),
     ),
   );
@@ -111,8 +148,7 @@ class _TerminalScreenState extends State<TerminalScreen>
   }
 
   void _send() {
-    widget.viewModel.send('${_input.text}\n');
-    _input.clear();
+    if (widget.viewModel.send('${_input.text}\n')) _input.clear();
   }
 }
 
@@ -160,14 +196,16 @@ class _Ready extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     crossAxisAlignment: CrossAxisAlignment.stretch,
     children: [
-      Row(
+      Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        spacing: 12,
         children: [
           Text('Terminals', style: Theme.of(context).textTheme.titleMedium),
-          const Spacer(),
           AppButton(
             label: 'New terminal',
             icon: Icons.add,
-            onPressed: onCreate,
+            onPressed: state.busy || state.connecting ? null : onCreate,
           ),
         ],
       ),
@@ -203,10 +241,13 @@ class _Ready extends StatelessWidget {
                     trailing: AppIconButton(
                       icon: Icons.close,
                       tooltip: 'Close terminal',
-                      onPressed: () => onClose(terminal.id),
+                      onPressed: state.busy || state.connecting
+                          ? null
+                          : () => onClose(terminal.id),
                     ),
                     selected: state.activeId == terminal.id,
-                    onTap: terminal.isRunning
+                    onTap:
+                        terminal.isRunning && !state.busy && !state.connecting
                         ? () => onConnect(terminal.id)
                         : null,
                   );

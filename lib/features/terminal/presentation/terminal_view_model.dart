@@ -32,6 +32,7 @@ class TerminalReady extends TerminalUiState {
     this.activeId,
     this.output = '',
     this.connecting = false,
+    this.busy = false,
     this.failure,
   });
   final String directory;
@@ -39,6 +40,7 @@ class TerminalReady extends TerminalUiState {
   final String? activeId;
   final String output;
   final bool connecting;
+  final bool busy;
   final RemoteTerminalFailure? failure;
 }
 
@@ -60,13 +62,70 @@ class TerminalViewModel extends ValueNotifier<TerminalUiState> {
   Timer? _publishTimer;
   bool _publishPending = false;
   bool _disposed = false;
+  int _epoch = 0;
+  String? _profileId;
+  String? _connectedId;
+  Future<void> _socketWork = Future<void>.value();
+
+  bool _current(int epoch) => !_disposed && epoch == _epoch;
+
+  Future<void> _serializeSocket(Future<void> Function() operation) {
+    final next = _socketWork.then((_) => operation());
+    _socketWork = next.then<void>((_) {}, onError: (Object _, StackTrace _) {});
+    return next;
+  }
+
+  /// Starts a fresh route scope, without retaining another route's output.
+  void reset(ServerProfile profile) {
+    if (_disposed) return;
+    _epoch++;
+    _profileId = profile.id;
+    _connectedId = null;
+    _publishTimer?.cancel();
+    _publishTimer = null;
+    _publishPending = false;
+    _outputBuffer.clear();
+    value = const TerminalIdle();
+    unawaited(_serializeSocket(_disconnect));
+  }
+
+  TerminalReady? _actionState(ServerProfile profile) {
+    final state = value;
+    return !_disposed &&
+            _profileId == profile.id &&
+            state is TerminalReady &&
+            !state.busy &&
+            !state.connecting
+        ? state
+        : null;
+  }
+
+  TerminalReady _update(
+    TerminalReady state, {
+    List<RemoteTerminal>? terminals,
+    bool? busy,
+    RemoteTerminalFailure? failure,
+  }) => TerminalReady(
+    directory: state.directory,
+    terminals: terminals ?? state.terminals,
+    activeId: state.activeId,
+    output: state.output,
+    connecting: state.connecting,
+    busy: busy ?? state.busy,
+    failure: failure,
+  );
 
   Future<void> load(ServerProfile profile, String directory) async {
-    await _disconnect();
     if (_disposed) return;
+    final epoch = ++_epoch;
+    _profileId = profile.id;
+    _connectedId = null;
     _outputBuffer.clear();
     value = const TerminalLoading();
+    await _serializeSocket(_disconnect);
+    if (!_current(epoch)) return;
     final result = await _repository.list(profile, directory);
+    if (!_current(epoch)) return;
     value = switch (result) {
       Ok<List<RemoteTerminal>, RemoteTerminalFailure>(:final value) =>
         TerminalReady(directory: directory, terminals: value),
@@ -76,30 +135,39 @@ class TerminalViewModel extends ValueNotifier<TerminalUiState> {
   }
 
   Future<void> create(ServerProfile profile) async {
-    final state = value;
-    if (state is! TerminalReady) return;
+    final state = _actionState(profile);
+    if (state == null) return;
+    final epoch = _epoch;
+    value = _update(state, busy: true);
     final result = await _repository.create(profile, state.directory);
-    if (result case Ok<RemoteTerminal, RemoteTerminalFailure>(:final value)) {
-      this.value = TerminalReady(
-        directory: state.directory,
-        terminals: [...state.terminals, value],
+    if (!_current(epoch) || value is! TerminalReady) return;
+    final current = value as TerminalReady;
+    if (result case Ok<RemoteTerminal, RemoteTerminalFailure>(
+      value: final terminal,
+    )) {
+      value = _update(
+        current,
+        terminals: [
+          ...current.terminals.where((item) => item.id != terminal.id),
+          terminal,
+        ],
+        busy: false,
       );
     } else if (result case Err<RemoteTerminal, RemoteTerminalFailure>(
       :final failure,
     )) {
-      value = TerminalReady(
-        directory: state.directory,
-        terminals: state.terminals,
-        failure: failure,
-      );
+      value = _update(current, busy: false, failure: failure);
     }
   }
 
   Future<void> connect(ServerProfile profile, String id) async {
-    final state = value;
-    if (state is! TerminalReady) return;
-    await _disconnect();
-    if (_disposed) return;
+    final state = _actionState(profile);
+    if (state == null ||
+        !state.terminals.any((item) => item.id == id && item.isRunning)) {
+      return;
+    }
+    final epoch = ++_epoch;
+    _connectedId = null;
     _outputBuffer.clear();
     value = TerminalReady(
       directory: state.directory,
@@ -107,68 +175,130 @@ class TerminalViewModel extends ValueNotifier<TerminalUiState> {
       activeId: id,
       connecting: true,
     );
-    final result = await _repository.connect(profile, state.directory, id);
-    if (result case Ok<Stream<List<int>>, RemoteTerminalFailure>(
-      :final value,
-    )) {
-      this.value = TerminalReady(
-        directory: state.directory,
-        terminals: state.terminals,
-        activeId: id,
-      );
-      _subscription = value.listen(
-        _append,
-        onError: (_, _) => _connectionFailure(),
-        onDone: _flush,
-      );
-    } else if (result case Err<Stream<List<int>>, RemoteTerminalFailure>(
-      :final failure,
-    )) {
-      value = TerminalReady(
-        directory: state.directory,
-        terminals: state.terminals,
-        failure: failure,
-      );
-    }
+    await _serializeSocket(() async {
+      await _disconnect();
+      if (!_current(epoch)) return;
+      final result = await _repository.connect(profile, state.directory, id);
+      if (!_current(epoch)) {
+        await _repository.disconnect();
+        return;
+      }
+      if (result case Ok<Stream<List<int>>, RemoteTerminalFailure>(
+        :final value,
+      )) {
+        _connectedId = id;
+        this.value = TerminalReady(
+          directory: state.directory,
+          terminals: state.terminals,
+          activeId: id,
+        );
+        _subscription = value.listen(
+          (chunk) {
+            if (_current(epoch)) _append(chunk);
+          },
+          onError: (_, _) {
+            if (_current(epoch)) {
+              _connectionEnded(RemoteTerminalFailure.connectionFailed);
+            }
+          },
+          onDone: () {
+            if (_current(epoch)) _connectionEnded();
+          },
+        );
+      } else if (result case Err<Stream<List<int>>, RemoteTerminalFailure>(
+        :final failure,
+      )) {
+        value = TerminalReady(
+          directory: state.directory,
+          terminals: state.terminals,
+          failure: failure,
+        );
+      }
+    });
   }
 
   Future<void> close(ServerProfile profile, String id) async {
-    final state = value;
-    if (state is! TerminalReady) return;
-    if (state.activeId == id) await _disconnect();
+    final state = _actionState(profile);
+    if (state == null || !state.terminals.any((item) => item.id == id)) return;
+    final epoch = _epoch;
+    value = _update(state, busy: true);
+    if (state.activeId == id) {
+      _markDisconnected();
+      await _serializeSocket(_disconnect);
+    }
+    if (!_current(epoch)) return;
     final result = await _repository.close(profile, state.directory, id);
+    if (!_current(epoch) || value is! TerminalReady) return;
+    final current = value as TerminalReady;
     if (result case Ok<void, RemoteTerminalFailure>()) {
-      value = TerminalReady(
-        directory: state.directory,
-        terminals: state.terminals
+      value = _update(
+        current,
+        terminals: current.terminals
             .where((terminal) => terminal.id != id)
             .toList(growable: false),
+        busy: false,
       );
     } else if (result case Err<void, RemoteTerminalFailure>(:final failure)) {
+      value = _update(current, busy: false, failure: failure);
+    }
+  }
+
+  bool send(String input) {
+    final state = value;
+    if (_disposed ||
+        input.isEmpty ||
+        state is! TerminalReady ||
+        state.connecting ||
+        state.activeId == null ||
+        state.activeId != _connectedId) {
+      return false;
+    }
+    try {
+      _repository.send(utf8.encode(input));
+      return true;
+    } on StateError {
+      _connectionEnded(RemoteTerminalFailure.connectionFailed);
+      return false;
+    }
+  }
+
+  Future<void> deactivate() {
+    if (_disposed) return Future<void>.value();
+    _epoch++;
+    _markDisconnected(null, true);
+    return _serializeSocket(_disconnect);
+  }
+
+  void _markDisconnected([
+    RemoteTerminalFailure? failure,
+    bool clearBusy = false,
+  ]) {
+    _connectedId = null;
+    _publishTimer?.cancel();
+    _publishTimer = null;
+    final state = value;
+    if (!_disposed && state is TerminalReady) {
       value = TerminalReady(
         directory: state.directory,
         terminals: state.terminals,
+        output: _publishPending ? _outputBuffer.decode() : state.output,
+        busy: clearBusy ? false : state.busy,
         failure: failure,
       );
     }
+    _publishPending = false;
   }
 
-  void send(String input) {
-    if (input.isNotEmpty) {
-      _repository.send(utf8.encode(input));
-    }
+  void _connectionEnded([RemoteTerminalFailure? failure]) {
+    _markDisconnected(failure);
+    unawaited(_serializeSocket(_disconnect));
   }
 
-  Future<void> deactivate() => _disconnect();
   void _append(List<int> chunk) {
     if (_disposed || value is! TerminalReady) return;
     _outputBuffer.append(chunk);
     _publishPending = true;
     _publishTimer ??= _timerFactory(publishInterval, _flush);
-  }
-
-  void _connectionFailure() {
-    _flush(RemoteTerminalFailure.connectionFailed);
   }
 
   void _flush([RemoteTerminalFailure? failure]) {
@@ -183,6 +313,8 @@ class TerminalViewModel extends ValueNotifier<TerminalUiState> {
         directory: state.directory,
         terminals: state.terminals,
         activeId: state.activeId,
+        connecting: state.connecting,
+        busy: state.busy,
         output: _outputBuffer.decode(),
         failure: failure ?? state.failure,
       );
@@ -190,9 +322,9 @@ class TerminalViewModel extends ValueNotifier<TerminalUiState> {
   }
 
   Future<void> _disconnect() async {
-    _flush();
-    await _subscription?.cancel();
+    final subscription = _subscription;
     _subscription = null;
+    await subscription?.cancel();
     await _repository.disconnect();
   }
 
@@ -200,10 +332,12 @@ class TerminalViewModel extends ValueNotifier<TerminalUiState> {
   void dispose() {
     _flush();
     _disposed = true;
+    _epoch++;
+    _connectedId = null;
     _publishTimer?.cancel();
     _publishTimer = null;
     _publishPending = false;
-    unawaited(_disconnect());
+    unawaited(_serializeSocket(_disconnect));
     super.dispose();
   }
 }
