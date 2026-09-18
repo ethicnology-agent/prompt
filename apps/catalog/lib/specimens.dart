@@ -24,6 +24,7 @@ final specimens = <Specimen>[
   Specimen('Attachment thumbnail', (_) => const _AttachmentSpecimen()),
   Specimen('Image viewer', (_) => const _ImageViewerSpecimen()),
   Specimen('Inline selection panel', (_) => const _InlineSelectionSpecimen()),
+  Specimen('Compact choice button', (_) => const _CompactChoiceSpecimen()),
   Specimen(
     'Code lines',
     (_) => const SizedBox(
@@ -531,6 +532,31 @@ class _ImageViewerSpecimenState extends State<_ImageViewerSpecimen> {
     icon: Icons.zoom_in,
     busy: _opening,
     onPressed: _open,
+  );
+}
+
+class _CompactChoiceSpecimen extends StatefulWidget {
+  const _CompactChoiceSpecimen();
+
+  @override
+  State<_CompactChoiceSpecimen> createState() => _CompactChoiceSpecimenState();
+}
+
+class _CompactChoiceSpecimenState extends State<_CompactChoiceSpecimen> {
+  bool _selected = false;
+
+  @override
+  Widget build(BuildContext context) => SizedBox(
+    width: 160,
+    child: CompactChoiceButton(
+      label: _selected
+          ? 'Focused synthetic model with a very long name'
+          : 'Default synthetic model with a very long name',
+      semanticLabel: _selected
+          ? 'Model: Focused synthetic model with a very long name'
+          : 'Model: Default synthetic model with a very long name',
+      onPressed: () => setState(() => _selected = !_selected),
+    ),
   );
 }
 

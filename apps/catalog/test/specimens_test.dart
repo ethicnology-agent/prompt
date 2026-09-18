@@ -8,6 +8,67 @@ import 'package:flutter_test/flutter_test.dart';
 
 void main() {
   for (final dark in [false, true]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets('compact choice interaction dark=$dark text=$scale', (
+        tester,
+      ) async {
+        final semantics = tester.ensureSemantics();
+        try {
+          tester.view.physicalSize = const Size(320, 740);
+          tester.view.devicePixelRatio = 1;
+          addTearDown(tester.view.resetPhysicalSize);
+          addTearDown(tester.view.resetDevicePixelRatio);
+          await tester.pumpWidget(
+            MaterialApp(
+              theme: dark ? promptDarkTheme() : promptTheme(),
+              builder: (context, child) => MediaQuery(
+                data: MediaQuery.of(
+                  context,
+                ).copyWith(textScaler: TextScaler.linear(scale)),
+                child: child!,
+              ),
+              home: SpecimenPage(
+                specimen: specimens.singleWhere(
+                  (item) => item.name == 'Compact choice button',
+                ),
+              ),
+            ),
+          );
+          final choice = find.byType(CompactChoiceButton);
+          final bounds = tester.getSize(choice);
+          expect(bounds.width, greaterThanOrEqualTo(48));
+          expect(bounds.height, greaterThanOrEqualTo(48));
+          final label = tester.widget<Text>(
+            find.descendant(of: choice, matching: find.byType(Text)),
+          );
+          expect(label.maxLines, 1);
+          expect(label.overflow, TextOverflow.ellipsis);
+          expect(
+            find.bySemanticsLabel(
+              'Model: Default synthetic model with a very long name',
+            ),
+            findsOneWidget,
+          );
+          await tester.tap(choice);
+          await tester.pump();
+          expect(
+            find.bySemanticsLabel(
+              'Model: Focused synthetic model with a very long name',
+            ),
+            findsOneWidget,
+          );
+          expect(
+            tester.widget<CompactChoiceButton>(choice).label,
+            startsWith('Focused'),
+          );
+          expect(tester.takeException(), isNull);
+        } finally {
+          semantics.dispose();
+        }
+      });
+    }
+  }
+  for (final dark in [false, true]) {
     for (final size in [const Size(320, 740), const Size(800, 360)]) {
       for (final specimen in specimens) {
         testWidgets('${specimen.name} dark=$dark size=$size large text', (
