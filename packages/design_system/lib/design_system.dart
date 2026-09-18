@@ -7,6 +7,7 @@ export 'src/components/attachment_thumbnail.dart';
 export 'src/components/attachment_image_viewer.dart';
 export 'src/components/composer_action_bar.dart';
 export 'src/components/compact_choice_button.dart';
+export 'src/components/navigation_title_button.dart';
 export 'src/components/draft_composer_panel.dart';
 export 'src/components/identity_avatar.dart';
 export 'src/components/prompt_panel.dart';

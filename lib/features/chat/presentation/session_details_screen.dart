@@ -14,6 +14,7 @@ class SessionDetailsScreen extends StatelessWidget {
     this.onReview,
     this.onOpenArtifacts,
     this.onFork,
+    this.onRename,
     this.forkInProgress = false,
     super.key,
   });
@@ -26,6 +27,7 @@ class SessionDetailsScreen extends StatelessWidget {
   final VoidCallback? onReview;
   final VoidCallback? onOpenArtifacts;
   final VoidCallback? onFork;
+  final VoidCallback? onRename;
   final bool forkInProgress;
 
   @override
@@ -49,10 +51,17 @@ class SessionDetailsScreen extends StatelessWidget {
             if (onRefresh != null ||
                 onReview != null ||
                 onOpenArtifacts != null ||
-                onFork != null) ...[
+                onFork != null ||
+                onRename != null) ...[
               SettingsGroup(
                 title: 'QUICK ACTIONS',
                 children: [
+                  if (onRename != null)
+                    _Action(
+                      icon: Icons.edit_outlined,
+                      title: 'Rename session',
+                      onTap: onRename!,
+                    ),
                   if (onReview != null)
                     _Action(
                       icon: Icons.rate_review_outlined,

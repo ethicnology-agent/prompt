@@ -91,6 +91,55 @@ class ConversationViewModel {
   final Future<QueueSendCoordinator> Function() _queueCoordinatorProvider;
   final AttachmentPicker _attachmentPicker;
 
+  /// Mutable presentation metadata, separate from the route's session identity.
+  final ValueNotifier<OpenCodeSession?> sessionMetadata = ValueNotifier(null);
+  final ValueNotifier<bool> renamingSession = ValueNotifier(false);
+  bool _renameInFlight = false;
+
+  Future<SessionMutationResult?> renameSession(
+    String title, {
+    OpenCodeSession? expectedSession,
+    ServerProfile? expectedProfile,
+  }) async {
+    final profile = _profile;
+    final session = _session;
+    if (_disposed ||
+        profile == null ||
+        session == null ||
+        _renameInFlight ||
+        (expectedSession != null && !identical(expectedSession, session)) ||
+        (expectedProfile != null && !identical(expectedProfile, profile)) ||
+        !profile.capabilities.supports(BackendFeature.sessionRename)) {
+      return null;
+    }
+    final normalized = title.trim();
+    if (normalized.isEmpty || normalized.length > 256) {
+      return const Err(SessionsFailure.unexpectedResponse);
+    }
+    if (normalized == sessionMetadata.value?.title) return const Ok(null);
+    final revision = _optionsLoadRevision;
+    _renameInFlight = true;
+    renamingSession.value = true;
+    try {
+      final result = await _sessionsRepository.rename(
+        profile,
+        session,
+        normalized,
+      );
+      if (!_disposed &&
+          revision == _optionsLoadRevision &&
+          _profile == profile &&
+          _session == session &&
+          result is Ok<void, SessionsFailure>) {
+        sessionMetadata.value = session.withTitle(normalized);
+      }
+      return result;
+    } finally {
+      _renameInFlight = false;
+      if (!_disposed) renamingSession.value = false;
+    }
+  }
+
   QueuePromptsRepository? _queueRepository;
   QueueSendCoordinator? _queueCoordinator;
 
@@ -262,6 +311,7 @@ class ConversationViewModel {
     }
     _profile = profile;
     _session = session;
+    sessionMetadata.value = session;
     _attachHistoryListener();
 
     final queueRepository = _queueRepository ??=
@@ -898,6 +948,8 @@ class ConversationViewModel {
   }
 
   Future<void> _leaveCurrentSession() async {
+    sessionMetadata.value = null;
+    renamingSession.value = false;
     _liveRenderTimer?.cancel();
     _liveRenderTimer = null;
     _pendingLiveRender = null;
@@ -923,6 +975,8 @@ class ConversationViewModel {
       return;
     }
     _disposed = true;
+    sessionMetadata.value = null;
+    renamingSession.value = false;
     _requestedSession = null;
     _liveRenderTimer?.cancel();
     _liveRenderTimer = null;
@@ -946,6 +1000,8 @@ class ConversationViewModel {
     refreshing.dispose();
     history.dispose();
     executionOptionsLoad.dispose();
+    sessionMetadata.dispose();
+    renamingSession.dispose();
     unawaited(_queueErrors.close());
     unawaited(_transcriptErrors.close());
   }

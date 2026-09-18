@@ -30,4 +30,21 @@ class OpenCodeSession {
   final String? modelProviderId;
   final String? modelId;
   final String? agentName;
+
+  OpenCodeSession withTitle(String title) => OpenCodeSession(
+    id: id,
+    projectId: projectId,
+    directory: directory,
+    title: title,
+    createdAt: createdAt,
+    updatedAt: updatedAt,
+    parentId: parentId,
+    changedFiles: changedFiles,
+    additions: additions,
+    deletions: deletions,
+    shareUrl: shareUrl,
+    modelProviderId: modelProviderId,
+    modelId: modelId,
+    agentName: agentName,
+  );
 }

@@ -25,6 +25,7 @@ final specimens = <Specimen>[
   Specimen('Image viewer', (_) => const _ImageViewerSpecimen()),
   Specimen('Inline selection panel', (_) => const _InlineSelectionSpecimen()),
   Specimen('Compact choice button', (_) => const _CompactChoiceSpecimen()),
+  Specimen('Navigation title', (_) => const _NavigationTitleSpecimen()),
   Specimen(
     'Code lines',
     (_) => const SizedBox(
@@ -340,6 +341,36 @@ final specimens = <Specimen>[
     ),
   ),
 ];
+
+class _NavigationTitleSpecimen extends StatefulWidget {
+  const _NavigationTitleSpecimen();
+
+  @override
+  State<_NavigationTitleSpecimen> createState() =>
+      _NavigationTitleSpecimenState();
+}
+
+class _NavigationTitleSpecimenState extends State<_NavigationTitleSpecimen> {
+  bool _detailsVisible = false;
+
+  @override
+  Widget build(BuildContext context) => Column(
+    crossAxisAlignment: CrossAxisAlignment.start,
+    children: [
+      SizedBox(
+        height: 68,
+        width: double.infinity,
+        child: NavigationTitleButton(
+          label: 'A synthetic session with a long descriptive title',
+          semanticLabel: 'Open synthetic session details',
+          subtitle: '/workspace/synthetic-project',
+          onPressed: () => setState(() => _detailsVisible = !_detailsVisible),
+        ),
+      ),
+      if (_detailsVisible) const Text('Synthetic session details are open'),
+    ],
+  );
+}
 
 class _DraftComposerSpecimen extends StatefulWidget {
   const _DraftComposerSpecimen({this.expanded = true, this.canSubmit = true});

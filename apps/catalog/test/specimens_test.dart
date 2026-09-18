@@ -7,6 +7,29 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  testWidgets('navigation title specimen toggles controlled details', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: promptTheme(),
+        home: SpecimenPage(
+          specimen: specimens.singleWhere(
+            (item) => item.name == 'Navigation title',
+          ),
+        ),
+      ),
+    );
+    const details = 'Synthetic session details are open';
+    expect(find.text(details), findsNothing);
+    await tester.tap(find.byType(NavigationTitleButton));
+    await tester.pump();
+    expect(find.text(details), findsOneWidget);
+    await tester.tap(find.byType(NavigationTitleButton));
+    await tester.pump();
+    expect(find.text(details), findsNothing);
+  });
+
   for (final dark in [false, true]) {
     for (final scale in [1.0, 2.0]) {
       testWidgets('compact choice interaction dark=$dark text=$scale', (

@@ -94,75 +94,93 @@ void main() {
     },
   );
 
-  testWidgets(
-    'renames a session without disposing its dialog controller early',
-    (tester) async {
-      http.Request? renamed;
-      final client = MockClient((request) async {
-        if (request.method == 'PATCH' &&
-            request.url.path == '/session/session-1') {
-          renamed = request;
-          return http.Response('{}', 200);
-        }
-        if (request.url.path == '/session') {
-          return http.Response(_renameSessionJson, 200);
-        }
-        if (request.url.path == '/project') {
-          return http.Response(
-            '[{"id":"project","worktree":"/srv/project"}]',
-            200,
-          );
-        }
-        return http.Response('', 404);
-      });
-      final profile = ServerProfile(
-        origin: Uri.parse('http://10.80.0.1:4096'),
-        username: 'opencode',
-      );
-      final viewModel = SessionsViewModel(
-        SessionsRepository(
-          OpenCodeSessionsService(OpenCodeTransport(client)),
-          const _PasswordStore(),
-        ),
-      );
-
-      await tester.pumpWidget(
-        MaterialApp(
-          home: SessionsScreen(
-            profile: profile,
-            viewModel: viewModel,
-            onOpenSession: (_) {},
-            onOpenWorkspace: (_) {},
-            onOpenTerminal: () {},
-            onOpenDiagnostics: () {},
-            onOpenVoiceSettings: () {},
-            onDisconnect: () {},
+  for (final failFirst in [false, true]) {
+    testWidgets(
+      'renames a session with recoverable dialog failure=$failFirst',
+      (tester) async {
+        http.Request? renamed;
+        var attempts = 0;
+        final client = MockClient((request) async {
+          if (request.method == 'PATCH' &&
+              request.url.path == '/session/session-1') {
+            renamed = request;
+            if (failFirst && attempts++ == 0) return http.Response('', 503);
+            return http.Response('{}', 200);
+          }
+          if (request.url.path == '/session') {
+            return http.Response(_renameSessionJson, 200);
+          }
+          if (request.url.path == '/project') {
+            return http.Response(
+              '[{"id":"project","worktree":"/srv/project"}]',
+              200,
+            );
+          }
+          return http.Response('', 404);
+        });
+        final profile = ServerProfile(
+          origin: Uri.parse('http://10.80.0.1:4096'),
+          username: 'opencode',
+        );
+        final viewModel = SessionsViewModel(
+          SessionsRepository(
+            OpenCodeSessionsService(OpenCodeTransport(client)),
+            const _PasswordStore(),
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      await tester.longPress(find.byType(SessionListTile));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Rename'));
-      await tester.pumpAndSettle();
+        );
 
-      final titleField = find.byWidgetPredicate(
-        (widget) =>
-            widget is TextField && widget.decoration?.labelText == 'Title',
-      );
-      await tester.enterText(titleField, 'Prompt renamed');
-      await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 250));
-      await tester.pumpAndSettle();
+        await tester.pumpWidget(
+          MaterialApp(
+            home: SessionsScreen(
+              profile: profile,
+              viewModel: viewModel,
+              onOpenSession: (_) {},
+              onOpenWorkspace: (_) {},
+              onOpenTerminal: () {},
+              onOpenDiagnostics: () {},
+              onOpenVoiceSettings: () {},
+              onDisconnect: () {},
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        await tester.longPress(find.byType(SessionListTile));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Rename'));
+        await tester.pumpAndSettle();
 
-      expect(tester.takeException(), isNull);
-      expect(renamed, isNotNull);
-      expect(jsonDecode(renamed!.body), {'title': 'Prompt renamed'});
-      expect(find.text('Prompt renamed'), findsOneWidget);
-      viewModel.dispose();
-    },
-  );
+        final titleField = find.byWidgetPredicate(
+          (widget) =>
+              widget is TextField && widget.decoration?.labelText == 'Title',
+        );
+        await tester.enterText(titleField, 'Prompt renamed');
+        await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 250));
+        await tester.pumpAndSettle();
+
+        if (failFirst) {
+          expect(titleField, findsOneWidget);
+          expect(
+            tester.widget<TextField>(titleField).controller!.text,
+            'Prompt renamed',
+          );
+          expect(
+            tester.widget<TextField>(titleField).decoration!.errorText,
+            isNotEmpty,
+          );
+          await tester.tap(find.widgetWithText(FilledButton, 'Rename'));
+          await tester.pumpAndSettle();
+          expect(attempts, 2);
+        }
+        expect(tester.takeException(), isNull);
+        expect(renamed, isNotNull);
+        expect(jsonDecode(renamed!.body), {'title': 'Prompt renamed'});
+        expect(find.text('Prompt renamed'), findsOneWidget);
+        viewModel.dispose();
+      },
+    );
+  }
 
   testWidgets(
     'creates a session from an editable server path without projects',

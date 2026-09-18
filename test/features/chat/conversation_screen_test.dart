@@ -204,6 +204,32 @@ class _FakeConversationViewModel extends ConversationViewModel {
   bool leaveCalled = false;
   int refreshCallCount = 0;
   int forkCallCount = 0;
+  final renamedTitles = <String>[];
+  SessionMutationResult renameResult = const Ok(null);
+
+  @override
+  Future<SessionMutationResult?> renameSession(
+    String title, {
+    OpenCodeSession? expectedSession,
+    ServerProfile? expectedProfile,
+  }) async {
+    renamedTitles.add(title);
+    if (renameResult is Ok<void, SessionsFailure>) {
+      final current = sessionMetadata.value;
+      if (current != null) {
+        sessionMetadata.value = OpenCodeSession(
+          id: current.id,
+          projectId: current.projectId,
+          directory: current.directory,
+          title: title,
+          createdAt: current.createdAt,
+          updatedAt: current.updatedAt,
+        );
+      }
+    }
+    return renameResult;
+  }
+
   Completer<SessionCreateResult?>? pendingFork;
 
   @override
@@ -233,6 +259,7 @@ class _FakeConversationViewModel extends ConversationViewModel {
   @override
   Future<void> open(ServerProfile profile, OpenCodeSession session) async {
     openCalled = true;
+    sessionMetadata.value = session;
   }
 
   @override
@@ -1284,6 +1311,48 @@ void main() {
       await tester.tap(find.text('Session artifacts'));
       await tester.pumpAndSettle();
       expect(find.byType(SessionArtifactsPanel), findsOneWidget);
+    },
+  );
+
+  testWidgets(
+    'phone title opens details and rename updates header without sending',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await pumpScreen(tester);
+      final original = tester
+          .widget<NavigationTitleButton>(find.byType(NavigationTitleButton))
+          .label;
+      await tester.tap(find.byType(NavigationTitleButton));
+      await tester.pumpAndSettle();
+      expect(find.byType(SessionDetailsScreen), findsOneWidget);
+      await tester.tap(find.text('Rename session'));
+      await tester.pumpAndSettle();
+      final titleField = find.descendant(
+        of: find.byType(AppDialog),
+        matching: find.byType(TextField),
+      );
+      expect(tester.widget<TextField>(titleField).controller!.text, original);
+      await tester.enterText(titleField, 'Renamed from details');
+      await tester.tap(find.text('Rename'));
+      await tester.pumpAndSettle();
+      expect(viewModel.renamedTitles, ['Renamed from details']);
+      expect(
+        tester
+            .widget<SessionDetailsScreen>(find.byType(SessionDetailsScreen))
+            .session
+            .title,
+        'Renamed from details',
+      );
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<NavigationTitleButton>(find.byType(NavigationTitleButton))
+            .label,
+        'Renamed from details',
+      );
+      expect(viewModel.enqueueCallCount, 0);
     },
   );
 

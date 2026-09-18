@@ -14,6 +14,7 @@ import '../domain/open_code_session.dart';
 import '../domain/session_load_result.dart';
 import '../domain/session_activity.dart';
 import 'sessions_view_model.dart';
+import 'session_rename_dialog.dart';
 import 'new_session_dock.dart';
 import 'session_creation_dock.dart';
 import 'session_creation_view_model.dart';
@@ -657,23 +658,18 @@ class _SessionsScreenState extends State<SessionsScreen> {
     OpenCodeSession session, {
     ServerProfile? profile,
   }) async {
-    final title = await showDialog<String>(
+    final targetProfile = profile ?? widget.profile;
+    final viewModel = widget.viewModel;
+    await showDialog<String>(
       context: context,
-      builder: (context) => _RenameSessionDialog(initialTitle: session.title),
+      builder: (context) => SessionRenameDialog(
+        initialTitle: session.title,
+        onSave: (title) async {
+          if (!mounted) return SessionsFailure.unexpectedResponse;
+          return viewModel.rename(targetProfile, session, title);
+        },
+      ),
     );
-    if (!mounted || title == null || title.isEmpty || title == session.title) {
-      return;
-    }
-    final failure = await widget.viewModel.rename(
-      profile ?? widget.profile,
-      session,
-      title,
-    );
-    if (mounted && failure != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(failure.message)));
-    }
   }
 
   Future<void> _deleteSession(
@@ -712,56 +708,6 @@ class _SessionsScreenState extends State<SessionsScreen> {
         context,
       ).showSnackBar(SnackBar(content: Text(failure.message)));
     }
-  }
-}
-
-class _RenameSessionDialog extends StatefulWidget {
-  const _RenameSessionDialog({required this.initialTitle});
-
-  final String initialTitle;
-
-  @override
-  State<_RenameSessionDialog> createState() => _RenameSessionDialogState();
-}
-
-class _RenameSessionDialogState extends State<_RenameSessionDialog> {
-  late final TextEditingController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = TextEditingController(text: widget.initialTitle);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AppDialog(
-      title: const Text('Rename session'),
-      content: AppTextField(
-        controller: _controller,
-        autofocus: true,
-        textInputAction: TextInputAction.done,
-        onSubmitted: (value) => Navigator.of(context).pop(value.trim()),
-        label: 'Title',
-      ),
-      actions: [
-        AppButton(
-          label: 'Cancel',
-          variant: AppButtonVariant.tertiary,
-          onPressed: () => Navigator.of(context).pop(),
-        ),
-        AppButton(
-          label: 'Rename',
-          onPressed: () => Navigator.of(context).pop(_controller.text.trim()),
-        ),
-      ],
-    );
   }
 }
 

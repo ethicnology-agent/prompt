@@ -1177,53 +1177,99 @@ class _ConversationScreenState extends State<ConversationScreen>
     ),
   );
 
+  OpenCodeSession _displaySession(OpenCodeSession? metadata) =>
+      metadata != null &&
+          metadata.id == widget.session.id &&
+          metadata.directory == widget.session.directory
+      ? metadata
+      : widget.session;
+
+  Future<void> _renameSession(
+    BuildContext detailsContext,
+    OpenCodeSession session,
+  ) async {
+    final originalSession = _openedSession;
+    final profile = widget.profile;
+    await showDialog<String>(
+      context: detailsContext,
+      builder: (_) => SessionRenameDialog(
+        initialTitle: session.title,
+        onSave: (title) async {
+          if (!mounted) return SessionsFailure.unexpectedResponse;
+          final result = await widget.viewModel.renameSession(
+            title,
+            expectedSession: originalSession,
+            expectedProfile: profile,
+          );
+          return switch (result) {
+            Ok<void, SessionsFailure>() => null,
+            Err<void, SessionsFailure>(:final failure) => failure,
+            null => SessionsFailure.unexpectedResponse,
+          };
+        },
+      ),
+    );
+  }
+
   void _openSessionDetails() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
-        builder: (_) => ValueListenableBuilder<bool>(
-          valueListenable: _forkInProgress,
-          builder: (detailsContext, forkInProgress, _) =>
-              ValueListenableBuilder<SessionExecutionState>(
-                valueListenable: widget.viewModel.executionState,
-                builder: (context, state, _) => SessionDetailsScreen(
-                  session: widget.session,
-                  backendLabel: widget.profile.backend.label,
-                  serverOriginLabel: widget.profile.displayOrigin,
-                  executionLabel: _executionLabel(state),
-                  forkInProgress: forkInProgress,
-                  onFork:
-                      widget.onOpenFork != null &&
-                          widget.profile.capabilities.supports(
-                            BackendFeature.sessionFork,
+        builder: (_) => ValueListenableBuilder<OpenCodeSession?>(
+          valueListenable: widget.viewModel.sessionMetadata,
+          builder: (_, metadata, _) => ValueListenableBuilder<bool>(
+            valueListenable: _forkInProgress,
+            builder: (detailsContext, forkInProgress, _) =>
+                ValueListenableBuilder<SessionExecutionState>(
+                  valueListenable: widget.viewModel.executionState,
+                  builder: (context, state, _) => SessionDetailsScreen(
+                    session: _displaySession(metadata),
+                    onRename:
+                        widget.profile.capabilities.supports(
+                          BackendFeature.sessionRename,
+                        )
+                        ? () => _renameSession(
+                            detailsContext,
+                            _displaySession(metadata),
                           )
-                      ? () => unawaited(_forkSession(detailsContext))
-                      : null,
-                  onRefresh: () {
-                    Navigator.of(detailsContext).pop();
-                    unawaited(widget.viewModel.refreshFromUserAction());
-                  },
-                  onReview:
-                      widget.profile.capabilities.supports(
-                            BackendFeature.review,
-                          ) &&
-                          widget.reviewViewModelFactory != null &&
-                          widget.capabilitiesViewModel != null
-                      ? () {
-                          Navigator.of(detailsContext).pop();
-                          _openReview();
-                        }
-                      : null,
-                  onOpenArtifacts:
-                      widget.profile.capabilities.supports(
-                        BackendFeature.workspace,
-                      )
-                      ? () {
-                          Navigator.of(detailsContext).pop();
-                          unawaited(_showArtifacts());
-                        }
-                      : null,
+                        : null,
+                    backendLabel: widget.profile.backend.label,
+                    serverOriginLabel: widget.profile.displayOrigin,
+                    executionLabel: _executionLabel(state),
+                    forkInProgress: forkInProgress,
+                    onFork:
+                        widget.onOpenFork != null &&
+                            widget.profile.capabilities.supports(
+                              BackendFeature.sessionFork,
+                            )
+                        ? () => unawaited(_forkSession(detailsContext))
+                        : null,
+                    onRefresh: () {
+                      Navigator.of(detailsContext).pop();
+                      unawaited(widget.viewModel.refreshFromUserAction());
+                    },
+                    onReview:
+                        widget.profile.capabilities.supports(
+                              BackendFeature.review,
+                            ) &&
+                            widget.reviewViewModelFactory != null &&
+                            widget.capabilitiesViewModel != null
+                        ? () {
+                            Navigator.of(detailsContext).pop();
+                            _openReview();
+                          }
+                        : null,
+                    onOpenArtifacts:
+                        widget.profile.capabilities.supports(
+                          BackendFeature.workspace,
+                        )
+                        ? () {
+                            Navigator.of(detailsContext).pop();
+                            unawaited(_showArtifacts());
+                          }
+                        : null,
+                  ),
                 ),
-              ),
+          ),
         ),
       ),
     );
@@ -1581,48 +1627,33 @@ class _ConversationScreenState extends State<ConversationScreen>
             appBar: AppBar(
               toolbarHeight: isPhone ? 56 : 68,
               titleSpacing: isPhone ? 8 : 4,
-              title: isPhone
-                  ? Text(
-                      widget.session.title.isEmpty
-                          ? 'Untitled session'
-                          : widget.session.title,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: Theme.of(context).textTheme.titleMedium,
-                    )
-                  : Row(
-                      children: [
-                        IdentityAvatar(identifier: widget.session.id, size: 34),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
+              title: ValueListenableBuilder<OpenCodeSession?>(
+                valueListenable: widget.viewModel.sessionMetadata,
+                builder: (context, metadata, _) {
+                  final session = _displaySession(metadata);
+                  final title = session.title.isEmpty
+                      ? 'Untitled session'
+                      : session.title;
+                  final control = NavigationTitleButton(
+                    label: title,
+                    semanticLabel: 'Open session details: $title',
+                    subtitle: isPhone ? null : directoryName(session.directory),
+                    onPressed: _openSessionDetails,
+                  );
+                  return SizedBox(
+                    height: isPhone ? 56 : 68,
+                    child: isPhone
+                        ? control
+                        : Row(
                             children: [
-                              Text(
-                                widget.session.title.isEmpty
-                                    ? 'Untitled session'
-                                    : widget.session.title,
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.titleMedium,
-                              ),
-                              const SizedBox(height: 2),
-                              Text(
-                                directoryName(widget.session.directory),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelSmall
-                                    ?.copyWith(
-                                      color: Theme.of(
-                                        context,
-                                      ).colorScheme.primary,
-                                    ),
-                              ),
+                              IdentityAvatar(identifier: session.id, size: 34),
+                              const SizedBox(width: 10),
+                              Expanded(child: control),
                             ],
                           ),
-                        ),
-                      ],
-                    ),
+                  );
+                },
+              ),
               actions: [
                 if (isPhone)
                   IdentityAvatarButton(

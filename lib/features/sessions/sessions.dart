@@ -17,3 +17,4 @@ export 'presentation/session_creation_view_model.dart';
 export 'domain/session_launch.dart';
 export 'data/opencode_sessions_service.dart';
 export 'presentation/sessions_screen.dart';
+export 'presentation/session_rename_dialog.dart';
