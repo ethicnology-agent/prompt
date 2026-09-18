@@ -206,6 +206,21 @@ class _FakeConversationViewModel extends ConversationViewModel {
   int forkCallCount = 0;
   final renamedTitles = <String>[];
   SessionMutationResult renameResult = const Ok(null);
+  int deleteCallCount = 0;
+  Completer<SessionMutationResult?>? pendingDelete;
+  ServerProfile? deletedProfile;
+  OpenCodeSession? deletedSession;
+
+  @override
+  Future<SessionMutationResult?> deleteSession({
+    required OpenCodeSession expectedSession,
+    required ServerProfile expectedProfile,
+  }) async {
+    deleteCallCount++;
+    deletedProfile = expectedProfile;
+    deletedSession = expectedSession;
+    return pendingDelete?.future ?? const Ok(null);
+  }
 
   @override
   Future<SessionMutationResult?> renameSession(
@@ -443,6 +458,7 @@ void main() {
     ServerProfile? activeProfile,
     ValueChanged<OpenCodeSession>? onOpenFork,
     ValueChanged<String>? onOpenFile,
+    VoidCallback? onSessionDeleted,
   }) async {
     // Default to a settled, empty transcript unless a test seeds its own:
     // the loading state renders an indeterminate `CircularProgressIndicator`,
@@ -472,10 +488,104 @@ void main() {
           voiceViewModel: voiceViewModel,
           onOpenFork: onOpenFork,
           onOpenFile: onOpenFile,
+          onSessionDeleted: onSessionDeleted,
         ),
       ),
     );
     await tester.pump();
+  }
+
+  testWidgets('title details exposes confirmed session deletion', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(393, 850));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    await pumpScreen(tester, onSessionDeleted: () {});
+    await tester.tap(find.byTooltip('Session details and actions'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete session'), findsOneWidget);
+    await tester.tap(find.text('Delete session'));
+    await tester.pumpAndSettle();
+    expect(find.text('Delete session?'), findsOneWidget);
+    await tester.tap(find.text('Cancel'));
+    await tester.pumpAndSettle();
+    expect(find.byType(SessionDetailsScreen), findsOneWidget);
+    expect(viewModel.deleteCallCount, 0);
+  });
+
+  testWidgets(
+    'details delete blocks back and duplicate submits, shows failure, then closes on retry',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 850));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      var deleted = 0;
+      viewModel.pendingDelete = Completer<SessionMutationResult?>();
+      await pumpScreen(tester, onSessionDeleted: () => deleted++);
+      await tester.tap(find.text(session.title));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Delete session'));
+      await tester.pumpAndSettle();
+      final deleteButton = find.widgetWithText(AppButton, 'Delete');
+      expect(
+        tester.widget<AppButton>(deleteButton).variant,
+        AppButtonVariant.destructive,
+      );
+      expect(viewModel.deleteCallCount, 0);
+      await tester.tap(deleteButton);
+      await tester.pump();
+      expect(tester.widget<AppButton>(deleteButton).busy, isTrue);
+      await tester.tap(deleteButton);
+      await tester.binding.handlePopRoute();
+      await tester.pump();
+      expect(find.text('Delete session?'), findsOneWidget);
+      expect(viewModel.deleteCallCount, 1);
+      expect(viewModel.deletedProfile, same(profile));
+      expect(viewModel.deletedSession, same(session));
+      viewModel.pendingDelete!.complete(const Err(SessionsFailure.unavailable));
+      await tester.pumpAndSettle();
+      expect(find.text(SessionsFailure.unavailable.message), findsOneWidget);
+      expect(
+        find.textContaining('If deletion fails, it stays paused.'),
+        findsOneWidget,
+      );
+      expect(deleted, 0);
+      viewModel.pendingDelete = null;
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(viewModel.deleteCallCount, 2);
+      expect(deleted, 1);
+      expect(find.byType(SessionDetailsScreen), findsNothing);
+      expect(viewModel.enqueueCallCount, 0);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  for (final supported in [false, true]) {
+    testWidgets(
+      'details deletion requires advertised capability supported=$supported',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(393, 850));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        await pumpScreen(
+          tester,
+          onSessionDeleted: () {},
+          activeProfile: ServerProfile(
+            origin: profile.origin,
+            backend: AgentBackend.gatewayCodex,
+            capabilities: BackendCapabilities(
+              supported ? [BackendFeature.sessionDelete] : [],
+            ),
+          ),
+        );
+        await tester.tap(find.text(session.title));
+        await tester.pumpAndSettle();
+        expect(
+          find.text('Delete session'),
+          supported ? findsOneWidget : findsNothing,
+        );
+        expect(viewModel.deleteCallCount, 0);
+      },
+    );
   }
 
   testWidgets('activates the view model for the given session on open', (

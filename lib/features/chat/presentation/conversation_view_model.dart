@@ -95,6 +95,37 @@ class ConversationViewModel {
   final ValueNotifier<OpenCodeSession?> sessionMetadata = ValueNotifier(null);
   final ValueNotifier<bool> renamingSession = ValueNotifier(false);
   bool _renameInFlight = false;
+  bool _deleteInFlight = false;
+
+  Future<SessionMutationResult?> deleteSession({
+    required OpenCodeSession expectedSession,
+    required ServerProfile expectedProfile,
+  }) async {
+    final profile = _profile;
+    final session = _session;
+    if (_disposed ||
+        profile == null ||
+        session == null ||
+        _deleteInFlight ||
+        _renameInFlight ||
+        !identical(_requestedSession, session) ||
+        !identical(_requestedProfile, profile) ||
+        !identical(expectedSession, session) ||
+        !identical(expectedProfile, profile) ||
+        !profile.capabilities.supports(BackendFeature.sessionDelete)) {
+      return null;
+    }
+    _deleteInFlight = true;
+    try {
+      final result = await _sessionsRepository.delete(profile, session);
+      if (!_disposed && result is Ok<void, SessionsFailure>) {
+        _sessionInputMemories.remove((profile.id, session.id));
+      }
+      return result;
+    } finally {
+      _deleteInFlight = false;
+    }
+  }
 
   Future<SessionMutationResult?> renameSession(
     String title, {
@@ -107,6 +138,9 @@ class ConversationViewModel {
         profile == null ||
         session == null ||
         _renameInFlight ||
+        _deleteInFlight ||
+        !identical(_requestedSession, session) ||
+        !identical(_requestedProfile, profile) ||
         (expectedSession != null && !identical(expectedSession, session)) ||
         (expectedProfile != null && !identical(expectedProfile, profile)) ||
         !profile.capabilities.supports(BackendFeature.sessionRename)) {
@@ -267,6 +301,7 @@ class ConversationViewModel {
   ServerProfile? _profile;
   OpenCodeSession? _session;
   OpenCodeSession? _requestedSession;
+  ServerProfile? _requestedProfile;
   StreamSubscription<List<QueuedPrompt>>? _queueSubscription;
 
   /// The open session's live conversation state, as exposed by
@@ -297,6 +332,7 @@ class ConversationViewModel {
     final optionsRevision = ++_optionsLoadRevision;
     executionOptionsLoad.value = ExecutionOptionsLoadState.loading;
     _requestedSession = session;
+    _requestedProfile = profile;
     messages.value = const ConversationLoading();
     history.value = const ConversationHistoryUiState.initial();
     artifacts.value = const SessionArtifactsLoading();
@@ -934,6 +970,7 @@ class ConversationViewModel {
   Future<void> leave() async {
     _optionsLoadRevision++;
     _requestedSession = null;
+    _requestedProfile = null;
     await _leaveCurrentSession();
   }
 
@@ -978,6 +1015,7 @@ class ConversationViewModel {
     sessionMetadata.value = null;
     renamingSession.value = false;
     _requestedSession = null;
+    _requestedProfile = null;
     _liveRenderTimer?.cancel();
     _liveRenderTimer = null;
     _pendingLiveRender = null;

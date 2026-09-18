@@ -15,6 +15,7 @@ import '../domain/session_load_result.dart';
 import '../domain/session_activity.dart';
 import 'sessions_view_model.dart';
 import 'session_rename_dialog.dart';
+import 'session_delete_dialog.dart';
 import 'new_session_dock.dart';
 import 'session_creation_dock.dart';
 import 'session_creation_view_model.dart';
@@ -676,38 +677,19 @@ class _SessionsScreenState extends State<SessionsScreen> {
     OpenCodeSession session, {
     ServerProfile? profile,
   }) async {
-    final confirmed = await showDialog<bool>(
+    final targetProfile = profile ?? widget.profile;
+    await showDialog<bool>(
       context: context,
-      builder: (context) => AppDialog(
-        title: const Text('Delete session?'),
-        content: Text(
-          'Delete "${session.title}" from ${(profile ?? widget.profile).backend.label}? This cannot be undone.',
-        ),
-        actions: [
-          AppButton(
-            label: 'Cancel',
-            variant: AppButtonVariant.tertiary,
-            onPressed: () => Navigator.of(context).pop(false),
-          ),
-          AppButton(
-            label: 'Delete',
-            onPressed: () => Navigator.of(context).pop(true),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (_) => SessionDeleteDialog(
+        title: session.title,
+        backendLabel: targetProfile.backend.label,
+        onDelete: () async {
+          if (!mounted) return SessionsFailure.unexpectedResponse;
+          return widget.viewModel.delete(targetProfile, session);
+        },
       ),
     );
-    if (confirmed != true) {
-      return;
-    }
-    final failure = await widget.viewModel.delete(
-      profile ?? widget.profile,
-      session,
-    );
-    if (mounted && failure != null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text(failure.message)));
-    }
   }
 }
 

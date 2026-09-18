@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -7,6 +8,8 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:prompt/app/app_dependencies.dart';
 import 'package:prompt/core/security/credentials_store.dart';
+import 'package:prompt/core/async/result.dart';
+import 'package:prompt/features/sessions/domain/session_load_result.dart';
 import 'package:prompt/features/chat/data/chat_repository.dart';
 import 'package:prompt/features/chat/data/opencode_chat_service.dart';
 import 'package:prompt/features/chat/data/attachment_picker.dart';
@@ -41,6 +44,22 @@ class _PasswordStore implements CredentialsStore {
 
 class _FakeConversationViewModel extends ConversationViewModel {
   final openedProfiles = <ServerProfile>[];
+  int deleteCalls = 0;
+  Completer<SessionMutationResult?>? pendingDelete;
+  void Function(OpenCodeSession)? afterDelete;
+  @override
+  Future<SessionMutationResult?> deleteSession({
+    required OpenCodeSession expectedSession,
+    required ServerProfile expectedProfile,
+  }) async {
+    deleteCalls++;
+    final result =
+        await (pendingDelete?.future ??
+            Future.value(const Ok<void, SessionsFailure>(null)));
+    if (result is Ok<void, SessionsFailure>) afterDelete?.call(expectedSession);
+    return result;
+  }
+
   _FakeConversationViewModel()
     : super(
         chatRepository: ChatRepository(
@@ -202,7 +221,9 @@ void main() {
     username: 'opencode',
   );
 
-  Future<AppDependencies> dependencies() async {
+  Future<AppDependencies> dependencies({
+    Set<String> removedIds = const {},
+  }) async {
     final client = MockClient((request) async {
       if (request.url.path == '/project') {
         return http.Response(
@@ -211,11 +232,20 @@ void main() {
         );
       }
       if (request.url.path == '/session') {
+        final records =
+            jsonDecode(
+                  '[{"id":"one","projectID":"p","directory":"/srv/p",'
+                  '"title":"One","time":{"created":1000,"updated":1000}},'
+                  '{"id":"two","projectID":"p","directory":"/srv/p",'
+                  '"title":"Two","time":{"created":1000,"updated":1000}}]',
+                )
+                as List;
         return http.Response(
-          '[{"id":"one","projectID":"p","directory":"/srv/p",'
-          '"title":"One","time":{"created":1000,"updated":1000}},'
-          '{"id":"two","projectID":"p","directory":"/srv/p",'
-          '"title":"Two","time":{"created":1000,"updated":1000}}]',
+          jsonEncode(
+            records
+                .where((row) => !removedIds.contains((row as Map)['id']))
+                .toList(),
+          ),
           200,
         );
       }
@@ -227,6 +257,114 @@ void main() {
     return AppDependencies.create(
       httpClient: client,
       credentialsStore: const _PasswordStore(),
+    );
+  }
+
+  for (final (width, unrelatedRoute, switchSelection) in [
+    (393.0, false, false),
+    (1100.0, false, false),
+    (393.0, true, false),
+    (1100.0, true, false),
+    (1100.0, false, true),
+  ]) {
+    testWidgets(
+      'details deletion owns navigation width=$width unrelated=$unrelatedRoute switched=$switchSelection',
+      (tester) async {
+        final removedIds = <String>{};
+        final deps = await dependencies(removedIds: removedIds);
+        final conversation = _FakeConversationViewModel()
+          ..pendingDelete = Completer<SessionMutationResult?>()
+          ..afterDelete = (session) => removedIds.add(session.id);
+        await tester.binding.setSurfaceSize(Size(width, 800));
+        addTearDown(() async {
+          await deps.dispose();
+          await conversation.dispose();
+          await tester.binding.setSurfaceSize(null);
+        });
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: HomeShell(
+                profile: profile,
+                sessionsViewModel: deps.sessionsViewModel,
+                conversationViewModel: conversation,
+                capabilitiesViewModel: deps.capabilitiesViewModel,
+                workspaceViewModel: deps.workspaceViewModel,
+                terminalViewModel: deps.terminalViewModel,
+                diagnosticsViewModel: deps.diagnosticsViewModel,
+                voiceViewModel: deps.voiceViewModel,
+                localNotificationService: deps.localNotificationService,
+                themeViewModel: deps.themeViewModel,
+                onReconnect: () async => true,
+                onDisconnect: () {},
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (width < 900) {
+          await tester.tap(find.text('One'));
+          await tester.pumpAndSettle();
+        }
+        await tester.tap(find.text('One').last);
+        await tester.pumpAndSettle();
+        expect(find.text('Delete session'), findsOneWidget);
+        await tester.tap(find.text('Delete session'));
+        await tester.pumpAndSettle();
+        expect(conversation.deleteCalls, 0);
+        await tester.tap(find.text('Delete'));
+        await tester.pump();
+        if (unrelatedRoute) {
+          final navigator = tester.state<NavigatorState>(
+            find.byType(Navigator),
+          );
+          unawaited(
+            navigator.push<void>(
+              MaterialPageRoute(
+                builder: (_) => const Scaffold(body: Text('Unrelated route')),
+              ),
+            ),
+          );
+          await tester.pump(const Duration(milliseconds: 400));
+        }
+        if (switchSelection) {
+          final catalog = tester.widget<SessionsScreen>(
+            find.byType(SessionsScreen, skipOffstage: false),
+          );
+          final other = (deps.sessionsViewModel.value as SessionsReady).sessions
+              .firstWhere((session) => session.id == 'two');
+          conversation.rememberDraft(profile, other, 'Keep this draft');
+          catalog.onOpenSession(other);
+          await tester.pump();
+        }
+        conversation.pendingDelete!.complete(const Ok(null));
+        await tester.pumpAndSettle();
+        expect(conversation.deleteCalls, 1);
+        if (unrelatedRoute) {
+          expect(find.text('Unrelated route'), findsOneWidget);
+          await tester.binding.handlePopRoute();
+          await tester.pumpAndSettle();
+        }
+        if (switchSelection) {
+          final screen = tester.widget<ConversationScreen>(
+            find.byType(ConversationScreen),
+          );
+          expect(screen.session.id, 'two');
+          expect(
+            conversation.draftFor(profile, screen.session),
+            'Keep this draft',
+          );
+        } else {
+          expect(find.byType(ConversationScreen), findsNothing);
+          if (width >= 900) {
+            expect(find.text('Start a conversation'), findsOneWidget);
+          }
+        }
+        expect(find.byType(SessionsScreen), findsOneWidget);
+        expect(find.text('One'), findsNothing);
+        expect(find.text('Two'), findsWidgets);
+        expect(tester.takeException(), isNull);
+      },
     );
   }
 

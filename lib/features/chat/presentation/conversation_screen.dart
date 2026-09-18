@@ -65,6 +65,7 @@ class ConversationScreen extends StatefulWidget {
     this.voiceViewModel,
     this.onOpenFork,
     this.onOpenFile,
+    this.onSessionDeleted,
     this.reviewViewModelFactory,
     super.key,
   });
@@ -76,6 +77,7 @@ class ConversationScreen extends StatefulWidget {
   final VoiceViewModel? voiceViewModel;
   final ValueChanged<OpenCodeSession>? onOpenFork;
   final ValueChanged<String>? onOpenFile;
+  final VoidCallback? onSessionDeleted;
   final ReviewViewModel Function()? reviewViewModelFactory;
 
   @override
@@ -99,6 +101,8 @@ class _ConversationScreenState extends State<ConversationScreen>
   OpenCodeSlashCommand? _selectedCommand;
   String? _voiceDraftPrefix;
   late OpenCodeSession _openedSession;
+  late ServerProfile _openedProfile;
+  bool _deleteDialogOpen = false;
   _ComposerChoice? _composerChoice;
   int _composerChoiceRevision = 0;
 
@@ -143,6 +147,7 @@ class _ConversationScreenState extends State<ConversationScreen>
     // Catalog refreshes replace metadata objects without replacing this State.
     // Teardown must target the exact request this route actually opened.
     _openedSession = widget.session;
+    _openedProfile = widget.profile;
     return widget.viewModel.open(widget.profile, _openedSession);
   }
 
@@ -1211,6 +1216,55 @@ class _ConversationScreenState extends State<ConversationScreen>
     );
   }
 
+  Future<void> _deleteSession(
+    BuildContext detailsContext,
+    OpenCodeSession displayedSession,
+  ) async {
+    final onDeleted = widget.onSessionDeleted;
+    if (_deleteDialogOpen ||
+        onDeleted == null ||
+        !widget.profile.capabilities.supports(BackendFeature.sessionDelete)) {
+      return;
+    }
+    _deleteDialogOpen = true;
+    final session = _openedSession;
+    final profile = _openedProfile;
+    final viewModel = widget.viewModel;
+    final navigator = Navigator.of(detailsContext);
+    final detailsRoute = ModalRoute.of(detailsContext);
+    try {
+      final deleted = await showDialog<bool>(
+        context: detailsContext,
+        barrierDismissible: false,
+        builder: (_) => SessionDeleteDialog(
+          title: displayedSession.title,
+          backendLabel: profile.backend.label,
+          onDelete: () async {
+            if (!mounted) return SessionsFailure.unexpectedResponse;
+            final result = await viewModel.deleteSession(
+              expectedSession: session,
+              expectedProfile: profile,
+            );
+            return switch (result) {
+              Ok<void, SessionsFailure>() => null,
+              Err<void, SessionsFailure>(:final failure) => failure,
+              null => SessionsFailure.unexpectedResponse,
+            };
+          },
+        ),
+      );
+      if (deleted != true) return;
+      // Remove the exact details route even if another route was opened while
+      // the request ran. The owner removes only this conversation's route/pane.
+      if (navigator.mounted && detailsRoute?.navigator == navigator) {
+        navigator.removeRoute(detailsRoute!);
+      }
+      onDeleted();
+    } finally {
+      _deleteDialogOpen = false;
+    }
+  }
+
   void _openSessionDetails() {
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -1223,6 +1277,18 @@ class _ConversationScreenState extends State<ConversationScreen>
                   valueListenable: widget.viewModel.executionState,
                   builder: (context, state, _) => SessionDetailsScreen(
                     session: _displaySession(metadata),
+                    onDelete:
+                        widget.onSessionDeleted != null &&
+                            widget.profile.capabilities.supports(
+                              BackendFeature.sessionDelete,
+                            )
+                        ? () => unawaited(
+                            _deleteSession(
+                              detailsContext,
+                              _displaySession(metadata),
+                            ),
+                          )
+                        : null,
                     onRename:
                         widget.profile.capabilities.supports(
                           BackendFeature.sessionRename,

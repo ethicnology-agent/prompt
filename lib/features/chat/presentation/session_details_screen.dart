@@ -15,6 +15,7 @@ class SessionDetailsScreen extends StatelessWidget {
     this.onOpenArtifacts,
     this.onFork,
     this.onRename,
+    this.onDelete,
     this.forkInProgress = false,
     super.key,
   });
@@ -28,6 +29,7 @@ class SessionDetailsScreen extends StatelessWidget {
   final VoidCallback? onOpenArtifacts;
   final VoidCallback? onFork;
   final VoidCallback? onRename;
+  final VoidCallback? onDelete;
   final bool forkInProgress;
 
   @override
@@ -52,7 +54,8 @@ class SessionDetailsScreen extends StatelessWidget {
                 onReview != null ||
                 onOpenArtifacts != null ||
                 onFork != null ||
-                onRename != null) ...[
+                onRename != null ||
+                onDelete != null) ...[
               SettingsGroup(
                 title: 'QUICK ACTIONS',
                 children: [
@@ -88,6 +91,13 @@ class SessionDetailsScreen extends StatelessWidget {
                           : 'Fork session',
                       onTap: onFork!,
                       enabled: !forkInProgress,
+                    ),
+                  if (onDelete != null)
+                    _Action(
+                      icon: Icons.delete_outline,
+                      title: 'Delete session',
+                      onTap: onDelete!,
+                      destructive: true,
                     ),
                 ],
               ),
@@ -203,16 +213,21 @@ class _Action extends StatelessWidget {
     required this.title,
     required this.onTap,
     this.enabled = true,
+    this.destructive = false,
   });
 
   final IconData icon;
   final String title;
   final VoidCallback onTap;
   final bool enabled;
+  final bool destructive;
 
   @override
   Widget build(BuildContext context) => ListTile(
-    leading: Icon(icon),
+    leading: Icon(
+      icon,
+      color: destructive ? Theme.of(context).colorScheme.error : null,
+    ),
     title: Text(title),
     trailing: const Icon(Icons.chevron_right),
     enabled: enabled,

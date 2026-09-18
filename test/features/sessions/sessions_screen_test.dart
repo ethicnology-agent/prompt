@@ -13,8 +13,95 @@ import 'package:prompt/features/sessions/data/sessions_repository.dart';
 import 'package:prompt/features/sessions/domain/open_code_session.dart';
 import 'package:prompt/features/sessions/presentation/sessions_screen.dart';
 import 'package:prompt/features/sessions/presentation/sessions_view_model.dart';
+import 'package:prompt/features/sessions/domain/session_load_result.dart';
 
 void main() {
+  testWidgets(
+    'catalog deletion uses destructive confirmation and retains recoverable failure',
+    (tester) async {
+      var deletes = 0;
+      final client = MockClient((request) async {
+        if (request.method == 'DELETE') {
+          deletes++;
+          return http.Response(
+            deletes == 1 ? '' : 'true',
+            deletes == 1 ? 503 : 200,
+          );
+        }
+        if (request.url.path.endsWith('/abort')) {
+          return http.Response('true', 200);
+        }
+        if (request.url.path == '/session') {
+          return http.Response(_renameSessionJson, 200);
+        }
+        if (request.url.path == '/project') {
+          return http.Response(
+            '[{"id":"project","worktree":"/srv/project"}]',
+            200,
+          );
+        }
+        return http.Response('', 404);
+      });
+      final profile = ServerProfile(origin: Uri.parse('http://10.80.0.1:4096'));
+      final model = SessionsViewModel(
+        SessionsRepository(
+          OpenCodeSessionsService(OpenCodeTransport(client)),
+          const _PasswordStore(),
+        ),
+      );
+      addTearDown(model.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: SessionsScreen(
+            profile: profile,
+            viewModel: model,
+            onOpenSession: (_) {},
+            onOpenWorkspace: (_) {},
+            onOpenTerminal: () {},
+            onOpenDiagnostics: () {},
+            onOpenVoiceSettings: () {},
+            onDisconnect: () {},
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      Future<void> openDelete() async {
+        await tester.longPress(find.byType(SessionListTile));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Delete'));
+        await tester.pumpAndSettle();
+      }
+
+      await openDelete();
+      expect(deletes, 0);
+      expect(
+        tester
+            .widget<AppButton>(find.widgetWithText(AppButton, 'Delete'))
+            .variant,
+        AppButtonVariant.destructive,
+      );
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(deletes, 0);
+      expect(find.byType(SessionListTile), findsOneWidget);
+      await openDelete();
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(find.text('Delete session?'), findsOneWidget);
+      expect(
+        find.text(SessionsFailure.unexpectedResponse.message),
+        findsOneWidget,
+      );
+      expect(deletes, 1);
+      await tester.tap(find.text('Delete'));
+      await tester.pumpAndSettle();
+      expect(deletes, 2);
+      expect(find.text('Delete session?'), findsNothing);
+      expect(find.byType(SessionListTile), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets(
     'phone catalog centers its title and opens compact session rows',
     (tester) async {

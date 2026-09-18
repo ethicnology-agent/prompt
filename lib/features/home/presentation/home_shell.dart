@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -59,6 +61,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> {
   ScopedSession? _selectedSession;
   double? _catalogWidth;
+  bool _keepPaneEmpty = false;
 
   @override
   void initState() {
@@ -122,6 +125,7 @@ class _HomeShellState extends State<HomeShell> {
     if (state is! SessionsReady) {
       return selected;
     }
+    if (selected == null && _keepPaneEmpty) return null;
     final entries = state.entriesFor(widget.profile);
     if (entries.isEmpty) {
       return null;
@@ -236,6 +240,7 @@ class _HomeShellState extends State<HomeShell> {
                   ),
                   onOpenFile: (path) => _openSessionFile(context, entry, path),
                   reviewViewModelFactory: widget.reviewViewModelFactory,
+                  onSessionDeleted: () => unawaited(_sessionDeleted(entry)),
                 ),
                 _ => const _EmptyMasterDetail(),
               },
@@ -371,44 +376,57 @@ class _HomeShellState extends State<HomeShell> {
     BuildContext context,
     ScopedSession entry,
   ) async {
-    await Navigator.of(context).push(
-      MaterialPageRoute<void>(
-        builder: (_) => ConversationScreen(
-          profile: entry.profile,
-          session: entry.session,
-          viewModel: widget.conversationViewModel,
-          capabilitiesViewModel: widget.capabilitiesViewModel,
-          voiceViewModel: widget.voiceViewModel,
-          onOpenFork: (forked) => _replaceConversation(
-            context,
-            ScopedSession(entry.profile, forked),
-          ),
-          onOpenFile: (path) => _openSessionFile(context, entry, path),
-          reviewViewModelFactory: widget.reviewViewModelFactory,
-        ),
-      ),
-    );
+    final deleted = await Navigator.of(
+      context,
+    ).push<bool>(_conversationRoute(context, entry));
+    if (mounted && deleted != true) {
+      await widget.sessionsViewModel.load(widget.profile);
+    }
+  }
+
+  Future<void> _sessionDeleted(ScopedSession entry) async {
+    if (!mounted) return;
+    if (_selectedSession case final selected?) {
+      if (_hasSameIdentity(selected, entry)) {
+        setState(() {
+          _selectedSession = null;
+          _keepPaneEmpty = true;
+        });
+      }
+    }
     await widget.sessionsViewModel.load(widget.profile);
   }
 
-  void _replaceConversation(BuildContext context, ScopedSession entry) {
-    Navigator.of(context).pushReplacement(
-      MaterialPageRoute<void>(
-        builder: (_) => ConversationScreen(
-          profile: entry.profile,
-          session: entry.session,
-          viewModel: widget.conversationViewModel,
-          capabilitiesViewModel: widget.capabilitiesViewModel,
-          voiceViewModel: widget.voiceViewModel,
-          onOpenFork: (forked) => _replaceConversation(
-            context,
-            ScopedSession(entry.profile, forked),
-          ),
-          onOpenFile: (path) => _openSessionFile(context, entry, path),
-          reviewViewModelFactory: widget.reviewViewModelFactory,
-        ),
+  MaterialPageRoute<bool> _conversationRoute(
+    BuildContext context,
+    ScopedSession entry,
+  ) {
+    late final MaterialPageRoute<bool> route;
+    route = MaterialPageRoute<bool>(
+      builder: (_) => ConversationScreen(
+        profile: entry.profile,
+        session: entry.session,
+        viewModel: widget.conversationViewModel,
+        capabilitiesViewModel: widget.capabilitiesViewModel,
+        voiceViewModel: widget.voiceViewModel,
+        onOpenFork: (forked) =>
+            _replaceConversation(context, ScopedSession(entry.profile, forked)),
+        onOpenFile: (path) => _openSessionFile(context, entry, path),
+        reviewViewModelFactory: widget.reviewViewModelFactory,
+        onSessionDeleted: () {
+          final navigator = route.navigator;
+          if (navigator != null) navigator.removeRoute(route, true);
+          unawaited(_sessionDeleted(entry));
+        },
       ),
     );
+    return route;
+  }
+
+  void _replaceConversation(BuildContext context, ScopedSession entry) {
+    Navigator.of(
+      context,
+    ).pushReplacement<bool, bool>(_conversationRoute(context, entry));
   }
 }
 

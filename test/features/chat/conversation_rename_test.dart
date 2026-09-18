@@ -56,10 +56,21 @@ void main() {
   late QueueSendCoordinator coordinator;
   late Completer<http.Response> response;
   late List<http.Request> mutations;
+  late List<http.Request> deletes;
+  late Completer<http.Response> deleteResponse;
   setUp(() {
     response = Completer<http.Response>();
     mutations = [];
+    deletes = [];
+    deleteResponse = Completer<http.Response>();
     final client = MockClient((request) async {
+      if (request.method == 'DELETE') {
+        deletes.add(request);
+        return deleteResponse.future;
+      }
+      if (request.url.path.endsWith('/abort')) {
+        return http.Response('true', 200);
+      }
       if (request.method == 'PATCH') {
         mutations.add(request);
         return response.future;
@@ -96,6 +107,155 @@ void main() {
     await model.dispose();
     await coordinator.dispose();
   });
+
+  test(
+    'delete rejects unopened, stale session/profile, unsupported and disposed calls',
+    () async {
+      expect(
+        await model.deleteSession(
+          expectedSession: session,
+          expectedProfile: profile,
+        ),
+        isNull,
+      );
+      await model.open(profile, session);
+      expect(
+        await model.deleteSession(
+          expectedSession: session.withTitle('stale'),
+          expectedProfile: profile,
+        ),
+        isNull,
+      );
+      expect(
+        await model.deleteSession(
+          expectedSession: session,
+          expectedProfile: ServerProfile(origin: profile.origin),
+        ),
+        isNull,
+      );
+      final unsupported = ServerProfile(
+        origin: profile.origin,
+        backend: AgentBackend.gatewayCodex,
+        capabilities: BackendCapabilities.unavailable,
+      );
+      await model.open(unsupported, session);
+      expect(
+        await model.deleteSession(
+          expectedSession: session,
+          expectedProfile: unsupported,
+        ),
+        isNull,
+      );
+      await model.dispose();
+      expect(
+        await model.deleteSession(
+          expectedSession: session,
+          expectedProfile: unsupported,
+        ),
+        isNull,
+      );
+      expect(deletes, isEmpty);
+    },
+  );
+
+  test(
+    'delete failure retains draft, rejects duplicate/rename and permits explicit retry',
+    () async {
+      await model.open(profile, session);
+      model.rememberDraft(profile, session, 'recoverable');
+      final pending = model.deleteSession(
+        expectedSession: session,
+        expectedProfile: profile,
+      );
+      expect(
+        await model.deleteSession(
+          expectedSession: session,
+          expectedProfile: profile,
+        ),
+        isNull,
+      );
+      expect(await model.renameSession('concurrent'), isNull);
+      deleteResponse.complete(http.Response('', 503));
+      expect(await pending, isA<Err<void, SessionsFailure>>());
+      expect(model.draftFor(profile, session), 'recoverable');
+      expect(deletes.single.url.path, '/session/session-1');
+      deleteResponse = Completer<http.Response>()
+        ..complete(http.Response('true', 200));
+      expect(
+        await model.deleteSession(
+          expectedSession: session,
+          expectedProfile: profile,
+        ),
+        isA<Ok<void, SessionsFailure>>(),
+      );
+      expect(model.draftFor(profile, session), isEmpty);
+      expect(deletes, hasLength(2));
+    },
+  );
+
+  test(
+    'delete from an old profile is rejected while another owner is opening',
+    () async {
+      await model.open(profile, session);
+      final otherProfile = ServerProfile(
+        origin: Uri.parse('http://10.80.0.2:4096'),
+      );
+      final opening = model.open(otherProfile, session);
+      expect(
+        await model.deleteSession(
+          expectedSession: session,
+          expectedProfile: profile,
+        ),
+        isNull,
+      );
+      await opening;
+      expect(deletes, isEmpty);
+    },
+  );
+
+  test(
+    'rename from an old profile is rejected while another owner is opening',
+    () async {
+      await model.open(profile, session);
+      final otherProfile = ServerProfile(
+        origin: Uri.parse('http://10.80.0.2:4096'),
+      );
+      final opening = model.open(otherProfile, session);
+      expect(
+        await model.renameSession(
+          'Stale rename',
+          expectedSession: session,
+          expectedProfile: profile,
+        ),
+        isNull,
+      );
+      await opening;
+      expect(mutations, isEmpty);
+    },
+  );
+
+  test(
+    'late delete clears only its own draft and does not leave a newer profile',
+    () async {
+      await model.open(profile, session);
+      model.rememberDraft(profile, session, 'old');
+      final pending = model.deleteSession(
+        expectedSession: session,
+        expectedProfile: profile,
+      );
+      await Future<void>.delayed(Duration.zero);
+      final otherProfile = ServerProfile(
+        origin: Uri.parse('http://10.80.0.2:4096'),
+      );
+      await model.open(otherProfile, session);
+      model.rememberDraft(otherProfile, session, 'new draft');
+      deleteResponse.complete(http.Response('true', 200));
+      expect(await pending, isA<Ok<void, SessionsFailure>>());
+      expect(model.sessionMetadata.value, same(session));
+      expect(model.draftFor(otherProfile, session), 'new draft');
+      expect(model.draftFor(profile, session), isEmpty);
+    },
+  );
 
   test(
     'rename trims title and preserves metadata and original route ownership',

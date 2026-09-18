@@ -22,6 +22,32 @@ Finder get detailsScrollable => find
     .first;
 
 void main() {
+  testWidgets('delete action uses destructive color and explicit callback', (
+    tester,
+  ) async {
+    var calls = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: promptTheme(),
+        home: SessionDetailsScreen(
+          session: session,
+          backendLabel: 'Codex',
+          serverOriginLabel: 'http://10.0.0.10:4096',
+          executionLabel: 'Idle',
+          onDelete: () => calls++,
+        ),
+      ),
+    );
+    final icon = find.byIcon(Icons.delete_outline);
+    expect(
+      tester.widget<Icon>(icon).color,
+      Theme.of(tester.element(icon)).colorScheme.error,
+    );
+    expect(calls, 0);
+    await tester.tap(find.text('Delete session'));
+    expect(calls, 1);
+  });
+
   for (final dark in [false, true]) {
     testWidgets('session metadata and actions at 200 percent dark=$dark', (
       tester,
