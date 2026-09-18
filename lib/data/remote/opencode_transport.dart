@@ -110,7 +110,10 @@ class OpenCodeTransport {
         decodedPath.toLowerCase().contains('%5c')) {
       throw const InvalidOpenCodeOrigin();
     }
-    final routed = profile.backend.isGateway && path != '/prompt/capabilities'
+    final machineRoute =
+        relative.path == '/prompt/capabilities' ||
+        relative.path == '/prompt/worktrees';
+    final routed = profile.backend.isGateway && !machineRoute
         ? '/prompt/${profile.backend.engine}$path'
         : path;
     return profile.origin.resolve(routed);
