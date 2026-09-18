@@ -61,6 +61,49 @@ sealed class WorkspaceSearchResult {
   const WorkspaceSearchResult(this.path);
 
   final String path;
+
+  /// Server-local file data, never an external URL or a client filesystem read.
+  String? get filePath {
+    if (path.trim().isEmpty || RegExp(r'[\x00-\x1f\x7f]').hasMatch(path)) {
+      return null;
+    }
+    if (RegExp(r'^[\\/]{2}').hasMatch(path)) return null;
+    // A drive prefix is filesystem data, not a URI scheme.
+    if (RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path)) return path;
+    final scheme = RegExp(r'^[A-Za-z][A-Za-z0-9+.-]*:').firstMatch(path);
+    if (scheme == null) return path;
+    if (this is WorkspaceSymbolSearchResult &&
+        scheme.group(0)!.toLowerCase() == 'file:') {
+      // Uri normalizes file:relative into an absolute-looking path. Require
+      // the absolute syntax before parsing instead of inventing a root.
+      if (!path.substring(scheme.end).startsWith('/')) return null;
+      final uri = Uri.tryParse(path);
+      if (uri == null ||
+          uri.hasQuery ||
+          uri.hasFragment ||
+          uri.userInfo.isNotEmpty ||
+          uri.hasPort ||
+          !uri.path.startsWith('/') ||
+          (uri.host.isNotEmpty && uri.host != 'localhost')) {
+        return null;
+      }
+      try {
+        final local = uri
+            .replace(host: '')
+            .toFilePath(windows: RegExp(r'^/[A-Za-z]:/').hasMatch(uri.path));
+        return local.isEmpty ||
+                RegExp(r'[\x00-\x1f\x7f]').hasMatch(local) ||
+                RegExp(r'^[\\/]{2}').hasMatch(local)
+            ? null
+            : local;
+      } on UnsupportedError {
+        return null;
+      } on ArgumentError {
+        return null;
+      }
+    }
+    return null;
+  }
 }
 
 class WorkspaceTextSearchResult extends WorkspaceSearchResult {

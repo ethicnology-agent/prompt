@@ -10,6 +10,56 @@ import '../tool/ui_preview/offline_client.dart';
 
 void main() {
   testWidgets(
+    'workspace fixture searches and opens relative results in their scope',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(393, 851));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final client = OfflinePreviewClient();
+      final preview = OfflinePreview(client: client);
+      await tester.pumpWidget(preview);
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('More actions'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Browse workspace'));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byWidgetPredicate((widget) => widget is DropdownButtonFormField),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('prompt').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('lib'));
+      await tester.pumpAndSettle();
+      final search = find.byWidgetPredicate(
+        (widget) =>
+            widget is TextField &&
+            widget.decoration?.labelText == 'Search workspace',
+      );
+      await tester.enterText(search, 'example');
+      await tester.pump(const Duration(milliseconds: 350));
+      await tester.pumpAndSettle();
+      expect(client.fileReads, 0);
+      await tester.tap(find.text('example.dart'));
+      await tester.pumpAndSettle();
+      expect(find.byType(WorkspaceFileScreen), findsOneWidget);
+      expect(find.text('final accent = "teal";\n'), findsOneWidget);
+      expect(client.fileReads, 1);
+      await tester.pageBack();
+      await tester.pumpAndSettle();
+      expect(tester.widget<TextField>(search).controller!.text, 'example');
+      await tester.tap(find.byTooltip('Clear workspace search'));
+      await tester.pumpAndSettle();
+      expect(find.text('example.dart'), findsOneWidget);
+      await tester.tap(find.byTooltip('Parent directory'));
+      await tester.pumpAndSettle();
+      expect(find.text('lib'), findsOneWidget);
+      expect(client.acceptedPrompts, 0);
+      expect(tester.takeException(), isNull);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await tester.pumpAndSettle();
+    },
+  );
+  testWidgets(
     'file navigation preserves the conversation and distinguishes snapshot from current content',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(393, 851));
