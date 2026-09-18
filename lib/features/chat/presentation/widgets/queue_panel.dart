@@ -92,8 +92,11 @@ class _QueueRow extends StatelessWidget {
     final canRemove = prompt.state != QueuedPromptState.sending;
     // Merging keeps one deferred turn instead of several: the row's text is
     // appended to the prompt above it, which stays the one that dispatches.
-    final canMerge =
+    final mergeablePair =
         previous != null && _mergeable(prompt) && _mergeable(previous!);
+    final attachmentBlocksMerge =
+        mergeablePair && prompt.attachments.isNotEmpty;
+    final canMerge = mergeablePair && !attachmentBlocksMerge;
     final statusLabel = _statusLabel(prompt);
 
     return Semantics(
@@ -108,7 +111,11 @@ class _QueueRow extends StatelessWidget {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
-        subtitle: Text(statusLabel),
+        subtitle: Text(
+          attachmentBlocksMerge
+              ? '$statusLabel\nAttachments cannot be merged. Keep this prompt separate.'
+              : statusLabel,
+        ),
         trailing: Wrap(
           spacing: 4,
           children: [
@@ -137,6 +144,7 @@ class _QueueRow extends StatelessWidget {
 
   bool _mergeable(QueuedPrompt prompt) {
     return prompt.operationType == QueuedOperationType.prompt &&
+        prompt.pauseReason != QueuePauseReason.submissionUnknown &&
         (prompt.state == QueuedPromptState.queued ||
             prompt.state == QueuedPromptState.paused ||
             prompt.state == QueuedPromptState.failed);
@@ -150,8 +158,8 @@ class _QueueRow extends StatelessWidget {
       QueuedPromptState.failed => 'Failed to send',
       QueuedPromptState.paused => switch (prompt.pauseReason) {
         QueuePauseReason.submissionUnknown =>
-          'Paused: delivery unconfirmed. Review the conversation, then '
-              'resume or remove.',
+          'Paused: delivery unconfirmed. Check the conversation before '
+              'removing this local queue item. Removal does not cancel server work.',
         QueuePauseReason.permissionPending => 'Paused: awaiting permission',
         QueuePauseReason.questionPending => 'Paused: awaiting a question',
         QueuePauseReason.sessionGenerating => 'Paused: session busy',

@@ -580,12 +580,22 @@ class ConversationViewModel {
     }
     final source = prompts[index];
     final target = prompts[index - 1];
+    if (source.pauseReason == QueuePauseReason.submissionUnknown ||
+        target.pauseReason == QueuePauseReason.submissionUnknown) {
+      _queueErrors.add(
+        'Delivery is unconfirmed. Check the conversation before removing '
+        'the local queue item; it cannot be merged.',
+      );
+      return;
+    }
     if (!_canMerge(source) || !_canMerge(target)) {
       _queueErrors.add('Only queued prompts can be merged.');
       return;
     }
     if (source.attachments.isNotEmpty) {
-      _queueErrors.add('Remove this prompt\'s attachments before merging it.');
+      _queueErrors.add(
+        'Attachments cannot be merged. Keep this prompt separate.',
+      );
       return;
     }
     final edited = await repository.edit(
