@@ -5,6 +5,106 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final dark in [false, true]) {
+    testWidgets(
+      'target line is initially visible, selected and lazy dark=$dark',
+      (tester) async {
+        await tester.binding.setSurfaceSize(const Size(320, 500));
+        addTearDown(() => tester.binding.setSurfaceSize(null));
+        final theme = dark ? promptDarkTheme() : promptTheme();
+        await tester.pumpWidget(
+          MaterialApp(
+            theme: theme,
+            home: MediaQuery(
+              data: const MediaQueryData(textScaler: TextScaler.linear(2)),
+              child: Scaffold(
+                body: CodeLineViewer(
+                  lines: List.generate(10000, (i) => 'source line ${i + 1}'),
+                  targetLine: 7000,
+                  header: const Text('File header'),
+                ),
+              ),
+            ),
+          ),
+        );
+        final target = find.byKey(const ValueKey('code-line-7000'));
+        expect(target.hitTestable(), findsOneWidget);
+        expect(find.byKey(const ValueKey('code-line-1')), findsNothing);
+        expect(find.byType(Text).evaluate().length, lessThan(100));
+        expect(tester.widget<Semantics>(target).properties.selected, isTrue);
+        expect(
+          tester
+              .widget<ColoredBox>(
+                find.descendant(of: target, matching: find.byType(ColoredBox)),
+              )
+              .color,
+          theme.colorScheme.secondaryContainer,
+        );
+        await tester.drag(find.byType(CustomScrollView), const Offset(0, 240));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('code-line-6999')).hitTestable(),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+  for (final target in [-1, 0, 100]) {
+    testWidgets('invalid target $target leaves ordinary first line visible', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: CodeLineViewer(
+              lines: const ['first', 'second'],
+              targetLine: target,
+            ),
+          ),
+        ),
+      );
+      expect(
+        find.byKey(const ValueKey('code-line-1')).hitTestable(),
+        findsOneWidget,
+      );
+      expect(
+        tester
+            .widget<Semantics>(find.byKey(const ValueKey('code-line-1')))
+            .properties
+            .selected,
+        isNull,
+      );
+      expect(tester.takeException(), isNull);
+    });
+  }
+  testWidgets('target anchor keeps preceding source and header reachable', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(
+          body: CodeLineViewer(
+            lines: ['first', 'second', 'third', 'fourth'],
+            targetLine: 3,
+            header: Text('File header'),
+          ),
+        ),
+      ),
+    );
+    expect(
+      find.byKey(const ValueKey('code-line-3')).hitTestable(),
+      findsOneWidget,
+    );
+    await tester.drag(find.byType(CustomScrollView), const Offset(0, 300));
+    await tester.pumpAndSettle();
+    expect(find.text('File header').hitTestable(), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey('code-line-1')).hitTestable(),
+      findsOneWidget,
+    );
+    expect(tester.takeException(), isNull);
+  });
   testWidgets(
     'wrapped source retains its final character at 320px and 200 percent',
     (tester) async {
@@ -85,52 +185,63 @@ void main() {
       expect(tester.takeException(), isNull);
     });
   }
-  testWidgets('one selection copies multiple lines without gutter or header', (
-    tester,
-  ) async {
-    String? copied;
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copied = (call.arguments as Map)['text'] as String;
+  for (final targetLine in <int?>[null, 2]) {
+    testWidgets(
+      'one selection copies multiple lines without gutter or header target=$targetLine',
+      (tester) async {
+        String? copied;
+        tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          (call) async {
+            if (call.method == 'Clipboard.setData') {
+              copied = (call.arguments as Map)['text'] as String;
+            }
+            return null;
+          },
+        );
+        addTearDown(
+          () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+            SystemChannels.platform,
+            null,
+          ),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: CodeLineViewer(
+                lines: const ['alpha', 'beta'],
+                header: const Text('File header'),
+                targetLine: targetLine,
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        if (targetLine != null) {
+          await tester.drag(
+            find.byType(CustomScrollView),
+            const Offset(0, 200),
+          );
+          await tester.pumpAndSettle();
         }
-        return null;
+        await tester.tap(find.text('alpha\n'));
+        await tester.pumpAndSettle();
+        expect(find.byType(SelectionArea), findsOneWidget);
+        final selection = tester
+            .state<SelectionAreaState>(find.byType(SelectionArea))
+            .selectableRegion;
+        selection.selectAll(SelectionChangedCause.keyboard);
+        await tester.pump();
+        Actions.invoke(
+          tester.element(find.text('alpha\n')),
+          CopySelectionTextIntent.copy,
+        );
+        await tester.pump();
+        expect(copied, 'alpha\nbeta');
+        expect(tester.takeException(), isNull);
       },
     );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      ),
-    );
-    await tester.pumpWidget(
-      const MaterialApp(
-        home: Scaffold(
-          body: CodeLineViewer(
-            lines: ['alpha', 'beta'],
-            header: Text('File header'),
-          ),
-        ),
-      ),
-    );
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('alpha\n'));
-    await tester.pumpAndSettle();
-    expect(find.byType(SelectionArea), findsOneWidget);
-    final selection = tester
-        .state<SelectionAreaState>(find.byType(SelectionArea))
-        .selectableRegion;
-    selection.selectAll(SelectionChangedCause.keyboard);
-    await tester.pump();
-    Actions.invoke(
-      tester.element(find.text('alpha\n')),
-      CopySelectionTextIntent.copy,
-    );
-    await tester.pump();
-    expect(copied, 'alpha\nbeta');
-    expect(tester.takeException(), isNull);
-  });
+  }
   for (final dark in [false, true]) {
     testWidgets(
       'numbered code stays literal and lazy at 200 percent dark=$dark',

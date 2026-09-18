@@ -14,6 +14,7 @@ class WorkspaceFileScreen extends StatefulWidget {
     required this.directory,
     required this.path,
     required this.viewModel,
+    this.targetLine,
     super.key,
   });
 
@@ -21,6 +22,7 @@ class WorkspaceFileScreen extends StatefulWidget {
   final String directory;
   final String path;
   final WorkspaceFileViewModel viewModel;
+  final int? targetLine;
 
   @override
   State<WorkspaceFileScreen> createState() => _WorkspaceFileScreenState();
@@ -86,7 +88,11 @@ class _WorkspaceFileScreenState extends State<WorkspaceFileScreen> {
             if (state is WorkspaceFileReady &&
                 state.content.isText &&
                 state.lines.isNotEmpty) {
-              return CodeLineViewer(lines: state.lines, header: header);
+              return CodeLineViewer(
+                lines: state.lines,
+                header: header,
+                targetLine: widget.targetLine,
+              );
             }
             return ListView(
               children: [

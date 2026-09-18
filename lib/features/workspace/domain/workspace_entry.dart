@@ -62,6 +62,14 @@ sealed class WorkspaceSearchResult {
 
   final String path;
 
+  /// One-based source position, when the server returned a valid line.
+  int? get targetLine => switch (this) {
+    WorkspaceTextSearchResult(:final lineNumber) when lineNumber > 0 =>
+      lineNumber,
+    WorkspaceSymbolSearchResult(:final line) when line >= 0 => line + 1,
+    _ => null,
+  };
+
   /// Server-local file data, never an external URL or a client filesystem read.
   String? get filePath {
     if (path.trim().isEmpty || RegExp(r'[\x00-\x1f\x7f]').hasMatch(path)) {

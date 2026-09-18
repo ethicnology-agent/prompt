@@ -44,7 +44,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
     if (_scroll.hasClients) _scroll.jumpTo(0);
   }
 
-  void _openFile(String path, String directory) {
+  void _openFile(String path, String directory, {int? targetLine}) {
     FocusManager.instance.primaryFocus?.unfocus();
     Navigator.of(context).push<void>(
       MaterialPageRoute<void>(
@@ -52,6 +52,7 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           profile: widget.profile,
           directory: directory,
           path: path,
+          targetLine: targetLine,
           viewModel: widget.viewModel.createFileViewModel(),
         ),
       ),
@@ -240,7 +241,11 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
             trailing: path == null ? null : const Icon(Icons.chevron_right),
             onTap: path == null
                 ? null
-                : () => _openFile(path, state.currentPath),
+                : () => _openFile(
+                    path,
+                    state.currentPath,
+                    targetLine: result.targetLine,
+                  ),
           );
         },
       );

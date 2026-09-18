@@ -16,7 +16,11 @@ void main() {
     testWidgets('$kind result opens exact path and preserves query on Back', (
       tester,
     ) async {
-      final repo = _Repository();
+      final repo = _Repository()
+        ..fileContent = List.generate(
+          100,
+          (index) => 'line ${index + 1}',
+        ).join('\n');
       const path = '/work/été file.dart';
       repo.results = [
         switch (kind) {
@@ -65,6 +69,21 @@ void main() {
       await tester.pumpAndSettle();
       expect(repo.readPaths, [path]);
       expect(find.byType(WorkspaceFileScreen), findsOneWidget);
+      expect(
+        tester
+            .widget<WorkspaceFileScreen>(find.byType(WorkspaceFileScreen))
+            .targetLine,
+        kind == WorkspaceSearchKind.file ? null : 7,
+      );
+      expect(
+        tester.widget<CodeLineViewer>(find.byType(CodeLineViewer)).targetLine,
+        kind == WorkspaceSearchKind.file ? null : 7,
+      );
+      if (kind != WorkspaceSearchKind.file) {
+        final target = find.byKey(const ValueKey('code-line-7'));
+        expect(target.hitTestable(), findsOneWidget);
+        expect(tester.widget<Semantics>(target).properties.selected, isTrue);
+      }
       await tester.pageBack();
       await tester.pumpAndSettle();
       expect(
@@ -215,6 +234,7 @@ void main() {
 }
 
 class _Repository implements WorkspaceRepository {
+  String fileContent = 'read-only text';
   List<WorkspaceSearchResult> results = [];
   List<WorkspaceStatusEntry> status = [];
   final readPaths = <String>[];
@@ -258,7 +278,7 @@ class _Repository implements WorkspaceRepository {
     String path,
   ) async {
     readPaths.add(path);
-    return const Ok(WorkspaceFileContent.text('read-only text'));
+    return Ok(WorkspaceFileContent.text(fileContent));
   }
 
   @override

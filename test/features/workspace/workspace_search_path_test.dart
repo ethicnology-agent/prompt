@@ -10,6 +10,31 @@ WorkspaceSymbolSearchResult symbol(String path) => WorkspaceSymbolSearchResult(
 );
 
 void main() {
+  test('search positions normalize only reported valid source lines', () {
+    expect(const WorkspaceFileSearchResult(path: 'file').targetLine, isNull);
+    for (final line in [-1, 0, 1, 700]) {
+      expect(
+        WorkspaceTextSearchResult(
+          path: 'file',
+          line: '',
+          lineNumber: line,
+          absoluteOffset: 0,
+          matches: const [],
+        ).targetLine,
+        line > 0 ? line : null,
+      );
+      expect(
+        WorkspaceSymbolSearchResult(
+          path: 'file',
+          name: 'symbol',
+          kind: 1,
+          line: line,
+          character: 0,
+        ).targetLine,
+        line >= 0 ? line + 1 : null,
+      );
+    }
+  });
   for (final path in [
     'main.dart',
     'lib/main.dart',
