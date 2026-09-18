@@ -97,21 +97,44 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
   final List<String> _pathHistory = [];
   Timer? _searchDebounce;
   int _searchRequest = 0;
+  int _loadRequest = 0;
+  int _fileRequest = 0;
+  bool _disposed = false;
+  String? _profileId;
+  OpenCodeProject? _retryProject;
+  String? _retryPath;
+
+  bool get canGoUp =>
+      !_disposed && value is WorkspaceReady && _pathHistory.length > 1;
+
+  bool _matchesProfile(ServerProfile profile) =>
+      !_disposed && _profileId == profile.id;
 
   @override
   void dispose() {
+    _disposed = true;
+    _loadRequest++;
+    _fileRequest++;
+    _searchRequest++;
     _searchDebounce?.cancel();
     super.dispose();
   }
 
   void clear() {
+    if (_disposed) return;
     _searchDebounce?.cancel();
     _searchRequest++;
+    _loadRequest++;
+    _fileRequest++;
+    _profileId = null;
+    _retryProject = null;
+    _retryPath = null;
     _pathHistory.clear();
     value = const WorkspaceIdle();
   }
 
   Future<void> selectProject(ServerProfile profile, OpenCodeProject project) {
+    if (_disposed) return Future.value();
     _pathHistory
       ..clear()
       ..add(project.directory);
@@ -119,6 +142,7 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
   }
 
   Future<void> openDirectory(ServerProfile profile, WorkspaceEntry entry) {
+    if (!_matchesProfile(profile)) return Future.value();
     final ready = value;
     if (ready is! WorkspaceReady || !entry.isDirectory) {
       return Future.value();
@@ -128,6 +152,7 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
   }
 
   Future<void> goUp(ServerProfile profile) {
+    if (!_matchesProfile(profile)) return Future.value();
     final ready = value;
     if (ready is! WorkspaceReady || _pathHistory.length < 2) {
       return Future.value();
@@ -137,18 +162,25 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
   }
 
   Future<void> refresh(ServerProfile profile) {
-    final ready = value;
-    if (ready is! WorkspaceReady) {
+    if (!_matchesProfile(profile) || value is WorkspaceLoading) {
       return Future.value();
     }
-    return _load(profile, ready.project, ready.currentPath);
+    final project = _retryProject;
+    final path = _retryPath;
+    if (project == null || path == null) {
+      return Future.value();
+    }
+    return _load(profile, project, path);
   }
 
   Future<void> openFile(ServerProfile profile, WorkspaceEntry entry) async {
+    if (!_matchesProfile(profile)) return;
     final ready = value;
     if (ready is! WorkspaceReady || entry.isDirectory) {
       return;
     }
+    final request = ++_fileRequest;
+    final scope = _loadRequest;
     value = WorkspaceReady(
       project: ready.project,
       currentPath: ready.currentPath,
@@ -161,7 +193,10 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
       ready.project.directory,
       entry.path,
     );
-    if (value is! WorkspaceReady) {
+    if (_disposed ||
+        request != _fileRequest ||
+        scope != _loadRequest ||
+        value is! WorkspaceReady) {
       return;
     }
     switch (result) {
@@ -187,6 +222,7 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
   }
 
   void search(ServerProfile profile, WorkspaceSearchKind kind, String query) {
+    if (!_matchesProfile(profile)) return;
     _searchDebounce?.cancel();
     final request = ++_searchRequest;
     final ready = value;
@@ -210,7 +246,7 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
         kind,
         trimmed,
       );
-      if (request != _searchRequest || value is! WorkspaceReady) {
+      if (_disposed || request != _searchRequest || value is! WorkspaceReady) {
         return;
       }
       final current = value as WorkspaceReady;
@@ -228,10 +264,17 @@ class WorkspaceViewModel extends ValueNotifier<WorkspaceUiState> {
     OpenCodeProject project,
     String path,
   ) async {
+    if (_disposed) return;
+    final request = ++_loadRequest;
+    _fileRequest++;
+    _profileId = profile.id;
+    _retryProject = project;
+    _retryPath = path;
     value = const WorkspaceLoading();
     _searchDebounce?.cancel();
     _searchRequest++;
     final result = await _repository.load(profile, project.directory, path);
+    if (_disposed || request != _loadRequest) return;
     switch (result) {
       case Ok<WorkspaceSnapshot, WorkspaceFailure>(:final value):
         this.value = WorkspaceReady(
