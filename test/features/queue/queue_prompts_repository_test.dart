@@ -197,18 +197,38 @@ void _runQueuePromptsRepositoryTests({
             modelProviderId: 'anthropic',
             modelId: 'claude-sonnet-4',
             agentName: 'build',
+            reasoningEffort: 'high',
           ),
         );
 
         expect(prompt.executionOptions.modelProviderId, 'anthropic');
         expect(prompt.executionOptions.modelId, 'claude-sonnet-4');
         expect(prompt.executionOptions.agentName, 'build');
+        expect(prompt.executionOptions.reasoningEffort, 'high');
         final stored = await repository
             .watchQueue(profile: profile, session: session)
             .first;
         expect(stored.single.executionOptions.modelProviderId, 'anthropic');
         expect(stored.single.executionOptions.modelId, 'claude-sonnet-4');
         expect(stored.single.executionOptions.agentName, 'build');
+        expect(stored.single.executionOptions.reasoningEffort, 'high');
+        await repository.edit(promptId: prompt.id, promptText: 'edited');
+        final edited = await repository
+            .watchQueue(profile: profile, session: session)
+            .first;
+        expect(edited.single.executionOptions.reasoningEffort, 'high');
+        await repository.reorder(
+          profile: profile,
+          session: session,
+          orderedPromptIds: [prompt.id],
+        );
+        await repository.markSending(prompt.id);
+        await repository.markSubmissionUnknown(prompt.id);
+        final paused = await repository
+            .watchQueue(profile: profile, session: session)
+            .first;
+        expect(paused.single.executionOptions.reasoningEffort, 'high');
+        expect(paused.single.state, QueuedPromptState.paused);
       },
     );
   });

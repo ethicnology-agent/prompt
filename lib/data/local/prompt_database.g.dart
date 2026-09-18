@@ -509,6 +509,17 @@ class $QueuedPromptsTable extends QueuedPrompts
     type: DriftSqlType.string,
     requiredDuringInsert: false,
   );
+  static const VerificationMeta _reasoningEffortMeta = const VerificationMeta(
+    'reasoningEffort',
+  );
+  @override
+  late final GeneratedColumn<String> reasoningEffort = GeneratedColumn<String>(
+    'reasoning_effort',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _stateMeta = const VerificationMeta('state');
   @override
   late final GeneratedColumn<String> state = GeneratedColumn<String>(
@@ -597,6 +608,7 @@ class $QueuedPromptsTable extends QueuedPrompts
     modelProviderId,
     modelId,
     agentName,
+    reasoningEffort,
     state,
     pauseReason,
     attemptCount,
@@ -711,6 +723,15 @@ class $QueuedPromptsTable extends QueuedPrompts
       context.handle(
         _agentNameMeta,
         agentName.isAcceptableOrUnknown(data['agent_name']!, _agentNameMeta),
+      );
+    }
+    if (data.containsKey('reasoning_effort')) {
+      context.handle(
+        _reasoningEffortMeta,
+        reasoningEffort.isAcceptableOrUnknown(
+          data['reasoning_effort']!,
+          _reasoningEffortMeta,
+        ),
       );
     }
     if (data.containsKey('state')) {
@@ -840,6 +861,10 @@ class $QueuedPromptsTable extends QueuedPrompts
         DriftSqlType.string,
         data['${effectivePrefix}agent_name'],
       ),
+      reasoningEffort: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}reasoning_effort'],
+      ),
       state: attachedDatabase.typeMapping.read(
         DriftSqlType.string,
         data['${effectivePrefix}state'],
@@ -894,6 +919,7 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
   final String? modelProviderId;
   final String? modelId;
   final String? agentName;
+  final String? reasoningEffort;
   final String state;
   final String? pauseReason;
   final int attemptCount;
@@ -914,6 +940,7 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
     this.modelProviderId,
     this.modelId,
     this.agentName,
+    this.reasoningEffort,
     required this.state,
     this.pauseReason,
     required this.attemptCount,
@@ -946,6 +973,9 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
     }
     if (!nullToAbsent || agentName != null) {
       map['agent_name'] = Variable<String>(agentName);
+    }
+    if (!nullToAbsent || reasoningEffort != null) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort);
     }
     map['state'] = Variable<String>(state);
     if (!nullToAbsent || pauseReason != null) {
@@ -987,6 +1017,9 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
       agentName: agentName == null && nullToAbsent
           ? const Value.absent()
           : Value(agentName),
+      reasoningEffort: reasoningEffort == null && nullToAbsent
+          ? const Value.absent()
+          : Value(reasoningEffort),
       state: Value(state),
       pauseReason: pauseReason == null && nullToAbsent
           ? const Value.absent()
@@ -1021,6 +1054,7 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
       modelProviderId: serializer.fromJson<String?>(json['modelProviderId']),
       modelId: serializer.fromJson<String?>(json['modelId']),
       agentName: serializer.fromJson<String?>(json['agentName']),
+      reasoningEffort: serializer.fromJson<String?>(json['reasoningEffort']),
       state: serializer.fromJson<String>(json['state']),
       pauseReason: serializer.fromJson<String?>(json['pauseReason']),
       attemptCount: serializer.fromJson<int>(json['attemptCount']),
@@ -1050,6 +1084,7 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
       'modelProviderId': serializer.toJson<String?>(modelProviderId),
       'modelId': serializer.toJson<String?>(modelId),
       'agentName': serializer.toJson<String?>(agentName),
+      'reasoningEffort': serializer.toJson<String?>(reasoningEffort),
       'state': serializer.toJson<String>(state),
       'pauseReason': serializer.toJson<String?>(pauseReason),
       'attemptCount': serializer.toJson<int>(attemptCount),
@@ -1073,6 +1108,7 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
     Value<String?> modelProviderId = const Value.absent(),
     Value<String?> modelId = const Value.absent(),
     Value<String?> agentName = const Value.absent(),
+    Value<String?> reasoningEffort = const Value.absent(),
     String? state,
     Value<String?> pauseReason = const Value.absent(),
     int? attemptCount,
@@ -1097,6 +1133,9 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
         : this.modelProviderId,
     modelId: modelId.present ? modelId.value : this.modelId,
     agentName: agentName.present ? agentName.value : this.agentName,
+    reasoningEffort: reasoningEffort.present
+        ? reasoningEffort.value
+        : this.reasoningEffort,
     state: state ?? this.state,
     pauseReason: pauseReason.present ? pauseReason.value : this.pauseReason,
     attemptCount: attemptCount ?? this.attemptCount,
@@ -1135,6 +1174,9 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
           : this.modelProviderId,
       modelId: data.modelId.present ? data.modelId.value : this.modelId,
       agentName: data.agentName.present ? data.agentName.value : this.agentName,
+      reasoningEffort: data.reasoningEffort.present
+          ? data.reasoningEffort.value
+          : this.reasoningEffort,
       state: data.state.present ? data.state.value : this.state,
       pauseReason: data.pauseReason.present
           ? data.pauseReason.value
@@ -1172,6 +1214,7 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
           ..write('modelProviderId: $modelProviderId, ')
           ..write('modelId: $modelId, ')
           ..write('agentName: $agentName, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('state: $state, ')
           ..write('pauseReason: $pauseReason, ')
           ..write('attemptCount: $attemptCount, ')
@@ -1197,6 +1240,7 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
     modelProviderId,
     modelId,
     agentName,
+    reasoningEffort,
     state,
     pauseReason,
     attemptCount,
@@ -1221,6 +1265,7 @@ class QueuedPrompt extends DataClass implements Insertable<QueuedPrompt> {
           other.modelProviderId == this.modelProviderId &&
           other.modelId == this.modelId &&
           other.agentName == this.agentName &&
+          other.reasoningEffort == this.reasoningEffort &&
           other.state == this.state &&
           other.pauseReason == this.pauseReason &&
           other.attemptCount == this.attemptCount &&
@@ -1243,6 +1288,7 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
   final Value<String?> modelProviderId;
   final Value<String?> modelId;
   final Value<String?> agentName;
+  final Value<String?> reasoningEffort;
   final Value<String> state;
   final Value<String?> pauseReason;
   final Value<int> attemptCount;
@@ -1264,6 +1310,7 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
     this.modelProviderId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.agentName = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     this.state = const Value.absent(),
     this.pauseReason = const Value.absent(),
     this.attemptCount = const Value.absent(),
@@ -1286,6 +1333,7 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
     this.modelProviderId = const Value.absent(),
     this.modelId = const Value.absent(),
     this.agentName = const Value.absent(),
+    this.reasoningEffort = const Value.absent(),
     required String state,
     this.pauseReason = const Value.absent(),
     this.attemptCount = const Value.absent(),
@@ -1316,6 +1364,7 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
     Expression<String>? modelProviderId,
     Expression<String>? modelId,
     Expression<String>? agentName,
+    Expression<String>? reasoningEffort,
     Expression<String>? state,
     Expression<String>? pauseReason,
     Expression<int>? attemptCount,
@@ -1338,6 +1387,7 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
       if (modelProviderId != null) 'model_provider_id': modelProviderId,
       if (modelId != null) 'model_id': modelId,
       if (agentName != null) 'agent_name': agentName,
+      if (reasoningEffort != null) 'reasoning_effort': reasoningEffort,
       if (state != null) 'state': state,
       if (pauseReason != null) 'pause_reason': pauseReason,
       if (attemptCount != null) 'attempt_count': attemptCount,
@@ -1364,6 +1414,7 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
     Value<String?>? modelProviderId,
     Value<String?>? modelId,
     Value<String?>? agentName,
+    Value<String?>? reasoningEffort,
     Value<String>? state,
     Value<String?>? pauseReason,
     Value<int>? attemptCount,
@@ -1386,6 +1437,7 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
       modelProviderId: modelProviderId ?? this.modelProviderId,
       modelId: modelId ?? this.modelId,
       agentName: agentName ?? this.agentName,
+      reasoningEffort: reasoningEffort ?? this.reasoningEffort,
       state: state ?? this.state,
       pauseReason: pauseReason ?? this.pauseReason,
       attemptCount: attemptCount ?? this.attemptCount,
@@ -1437,6 +1489,9 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
     if (agentName.present) {
       map['agent_name'] = Variable<String>(agentName.value);
     }
+    if (reasoningEffort.present) {
+      map['reasoning_effort'] = Variable<String>(reasoningEffort.value);
+    }
     if (state.present) {
       map['state'] = Variable<String>(state.value);
     }
@@ -1481,6 +1536,7 @@ class QueuedPromptsCompanion extends UpdateCompanion<QueuedPrompt> {
           ..write('modelProviderId: $modelProviderId, ')
           ..write('modelId: $modelId, ')
           ..write('agentName: $agentName, ')
+          ..write('reasoningEffort: $reasoningEffort, ')
           ..write('state: $state, ')
           ..write('pauseReason: $pauseReason, ')
           ..write('attemptCount: $attemptCount, ')
@@ -6648,6 +6704,7 @@ typedef $$QueuedPromptsTableCreateCompanionBuilder =
       Value<String?> modelProviderId,
       Value<String?> modelId,
       Value<String?> agentName,
+      Value<String?> reasoningEffort,
       required String state,
       Value<String?> pauseReason,
       Value<int> attemptCount,
@@ -6671,6 +6728,7 @@ typedef $$QueuedPromptsTableUpdateCompanionBuilder =
       Value<String?> modelProviderId,
       Value<String?> modelId,
       Value<String?> agentName,
+      Value<String?> reasoningEffort,
       Value<String> state,
       Value<String?> pauseReason,
       Value<int> attemptCount,
@@ -6747,6 +6805,11 @@ class $$QueuedPromptsTableFilterComposer
 
   ColumnFilters<String> get agentName => $composableBuilder(
     column: $table.agentName,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -6855,6 +6918,11 @@ class $$QueuedPromptsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<String> get state => $composableBuilder(
     column: $table.state,
     builder: (column) => ColumnOrderings(column),
@@ -6948,6 +7016,11 @@ class $$QueuedPromptsTableAnnotationComposer
   GeneratedColumn<String> get agentName =>
       $composableBuilder(column: $table.agentName, builder: (column) => column);
 
+  GeneratedColumn<String> get reasoningEffort => $composableBuilder(
+    column: $table.reasoningEffort,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<String> get state =>
       $composableBuilder(column: $table.state, builder: (column) => column);
 
@@ -7027,6 +7100,7 @@ class $$QueuedPromptsTableTableManager
                 Value<String?> modelProviderId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String?> agentName = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 Value<String> state = const Value.absent(),
                 Value<String?> pauseReason = const Value.absent(),
                 Value<int> attemptCount = const Value.absent(),
@@ -7048,6 +7122,7 @@ class $$QueuedPromptsTableTableManager
                 modelProviderId: modelProviderId,
                 modelId: modelId,
                 agentName: agentName,
+                reasoningEffort: reasoningEffort,
                 state: state,
                 pauseReason: pauseReason,
                 attemptCount: attemptCount,
@@ -7071,6 +7146,7 @@ class $$QueuedPromptsTableTableManager
                 Value<String?> modelProviderId = const Value.absent(),
                 Value<String?> modelId = const Value.absent(),
                 Value<String?> agentName = const Value.absent(),
+                Value<String?> reasoningEffort = const Value.absent(),
                 required String state,
                 Value<String?> pauseReason = const Value.absent(),
                 Value<int> attemptCount = const Value.absent(),
@@ -7092,6 +7168,7 @@ class $$QueuedPromptsTableTableManager
                 modelProviderId: modelProviderId,
                 modelId: modelId,
                 agentName: agentName,
+                reasoningEffort: reasoningEffort,
                 state: state,
                 pauseReason: pauseReason,
                 attemptCount: attemptCount,

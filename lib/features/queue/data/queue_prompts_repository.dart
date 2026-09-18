@@ -24,6 +24,36 @@ class QueuePromptsRepository {
   final QueuePromptsDao _dao;
   final String Function() _idGenerator;
 
+  /// Restores the last durably submitted composer options, not unsent edits.
+  /// An all-null options object is an explicit reset; null means no history.
+  /// Read only metadata here, without decoding stored attachment bytes.
+  Future<Result<PromptExecutionOptions?, QueueFailure>> latestExecutionOptions({
+    required ServerProfile profile,
+    required OpenCodeSession session,
+  }) => _run(() async {
+    final rows = await _dao
+        .watchQueue(serverProfileId: profile.id, sessionId: session.id)
+        .first;
+    final prompts =
+        rows
+            .where(
+              (row) => row.operationType == QueuedOperationType.prompt.name,
+            )
+            .toList()
+          ..sort((a, b) {
+            final time = b.createdAtMillis.compareTo(a.createdAtMillis);
+            return time != 0 ? time : b.id.compareTo(a.id);
+          });
+    if (prompts.isEmpty) return null;
+    final latest = prompts.first;
+    return PromptExecutionOptions(
+      modelProviderId: latest.modelProviderId,
+      modelId: latest.modelId,
+      agentName: latest.agentName,
+      reasoningEffort: latest.reasoningEffort,
+    );
+  });
+
   /// Adds [promptText] to the end of [session]'s queue for [profile].
   ///
   /// Never interrupts an active generation; the caller decides when a
@@ -254,6 +284,7 @@ class QueuePromptsRepository {
         modelProviderId: row.modelProviderId,
         modelId: row.modelId,
         agentName: row.agentName,
+        reasoningEffort: row.reasoningEffort,
       ),
       state: QueuedPromptState.values.byName(row.state),
       pauseReason: row.pauseReason == null

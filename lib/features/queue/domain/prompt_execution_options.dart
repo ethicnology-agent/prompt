@@ -8,6 +8,7 @@ class PromptExecutionOptions {
     this.modelProviderId,
     this.modelId,
     this.agentName,
+    this.reasoningEffort,
   }) : assert(
          (modelProviderId == null) == (modelId == null),
          'A model selection needs both provider and model ids.',
@@ -16,8 +17,9 @@ class PromptExecutionOptions {
   final String? modelProviderId;
   final String? modelId;
   final String? agentName;
+  final String? reasoningEffort;
 
   bool get hasModel => modelProviderId != null;
 
-  bool get isEmpty => !hasModel && agentName == null;
+  bool get isEmpty => !hasModel && agentName == null && reasoningEffort == null;
 }

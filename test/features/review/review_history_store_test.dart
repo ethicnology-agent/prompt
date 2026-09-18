@@ -219,6 +219,28 @@ void main() {
     final sqlite = sqlite3lib.sqlite3.open(file.path);
     sqlite.execute('''
       CREATE TABLE server_profiles (id TEXT PRIMARY KEY, origin TEXT NOT NULL, username TEXT, last_accessed_at_millis INTEGER NOT NULL);
+      CREATE TABLE queued_prompts (
+        id TEXT NOT NULL PRIMARY KEY,
+        server_profile_id TEXT NOT NULL,
+        session_id TEXT NOT NULL,
+        directory TEXT NOT NULL,
+        position INTEGER NOT NULL,
+        prompt_text TEXT NOT NULL,
+        operation_type TEXT NOT NULL DEFAULT 'prompt',
+        command_name TEXT,
+        attachments_json TEXT,
+        model_provider_id TEXT,
+        model_id TEXT,
+        agent_name TEXT,
+        state TEXT NOT NULL,
+        pause_reason TEXT,
+        attempt_count INTEGER NOT NULL DEFAULT 0,
+        created_at_millis INTEGER NOT NULL,
+        updated_at_millis INTEGER NOT NULL,
+        sending_started_at_millis INTEGER,
+        acknowledged_at_millis INTEGER,
+        UNIQUE(server_profile_id, session_id, position)
+      );
       CREATE TABLE review_runs (id TEXT PRIMARY KEY, server_profile_id TEXT NOT NULL, session_id TEXT NOT NULL, created_at_millis INTEGER NOT NULL, completed_at_millis INTEGER, state TEXT NOT NULL, error_type TEXT, error_message TEXT, project_id TEXT, directory TEXT, title TEXT);
       CREATE TABLE review_files (id INTEGER PRIMARY KEY AUTOINCREMENT, review_id TEXT NOT NULL, path TEXT NOT NULL, status TEXT NOT NULL, patch TEXT NOT NULL);
       CREATE TABLE review_passes (id TEXT PRIMARY KEY, review_id TEXT NOT NULL, role TEXT NOT NULL, provider_id TEXT NOT NULL, model_id TEXT NOT NULL, state TEXT NOT NULL, child_session_id TEXT, error_type TEXT, error_message TEXT, input_tokens INTEGER NOT NULL, output_tokens INTEGER NOT NULL, reasoning_tokens INTEGER NOT NULL, cache_tokens INTEGER NOT NULL, cost REAL NOT NULL, duration_millis INTEGER);
@@ -228,11 +250,16 @@ void main() {
       CREATE TABLE review_disagreements (id TEXT PRIMARY KEY, review_id TEXT NOT NULL);
       CREATE TABLE review_disagreement_sources (id INTEGER PRIMARY KEY AUTOINCREMENT, disagreement_id TEXT NOT NULL, finding_id TEXT NOT NULL, role TEXT NOT NULL);
       INSERT INTO server_profiles VALUES ('p', 'http://v5', 'user', 1);
+      INSERT INTO queued_prompts VALUES ('q', 'p', 's', '/work', 0, 'Retained prompt', 'command', 'review', '[{"name":"fixture"}]', 'provider', 'model', 'agent', 'paused', 'submissionUnknown', 1, 1000, 2000, 1500, NULL);
       INSERT INTO review_runs VALUES ('r', 'p', 's', 1000, NULL, 'completed', NULL, NULL, 'project', '/work', 'title');
       PRAGMA user_version = 5;
     ''');
     sqlite.close();
     final database = db.PromptDatabase.forTesting(NativeDatabase(file));
+    addTearDown(() async {
+      await database.close();
+      if (await file.exists()) await file.delete();
+    });
     final loaded = await DriftReviewHistoryStore(database).load('r');
     expect(loaded!.run.snapshot, isNotNull);
     expect(loaded.run.snapshot!.files, isEmpty);
@@ -240,10 +267,20 @@ void main() {
     expect(
       (await database.customSelect('PRAGMA user_version').getSingle())
           .data['user_version'],
-      7,
+      8,
     );
-    await database.close();
-    await file.delete();
+    final queued = await database.select(database.queuedPrompts).getSingle();
+    expect(queued.promptText, 'Retained prompt');
+    expect(queued.operationType, 'command');
+    expect(queued.commandName, 'review');
+    expect(queued.attachmentsJson, '[{"name":"fixture"}]');
+    expect(queued.modelProviderId, 'provider');
+    expect(queued.modelId, 'model');
+    expect(queued.agentName, 'agent');
+    expect(queued.state, 'paused');
+    expect(queued.pauseReason, 'submissionUnknown');
+    expect(queued.attemptCount, 1);
+    expect(queued.reasoningEffort, isNull);
   });
 }
 

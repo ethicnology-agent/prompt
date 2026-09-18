@@ -27,6 +27,43 @@ void main() {
     }
   });
 
+  test(
+    'v7 additive effort migration retains pending operation and profile',
+    () async {
+      _createFixture(databaseFile, version: 7);
+      database = PromptDatabase.forTesting(NativeDatabase(databaseFile));
+      final row = await _readPrompt(database!);
+      expect(row.reasoningEffort, isNull);
+      expect(row.id, 'legacy-v7-prompt');
+      expect(row.modelProviderId, 'anthropic');
+      expect(row.modelId, 'claude-sonnet');
+      expect(row.agentName, 'review');
+      expect(row.operationType, 'command');
+      expect(row.commandName, 'run-tests');
+      expect(row.state, 'queued');
+      expect(row.attemptCount, 3);
+      expect(row.attachmentsJson, '[{"name":"retained"}]');
+      final profile = await database!
+          .select(database!.serverProfiles)
+          .getSingle();
+      expect(profile.backend, 'gatewayCodex');
+      final version = await database!
+          .customSelect('PRAGMA user_version')
+          .getSingle();
+      expect(version.data['user_version'], 8);
+      await database!.customStatement(
+        'UPDATE queued_prompts SET reasoning_effort = ? WHERE id = ?',
+        ['high', row.id],
+      );
+      await database!.close();
+      database = PromptDatabase.forTesting(NativeDatabase(databaseFile));
+      final reopened = await _readPrompt(database!);
+      expect(reopened.reasoningEffort, 'high');
+      expect(reopened.attachmentsJson, row.attachmentsJson);
+      expect(reopened.commandName, row.commandName);
+    },
+  );
+
   test('migrates a v1 database and preserves its queued prompt', () async {
     _createFixture(databaseFile, version: 1);
     database = PromptDatabase.forTesting(NativeDatabase(databaseFile));
@@ -159,7 +196,7 @@ Future<void> _expectVersion6(PromptDatabase database) async {
   final version = await database
       .customSelect('PRAGMA user_version')
       .getSingle();
-  expect(version.data['user_version'], 7);
+  expect(version.data['user_version'], 8);
   final profiles = await database.select(database.serverProfiles).get();
   expect(profiles.single.backend, 'directOpenCode');
 }
@@ -192,6 +229,7 @@ void _createFixture(File file, {required int version}) {
         id TEXT NOT NULL PRIMARY KEY,
         origin TEXT NOT NULL,
         username TEXT NULL,
+        ${version >= 7 ? "backend TEXT NOT NULL DEFAULT 'directOpenCode'," : ''}
         last_accessed_at_millis INTEGER NOT NULL
       );
       CREATE TABLE queued_prompts (
@@ -203,6 +241,7 @@ void _createFixture(File file, {required int version}) {
         prompt_text TEXT NOT NULL,
         $operationColumns
         $modelColumns
+        ${version >= 4 ? 'attachments_json TEXT NULL,' : ''}
         state TEXT NOT NULL,
         pause_reason TEXT NULL,
         attempt_count INTEGER NOT NULL DEFAULT 0,
@@ -213,11 +252,12 @@ void _createFixture(File file, {required int version}) {
         UNIQUE (server_profile_id, session_id, position)
       );
       INSERT INTO server_profiles VALUES
-        ('legacy-profile', 'http://10.80.0.1:4096', 'legacy-user', 900);
+        ('legacy-profile', 'http://10.80.0.1:4096', 'legacy-user', ${version >= 7 ? "'gatewayCodex'," : ''} 900);
       INSERT INTO queued_prompts (
         id, server_profile_id, session_id, directory, position, prompt_text,
         $operationInsertColumns
         $modelInsertColumns
+        ${version >= 4 ? 'attachments_json,' : ''}
         state, pause_reason, attempt_count, created_at_millis, updated_at_millis,
         sending_started_at_millis, acknowledged_at_millis
       ) VALUES (
@@ -225,6 +265,7 @@ void _createFixture(File file, {required int version}) {
         '/workspace/legacy', 2, '$promptText',
         $operationValues
         $modelValues
+        ${version >= 4 ? "'[{\"name\":\"retained\"}]'," : ''}
         'queued', NULL, 3, 1000, 2000, NULL, NULL
       );
       PRAGMA user_version = $version;

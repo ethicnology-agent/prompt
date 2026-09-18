@@ -46,6 +46,7 @@ class InMemoryQueuePromptsDao implements QueuePromptsDao {
       modelProviderId: executionOptions.modelProviderId,
       modelId: executionOptions.modelId,
       agentName: executionOptions.agentName,
+      reasoningEffort: executionOptions.reasoningEffort,
       state: QueuedPromptState.queued.name,
       attemptCount: 0,
       createdAtMillis: nowMillis,
@@ -78,6 +79,7 @@ class InMemoryQueuePromptsDao implements QueuePromptsDao {
         modelProviderId: row.modelProviderId,
         modelId: row.modelId,
         agentName: row.agentName,
+        reasoningEffort: row.reasoningEffort,
         state: row.state,
         pauseReason: row.pauseReason,
         attemptCount: row.attemptCount,
@@ -159,6 +161,7 @@ class InMemoryQueuePromptsDao implements QueuePromptsDao {
           modelProviderId: row.modelProviderId,
           modelId: row.modelId,
           agentName: row.agentName,
+          reasoningEffort: row.reasoningEffort,
           state: row.state,
           pauseReason: row.pauseReason,
           attemptCount: row.attemptCount,
@@ -295,6 +298,7 @@ class InMemoryQueuePromptsDao implements QueuePromptsDao {
       modelProviderId: row.modelProviderId,
       modelId: row.modelId,
       agentName: row.agentName,
+      reasoningEffort: row.reasoningEffort,
       state: to,
       pauseReason: identical(pauseReason, _unset)
           ? row.pauseReason
