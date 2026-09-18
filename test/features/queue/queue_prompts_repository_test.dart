@@ -153,6 +153,128 @@ void _runQueuePromptsRepositoryTests({
   }
 
   test(
+    'merge preserves target options and publishes no intermediate duplicate',
+    () async {
+      const options = PromptExecutionOptions(
+        modelProviderId: 'local',
+        modelId: 'model',
+      );
+      final target = await enqueue('first', executionOptions: options);
+      final source = await enqueue('second');
+      final snapshots = <List<QueuedPrompt>>[];
+      final subscription = repository
+          .watchQueue(profile: profile, session: session)
+          .listen(snapshots.add);
+      addTearDown(subscription.cancel);
+      await _settle();
+      final result = await repository.merge(
+        targetId: target.id,
+        sourceId: source.id,
+      );
+      expect(result, isA<Ok<QueuedPrompt, QueueFailure>>());
+      await _settle();
+      expect(snapshots.last.single.promptText, 'first\n\nsecond');
+      final restored = snapshots.last.single.executionOptions;
+      expect(restored.modelProviderId, options.modelProviderId);
+      expect(restored.modelId, options.modelId);
+      expect(restored.agentName, options.agentName);
+      expect(restored.reasoningEffort, options.reasoningEffort);
+      expect(
+        snapshots.any(
+          (rows) => rows.length == 2 && rows.first.promptText != 'first',
+        ),
+        isFalse,
+      );
+      expect(
+        await repository.merge(targetId: target.id, sourceId: source.id),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      expect(
+        (await repository.watchQueue(profile: profile, session: session).first)
+            .single
+            .promptText,
+        'first\n\nsecond',
+      );
+    },
+  );
+
+  test(
+    'merge rejects nonadjacent, cross-session, sending and deleted rows',
+    () async {
+      final first = await enqueue('first');
+      final middle = await enqueue('middle');
+      final last = await enqueue('last');
+      final other = await enqueue('other', forSession: otherSession);
+      for (final target in [first.id, other.id, last.id]) {
+        expect(
+          await repository.merge(targetId: target, sourceId: last.id),
+          isA<Err<QueuedPrompt, QueueFailure>>(),
+        );
+      }
+      await repository.markSending(last.id);
+      expect(
+        await repository.merge(targetId: middle.id, sourceId: last.id),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      await repository.pauseForSessionDeletion(profile, {session.id});
+      expect(
+        await repository.merge(targetId: first.id, sourceId: middle.id),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      expect(
+        (await repository.watchQueue(profile: profile, session: session).first)
+            .map((row) => row.promptText),
+        ['first', 'middle', 'last'],
+      );
+    },
+  );
+
+  for (final kind in ['attachments', 'command', 'uncertain']) {
+    test('merge refuses a $kind source without changing either row', () async {
+      final target = await enqueue('first');
+      final Result<QueuedPrompt, QueueFailure> result;
+      if (kind == 'command') {
+        result = await repository.enqueueCommand(
+          profile: profile,
+          session: session,
+          commandName: 'review',
+          arguments: 'second',
+        );
+      } else {
+        result = await repository.enqueue(
+          profile: profile,
+          session: session,
+          promptText: 'second',
+          attachments: kind == 'attachments'
+              ? [
+                  QueuedAttachment(
+                    name: 'test.txt',
+                    mediaType: 'text/plain',
+                    bytes: Uint8List.fromList([65]),
+                  ),
+                ]
+              : [],
+        );
+      }
+      final source = (result as Ok<QueuedPrompt, QueueFailure>).value;
+      if (kind == 'uncertain') {
+        await repository.markPaused(
+          source.id,
+          reason: QueuePauseReason.submissionUnknown,
+        );
+      }
+      expect(
+        await repository.merge(targetId: target.id, sourceId: source.id),
+        isA<Err<QueuedPrompt, QueueFailure>>(),
+      );
+      final rows = await repository
+          .watchQueue(profile: profile, session: session)
+          .first;
+      expect(rows.map((row) => row.promptText), ['first', 'second']);
+    });
+  }
+
+  test(
     'session deletion pauses all pending states and cleans only confirmed scoped IDs',
     () async {
       final otherProfile = ServerProfile(

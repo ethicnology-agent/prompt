@@ -150,6 +150,20 @@ class QueuePromptsRepository {
     });
   }
 
+  /// Merges adjacent editable plain prompts in one storage transaction.
+  Future<Result<QueuedPrompt, QueueFailure>> merge({
+    required String targetId,
+    required String sourceId,
+  }) => _run(
+    () async => _toDomain(
+      await _dao.merge(
+        targetId: targetId,
+        sourceId: sourceId,
+        now: DateTime.now(),
+      ),
+    ),
+  );
+
   /// Emits the ordered queue for [session] on [profile] whenever it
   /// changes, including prompts that are `sending`, `paused`, `failed`, or
   /// `acknowledged`.

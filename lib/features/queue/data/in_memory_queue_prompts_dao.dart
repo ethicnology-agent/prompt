@@ -21,6 +21,33 @@ class InMemoryQueuePromptsDao implements QueuePromptsDao {
   final Set<(String, String)> _deletingSessions = {};
 
   @override
+  Future<db.QueuedPrompt> merge({
+    required String targetId,
+    required String sourceId,
+    required DateTime now,
+  }) async {
+    final target = _requireRow(targetId);
+    final source = _requireRow(sourceId);
+    _requireSessionWritable(source.serverProfileId, source.sessionId, sourceId);
+    final rows = _rows
+        .where(
+          (row) =>
+              row.serverProfileId == source.serverProfileId &&
+              row.sessionId == source.sessionId,
+        )
+        .toList();
+    validateQueuedPromptMerge(target, source, rows);
+    final merged = target.copyWith(
+      promptText: '${target.promptText}\n\n${source.promptText}',
+      updatedAtMillis: now.millisecondsSinceEpoch,
+    );
+    _rows[_rows.indexOf(target)] = merged;
+    _rows.removeWhere((row) => row.id == sourceId);
+    _notify();
+    return merged;
+  }
+
+  @override
   Future<void> pauseForSessionDeletion(
     String serverProfileId,
     Set<String> sessionIds,

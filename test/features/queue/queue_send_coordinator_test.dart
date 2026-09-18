@@ -270,6 +270,13 @@ class _DelayedPauseDao implements QueuePromptsDao {
   _DelayedPauseDao(this._delegate, this.pauseGate);
 
   @override
+  Future<db.QueuedPrompt> merge({
+    required String targetId,
+    required String sourceId,
+    required DateTime now,
+  }) => _delegate.merge(targetId: targetId, sourceId: sourceId, now: now);
+
+  @override
   Future<void> pauseForSessionDeletion(
     String profileId,
     Set<String> sessionIds,
@@ -282,6 +289,8 @@ class _DelayedPauseDao implements QueuePromptsDao {
   final QueuePromptsDao _delegate;
   final Completer<void> pauseGate;
   final List<String> operations = <String>[];
+  Completer<void>? sendingGate;
+  final sendingStarted = Completer<void>();
 
   @override
   Future<db.QueuedPrompt> enqueue({
@@ -334,8 +343,15 @@ class _DelayedPauseDao implements QueuePromptsDao {
     orderedIds: orderedIds,
   );
   @override
-  Future<db.QueuedPrompt> markSending(String id, {required DateTime now}) =>
-      _delegate.markSending(id, now: now);
+  Future<db.QueuedPrompt> markSending(
+    String id, {
+    required DateTime now,
+  }) async {
+    if (!sendingStarted.isCompleted) sendingStarted.complete();
+    await sendingGate?.future;
+    return _delegate.markSending(id, now: now);
+  }
+
   @override
   Future<db.QueuedPrompt> markAcknowledged(
     String id, {
@@ -637,6 +653,56 @@ void main() {
   Future<List<QueuedPrompt>> currentQueue() {
     return queueRepository.watchQueue(profile: profile, session: session).first;
   }
+
+  test(
+    'dispatch uses the merged text committed before its sending claim',
+    () async {
+      final gate = Completer<void>();
+      final dao = _DelayedPauseDao(
+        DriftQueuePromptsDao(database),
+        Completer<void>()..complete(),
+      )..sendingGate = gate;
+      await coordinator.dispose();
+      queueRepository = QueuePromptsRepository(
+        dao,
+        idGenerator: () => 'prompt-${nextId++}',
+      );
+      coordinator = QueueSendCoordinator(
+        queueRepository: queueRepository,
+        chatRepository: chatRepository,
+        eventService: eventService,
+        credentialsStore: const _StaticPasswordStore(),
+      );
+      final target = await enqueue(
+        'first',
+        executionOptions: const PromptExecutionOptions(
+          modelProviderId: 'provider',
+          modelId: 'model',
+          agentName: 'build',
+        ),
+      );
+      final source = await enqueue('second');
+      await coordinator.activate(profile: profile, session: session);
+      await dao.sendingStarted.future;
+      expect(backend.promptAsyncCallCount, 0);
+      final result = await queueRepository.merge(
+        targetId: target.id,
+        sourceId: source.id,
+      );
+      expect(result, isA<Ok<QueuedPrompt, QueueFailure>>());
+      gate.complete();
+      await _settle();
+      expect(backend.promptAsyncOrder, ['first\n\nsecond']);
+      expect(backend.lastPromptAsyncBody?['model'], {
+        'providerID': 'provider',
+        'modelID': 'model',
+      });
+      expect(backend.lastPromptAsyncBody?['agent'], 'build');
+      final rows = await currentQueue();
+      expect(rows.single.id, target.id);
+      expect(rows.single.state, QueuedPromptState.acknowledged);
+    },
+  );
 
   group('activate', () {
     test('queues a command while busy and dispatches its official operation '

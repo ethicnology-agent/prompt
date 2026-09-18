@@ -739,16 +739,11 @@ class ConversationViewModel {
       );
       return;
     }
-    final edited = await repository.edit(
-      promptId: target.id,
-      promptText: '${target.promptText}\n\n${source.promptText}',
+    final merged = await repository.merge(
+      targetId: target.id,
+      sourceId: source.id,
     );
-    if (edited case Err<QueuedPrompt, QueueFailure>(:final failure)) {
-      _queueErrors.add(failure.message);
-      return;
-    }
-    final removed = await repository.remove(source.id);
-    if (removed case Err<QueuedPrompt, QueueFailure>(:final failure)) {
+    if (merged case Err<QueuedPrompt, QueueFailure>(:final failure)) {
       _queueErrors.add(failure.message);
     }
   }

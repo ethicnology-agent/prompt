@@ -839,6 +839,34 @@ void main() {
     expect(viewModel.queue.value.single.promptText, 'first\n\nsecond');
   });
 
+  test(
+    'merge rolls back target when deleting source fails and retries once',
+    () async {
+      backend.sessionStatusType = 'busy';
+      await viewModel.open(profile, session);
+      await _settle();
+      await viewModel.enqueuePrompt('first');
+      await viewModel.enqueuePrompt('second');
+      await _settle();
+      final sourceId = viewModel.queue.value.last.id;
+      await database.customStatement('''
+      CREATE TRIGGER reject_queue_delete BEFORE DELETE ON queued_prompts
+      BEGIN SELECT RAISE(ABORT, 'simulated storage failure'); END;
+    ''');
+      await viewModel.mergeIntoPrevious(sourceId);
+      await _settle();
+      expect(viewModel.queue.value.map((row) => row.promptText), [
+        'first',
+        'second',
+      ]);
+      expect(backend.promptAsyncCallCount, 0);
+      await database.customStatement('DROP TRIGGER reject_queue_delete');
+      await viewModel.mergeIntoPrevious(sourceId);
+      await _settle();
+      expect(viewModel.queue.value.single.promptText, 'first\n\nsecond');
+    },
+  );
+
   for (final uncertainIndex in [0, 1]) {
     test(
       'never merges uncertain queue item $uncertainIndex in either direction',

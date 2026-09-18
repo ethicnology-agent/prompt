@@ -1120,22 +1120,25 @@ class QueueSendCoordinator {
       return;
     }
 
+    // A queued edit or merge may commit after the stream snapshot but before
+    // this claim. Send the claimed row, which can no longer be edited.
+    final claimed = (sendingResult as Ok<QueuedPrompt, QueueFailure>).value;
     final dispatchRevision = _executionRevision;
-    final sendResult = await switch (prompt.operationType) {
+    final sendResult = await switch (claimed.operationType) {
       QueuedOperationType.prompt => _chatRepository.sendPrompt(
         profile,
         session,
-        prompt.promptText,
-        operationId: prompt.id,
-        attachments: prompt.attachments,
-        executionOptions: prompt.executionOptions,
+        claimed.promptText,
+        operationId: claimed.id,
+        attachments: claimed.attachments,
+        executionOptions: claimed.executionOptions,
       ),
       QueuedOperationType.command => _chatRepository.executeCommand(
         profile,
         session,
-        prompt.commandName!,
-        prompt.promptText,
-        executionOptions: prompt.executionOptions,
+        claimed.commandName!,
+        claimed.promptText,
+        executionOptions: claimed.executionOptions,
       ),
     };
     if (_isStale(token)) {
