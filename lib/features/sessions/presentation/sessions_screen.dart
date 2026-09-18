@@ -464,41 +464,27 @@ class _SessionsScreenState extends State<SessionsScreen> {
   }
 
   Future<void> _createSession(List<OpenCodeProject> projects) async {
-    final request =
-        await showModalBottomSheet<({String directory, String title})>(
-          context: context,
-          isScrollControlled: true,
-          showDragHandle: false,
-          builder: (context) => _NewSessionSheet(
-            profile: widget.profile,
-            viewModel: widget.viewModel,
-            projects: projects,
-          ),
-        );
-    if (!mounted || request == null) {
-      return;
-    }
-    final result = await widget.viewModel.create(
-      widget.profile,
-      request.directory,
-      title: request.title,
+    final session = await showModalBottomSheet<OpenCodeSession>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      showDragHandle: false,
+      enableDrag: false,
+      builder: (context) => _NewSessionSheet(
+        profile: widget.profile,
+        viewModel: widget.viewModel,
+        projects: projects,
+      ),
     );
-    if (!mounted) {
+    if (!mounted || session == null) {
       return;
     }
-    switch (result) {
-      case Ok<OpenCodeSession, SessionsFailure>(:final value):
-        final draft = _newDraftController.text;
-        if (draft.isNotEmpty && widget.onOpenSessionWithDraft != null) {
-          widget.onOpenSessionWithDraft!(value, draft);
-          _newDraftController.clear();
-        } else {
-          widget.onOpenSession(value);
-        }
-      case Err<OpenCodeSession, SessionsFailure>(:final failure):
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text(failure.message)));
+    final draft = _newDraftController.text;
+    if (draft.isNotEmpty && widget.onOpenSessionWithDraft != null) {
+      widget.onOpenSessionWithDraft!(session, draft);
+      _newDraftController.clear();
+    } else {
+      widget.onOpenSession(session);
     }
   }
 
@@ -634,6 +620,8 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
   List<String> _suggestions = const [];
   SessionsFailure? _suggestionFailure;
   bool _searching = false;
+  bool _submitting = false;
+  SessionsFailure? _creationFailure;
   int _suggestionRevision = 0;
 
   @override
@@ -719,118 +707,152 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
       ..sort();
   }
 
+  Future<void> _create() async {
+    final directory = _directoryController.text.trim();
+    if (_submitting || !_isAbsoluteServerPath(directory)) return;
+    setState(() {
+      _submitting = true;
+      _creationFailure = null;
+    });
+    final result = await widget.viewModel.create(
+      widget.profile,
+      directory,
+      title: _titleController.text,
+    );
+    if (!mounted) return;
+    setState(() => _submitting = false);
+    switch (result) {
+      case Ok<OpenCodeSession, SessionsFailure>(:final value):
+        await WidgetsBinding.instance.endOfFrame;
+        if (mounted) Navigator.of(context).pop(value);
+      case Err<OpenCodeSession, SessionsFailure>(:final failure):
+        setState(() => _creationFailure = failure);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final directory = _directoryController.text.trim();
     final valid = _isAbsoluteServerPath(directory);
-    return SafeArea(
-      child: Padding(
-        padding: EdgeInsets.fromLTRB(
-          20,
-          4,
-          20,
-          20 + MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: [
-              const ExcludeSemantics(
-                child: Center(child: Icon(Icons.drag_handle_rounded)),
-              ),
-              Text(
-                'New session',
-                style: Theme.of(context).textTheme.headlineSmall,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                widget.profile.backend.label,
-                style: Theme.of(context).textTheme.labelLarge,
-              ),
-              const SizedBox(height: 6),
-              Text(
-                'Enter an absolute path on the server. This does not select or copy files from the phone.',
-                style: Theme.of(context).textTheme.bodySmall,
-              ),
-              const SizedBox(height: 16),
-              AppTextField(
-                controller: _directoryController,
-                autofocus: true,
-                label: 'Server project path',
-                hint: '/srv/projects/my-app',
-                suffix: _searching
-                    ? const Padding(
-                        padding: EdgeInsets.all(14),
-                        child: SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2),
-                        ),
-                      )
-                    : null,
-                errorText: directory.isNotEmpty && !valid
-                    ? 'Use an absolute Unix or Windows path.'
-                    : null,
-              ),
-              if (_suggestionFailure != null)
-                Padding(
-                  padding: const EdgeInsets.only(top: 6),
-                  child: Text(
-                    'Directory suggestions unavailable; you can still enter the path manually.',
-                    style: Theme.of(context).textTheme.bodySmall,
-                  ),
+    return PopScope(
+      canPop: !_submitting,
+      child: SafeArea(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            20,
+            4,
+            20,
+            20 + MediaQuery.viewInsetsOf(context).bottom,
+          ),
+          child: SingleChildScrollView(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Text(
+                  'New session',
+                  style: Theme.of(context).textTheme.headlineSmall,
                 ),
-              if (_suggestions.isNotEmpty) ...[
                 const SizedBox(height: 8),
-                ConstrainedBox(
-                  constraints: const BoxConstraints(maxHeight: 180),
-                  child: ListView.builder(
-                    shrinkWrap: true,
-                    itemCount: _suggestions.length > 20
-                        ? 20
-                        : _suggestions.length,
-                    itemBuilder: (context, index) {
-                      final suggestion = _suggestions[index];
-                      return ListTile(
-                        dense: true,
-                        leading: const Icon(Icons.folder_outlined),
-                        title: Text(
-                          suggestion,
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                        onTap: () {
-                          _directoryController.value = TextEditingValue(
-                            text: suggestion,
-                            selection: TextSelection.collapsed(
-                              offset: suggestion.length,
-                            ),
-                          );
-                        },
-                      );
-                    },
+                Text(
+                  widget.profile.backend.label,
+                  style: Theme.of(context).textTheme.labelLarge,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Enter an absolute path on the server. This does not select or copy files from the phone.',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+                const SizedBox(height: 16),
+                AppTextField(
+                  controller: _directoryController,
+                  enabled: !_submitting,
+                  autofocus: true,
+                  label: 'Server project path',
+                  hint: '/srv/projects/my-app',
+                  suffix: _searching
+                      ? const Padding(
+                          padding: EdgeInsets.all(14),
+                          child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          ),
+                        )
+                      : null,
+                  errorText: directory.isNotEmpty && !valid
+                      ? 'Use an absolute Unix or Windows path.'
+                      : null,
+                ),
+                if (_suggestionFailure != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      'Directory suggestions unavailable; you can still enter the path manually.',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
                   ),
+                if (_suggestions.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  ConstrainedBox(
+                    constraints: const BoxConstraints(maxHeight: 180),
+                    child: ListView.builder(
+                      shrinkWrap: true,
+                      itemCount: _suggestions.length > 20
+                          ? 20
+                          : _suggestions.length,
+                      itemBuilder: (context, index) {
+                        final suggestion = _suggestions[index];
+                        return ListTile(
+                          dense: true,
+                          leading: const Icon(Icons.folder_outlined),
+                          title: Text(
+                            suggestion,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                          onTap: _submitting
+                              ? null
+                              : () {
+                                  _directoryController.value = TextEditingValue(
+                                    text: suggestion,
+                                    selection: TextSelection.collapsed(
+                                      offset: suggestion.length,
+                                    ),
+                                  );
+                                },
+                        );
+                      },
+                    ),
+                  ),
+                ],
+                const SizedBox(height: 8),
+                AppTextField(
+                  controller: _titleController,
+                  enabled: !_submitting,
+                  textInputAction: TextInputAction.done,
+                  label: 'Title (optional)',
+                  hint: 'What are we working on?',
+                ),
+                const SizedBox(height: 16),
+                if (_creationFailure case final failure?) ...[
+                  Semantics(liveRegion: true, child: Text(failure.message)),
+                  const SizedBox(height: 12),
+                ],
+                AppButton(
+                  label: 'Create and open',
+                  icon: Icons.add_comment_outlined,
+                  busy: _submitting,
+                  onPressed: valid ? _create : null,
+                ),
+                AppButton(
+                  label: 'Cancel',
+                  variant: AppButtonVariant.tertiary,
+                  onPressed: _submitting
+                      ? null
+                      : () => Navigator.of(context).pop(),
                 ),
               ],
-              const SizedBox(height: 8),
-              AppTextField(
-                controller: _titleController,
-                textInputAction: TextInputAction.done,
-                label: 'Title (optional)',
-                hint: 'What are we working on?',
-              ),
-              const SizedBox(height: 16),
-              AppButton(
-                label: 'Create and open',
-                icon: Icons.add_comment_outlined,
-                onPressed: valid
-                    ? () => Navigator.of(context).pop((
-                        directory: directory,
-                        title: _titleController.text,
-                      ))
-                    : null,
-              ),
-            ],
+            ),
           ),
         ),
       ),
