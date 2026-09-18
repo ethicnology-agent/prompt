@@ -189,6 +189,7 @@ class _FakeConversationViewModel extends ConversationViewModel {
       );
 
   int enqueueCallCount = 0;
+  Completer<bool>? pendingEnqueue;
   int removeCallCount = 0;
   int sendNowCallCount = 0;
   final List<String> enqueuedTexts = <String>[];
@@ -254,8 +255,11 @@ class _FakeConversationViewModel extends ConversationViewModel {
 
   @override
   Future<void> leaveSession(OpenCodeSession session) async {
+    lastLeftSession = session;
     leaveCalled = true;
   }
+
+  OpenCodeSession? lastLeftSession;
 
   @override
   Future<bool> enqueuePrompt(
@@ -265,6 +269,7 @@ class _FakeConversationViewModel extends ConversationViewModel {
     enqueueCallCount++;
     enqueuedTexts.add(text);
     lastPromptOptions = executionOptions;
+    if (pendingEnqueue != null && !await pendingEnqueue!.future) return false;
     queue.value = [
       ...queue.value,
       _prompt('prompt-${_nextId++}', text, QueuedPromptState.queued),
@@ -455,7 +460,537 @@ void main() {
   });
 
   testWidgets(
-    'composer model choice is direct searchable and committed only by Apply',
+    'composer receives restored options asynchronously before allowing a new send',
+    (tester) async {
+      final native = ServerProfile(
+        origin: profile.origin,
+        username: profile.username,
+        backend: AgentBackend.gatewayCodex,
+      );
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      await pumpScreen(
+        tester,
+        activeProfile: native,
+        capabilitiesViewModel: capabilities,
+      );
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'codex',
+              id: 'actual',
+              name: 'Restored model',
+              isProviderConnected: true,
+              executionOptions: ModelExecutionOptions(
+                reasoningEfforts: [
+                  ReasoningEffortChoice(id: 'low', label: 'Restored low'),
+                ],
+              ),
+            ),
+          ],
+          agents: [],
+          commands: [],
+        ),
+      );
+      viewModel.executionOptionsLoad.value = ExecutionOptionsLoadState.loading;
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.byType(TextField),
+        'Keep draft during hydration',
+      );
+      expect(find.text('Restoring saved model options…'), findsOneWidget);
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pump();
+      expect(viewModel.enqueueCallCount, 0);
+      viewModel.executionOptionsLoad.value = ExecutionOptionsLoadState.failed;
+      await tester.pump();
+      expect(find.text('Retry saved options'), findsOneWidget);
+      expect(
+        find.text('Could not restore saved model options. Sending is paused.'),
+        findsOneWidget,
+      );
+      viewModel.rememberExecutionOptions(
+        native,
+        session,
+        const PromptExecutionOptions(
+          modelProviderId: 'codex',
+          modelId: 'actual',
+          reasoningEffort: 'low',
+        ),
+      );
+      viewModel.executionOptionsLoad.value = ExecutionOptionsLoadState.ready;
+      await tester.pumpAndSettle();
+      expect(find.text('Restored model'), findsOneWidget);
+      expect(find.text('Restored low'), findsOneWidget);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Keep draft during hydration',
+      );
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pumpAndSettle();
+      expect(viewModel.lastPromptOptions!.modelId, 'actual');
+      expect(viewModel.lastPromptOptions!.reasoningEffort, 'low');
+    },
+  );
+
+  for (final backend in AgentBackend.values) {
+    for (final catalog in ['engine alias', 'real agent', 'multiple agents']) {
+      testWidgets(
+        'composer agent picker preserves $catalog for ${backend.name}',
+        (tester) async {
+          final engine = backend.engine ?? 'opencode';
+          final native =
+              backend == AgentBackend.gatewayClaude ||
+              backend == AgentBackend.gatewayCodex;
+          final active = ServerProfile(
+            origin: profile.origin,
+            username: profile.username,
+            backend: backend,
+          );
+          final capabilities = CapabilitiesViewModel(
+            CapabilitiesRepository(
+              OpenCodeCapabilitiesService(
+                OpenCodeTransport(
+                  MockClient((_) async => http.Response('', 404)),
+                ),
+              ),
+              const _StaticPasswordStore(),
+            ),
+          );
+          addTearDown(capabilities.dispose);
+          final options = PromptExecutionOptions(
+            modelProviderId: engine,
+            modelId: 'actual',
+            agentName: engine,
+            reasoningEffort: 'low',
+          );
+          viewModel.rememberExecutionOptions(active, session, options);
+          await pumpScreen(
+            tester,
+            activeProfile: active,
+            capabilitiesViewModel: capabilities,
+          );
+          capabilities.value = CapabilitiesReady(
+            OpenCodeCapabilities(
+              models: [
+                OpenCodeModel(
+                  providerId: engine,
+                  id: 'actual',
+                  name: 'Actual model',
+                  isProviderConnected: true,
+                  executionOptions: const ModelExecutionOptions(
+                    reasoningEfforts: [
+                      ReasoningEffortChoice(id: 'low', label: 'Low'),
+                    ],
+                  ),
+                ),
+              ],
+              agents: [
+                if (catalog != 'real agent')
+                  OpenCodeAgent(
+                    name: engine,
+                    mode: OpenCodeAgentMode.primary,
+                    isBuiltIn: true,
+                  ),
+                if (catalog != 'engine alias')
+                  const OpenCodeAgent(
+                    name: 'real-coding-agent',
+                    mode: OpenCodeAgentMode.primary,
+                    isBuiltIn: false,
+                  ),
+              ],
+              commands: const [],
+            ),
+          );
+          await tester.pumpAndSettle();
+          expect(
+            find.byKey(const ValueKey('composer-agent-picker')),
+            native && catalog == 'engine alias' ? findsNothing : findsOneWidget,
+          );
+          expect(
+            find.byKey(const ValueKey('composer-model-picker')),
+            findsOneWidget,
+          );
+          expect(viewModel.executionOptionsFor(active, session), same(options));
+          await tester.enterText(
+            find.byType(TextField),
+            'Keep execution choices',
+          );
+          await tester.pump();
+          await tester.tap(find.byTooltip('Queue this prompt'));
+          await tester.pumpAndSettle();
+          expect(viewModel.lastPromptOptions!.agentName, engine);
+          expect(viewModel.lastPromptOptions!.modelId, 'actual');
+          expect(viewModel.lastPromptOptions!.reasoningEffort, 'low');
+        },
+      );
+    }
+    testWidgets(
+      'composer filters only native CLI default for ${backend.name}',
+      (tester) async {
+        final provider = backend.engine ?? 'opencode';
+        final active = ServerProfile(
+          origin: profile.origin,
+          username: profile.username,
+          backend: backend,
+        );
+        final native =
+            backend == AgentBackend.gatewayClaude ||
+            backend == AgentBackend.gatewayCodex;
+        final capabilities = CapabilitiesViewModel(
+          CapabilitiesRepository(
+            OpenCodeCapabilitiesService(
+              OpenCodeTransport(
+                MockClient((_) async => http.Response('', 404)),
+              ),
+            ),
+            const _StaticPasswordStore(),
+          ),
+        );
+        addTearDown(capabilities.dispose);
+        final choices = CapabilitiesReady(
+          OpenCodeCapabilities(
+            models: [
+              OpenCodeModel(
+                providerId: provider,
+                id: 'default',
+                name: 'CLI catalog default',
+                isProviderConnected: true,
+              ),
+              OpenCodeModel(
+                providerId: 'another-provider',
+                id: 'default',
+                name: 'Real named default',
+                isProviderConnected: true,
+              ),
+              OpenCodeModel(
+                providerId: provider,
+                id: 'actual',
+                name: 'Actual model',
+                isProviderConnected: true,
+              ),
+            ],
+            agents: const [],
+            commands: const [],
+          ),
+        );
+        viewModel.rememberExecutionOptions(
+          active,
+          session,
+          PromptExecutionOptions(
+            modelProviderId: provider,
+            modelId: 'actual',
+            reasoningEffort: 'selected-effort',
+            agentName: 'coding',
+          ),
+        );
+        await pumpScreen(
+          tester,
+          capabilitiesViewModel: capabilities,
+          activeProfile: active,
+        );
+        capabilities.value = choices;
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), 'Keep draft');
+        await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+        await tester.pumpAndSettle();
+        expect(find.text('Default'), findsOneWidget);
+        expect(
+          find.text('CLI catalog default'),
+          native ? findsNothing : findsOneWidget,
+        );
+        expect(find.text('Real named default'), findsOneWidget);
+        final panel = tester.widget<InlineSelectionPanel<(String, String)?>>(
+          find.byKey(const ValueKey('composer-inline-selection')),
+        );
+        expect(
+          panel.options.any((option) => option.value == (provider, 'actual')),
+          isTrue,
+        );
+        await tester.tap(find.byTooltip('Close Model choices'));
+        await tester.pumpAndSettle();
+        expect(
+          viewModel.executionOptionsFor(active, session).modelId,
+          'actual',
+        );
+        expect(
+          viewModel.executionOptionsFor(active, session).reasoningEffort,
+          'selected-effort',
+        );
+        await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Default'));
+        await tester.pumpAndSettle();
+        final reset = viewModel.executionOptionsFor(active, session);
+        expect(reset.modelId, isNull);
+        expect(reset.modelProviderId, isNull);
+        expect(reset.reasoningEffort, isNull);
+        expect(reset.agentName, 'coding');
+        expect(
+          tester.widget<TextField>(find.byType(TextField)).controller!.text,
+          'Keep draft',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
+  testWidgets(
+    'composer compact choices retain full semantics and 48px targets at large scale',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final native = ServerProfile(
+        origin: profile.origin,
+        username: profile.username,
+        backend: AgentBackend.gatewayCodex,
+      );
+      const modelLabel =
+          'A genuinely long model label that must remain fully accessible';
+      const effortLabel = 'A genuinely long advertised reasoning effort';
+      const agentLabel = 'A genuinely long real coding agent';
+      viewModel.rememberExecutionOptions(
+        native,
+        session,
+        const PromptExecutionOptions(
+          modelProviderId: 'codex',
+          modelId: 'actual',
+          agentName: agentLabel,
+          reasoningEffort: 'real-effort',
+        ),
+      );
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      await pumpScreen(
+        tester,
+        capabilitiesViewModel: capabilities,
+        activeProfile: native,
+        textScale: 2,
+      );
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'codex',
+              id: 'actual',
+              name: modelLabel,
+              isProviderConnected: true,
+              executionOptions: ModelExecutionOptions(
+                reasoningEfforts: [
+                  ReasoningEffortChoice(id: 'real-effort', label: effortLabel),
+                ],
+              ),
+            ),
+          ],
+          agents: [
+            OpenCodeAgent(
+              name: agentLabel,
+              mode: OpenCodeAgentMode.primary,
+              isBuiltIn: false,
+            ),
+          ],
+          commands: [],
+        ),
+      );
+      await tester.pumpAndSettle();
+      for (final (kind, label) in [
+        ('model', modelLabel),
+        ('effort', effortLabel),
+        ('agent', agentLabel),
+      ]) {
+        final finder = find.byKey(ValueKey('composer-$kind-picker'));
+        final button = tester.widget<CompactChoiceButton>(finder);
+        expect(button.label, label);
+        expect(button.semanticLabel, contains(label));
+        expect(find.byTooltip(button.semanticLabel), findsOneWidget);
+        final text = tester.widget<Text>(
+          find.descendant(of: finder, matching: find.byType(Text)),
+        );
+        expect(text.maxLines, 1);
+        expect(text.overflow, TextOverflow.ellipsis);
+        expect(text.semanticsLabel, button.semanticLabel);
+        expect(tester.getSize(finder).height, greaterThanOrEqualTo(48));
+        expect(tester.getSize(finder).width, greaterThanOrEqualTo(48));
+        expect(tester.getRect(finder).right, lessThanOrEqualTo(320));
+      }
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'composer effort restores, cancels, resets and queues exact dynamic choice',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(320, 700));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final native = ServerProfile(
+        origin: profile.origin,
+        username: profile.username,
+        backend: AgentBackend.gatewayCodex,
+      );
+      viewModel.rememberExecutionOptions(
+        native,
+        session,
+        const PromptExecutionOptions(
+          modelProviderId: 'codex',
+          modelId: 'actual',
+          reasoningEffort: 'dynamic-high',
+        ),
+      );
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      const ready = CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'codex',
+              id: 'actual',
+              name: 'Actual model',
+              isProviderConnected: true,
+              executionOptions: ModelExecutionOptions(
+                reasoningEfforts: [
+                  ReasoningEffortChoice(
+                    id: 'dynamic-high',
+                    label: 'Careful reasoning',
+                    description: 'Real model choice',
+                  ),
+                ],
+              ),
+            ),
+            OpenCodeModel(
+              providerId: 'codex',
+              id: 'other',
+              name: 'Other model',
+              isProviderConnected: true,
+            ),
+          ],
+          agents: [
+            OpenCodeAgent(
+              name: 'coding',
+              mode: OpenCodeAgentMode.primary,
+              isBuiltIn: true,
+            ),
+          ],
+          commands: [],
+        ),
+      );
+      await pumpScreen(
+        tester,
+        capabilitiesViewModel: capabilities,
+        activeProfile: native,
+        viewInsetsBottom: 160,
+      );
+      capabilities.value = ready;
+      await tester.pumpAndSettle();
+      final effortButton = find.byKey(const ValueKey('composer-effort-picker'));
+      expect(effortButton, findsOneWidget);
+      expect(find.text('Careful reasoning'), findsOneWidget);
+      await tester.enterText(find.byType(TextField), 'Retain draft');
+      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.descendant(
+          of: find.byKey(const ValueKey('composer-inline-selection')),
+          matching: find.text('Actual model'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        'dynamic-high',
+      );
+      await tester.tap(find.byKey(const ValueKey('composer-agent-picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('coding'));
+      await tester.pumpAndSettle();
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        'dynamic-high',
+      );
+      await tester.tap(effortButton);
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<InlineSelectionPanel<String?>>(
+              find.byType(InlineSelectionPanel<String?>),
+            )
+            .selected,
+        'dynamic-high',
+      );
+      expect(find.text('Default'), findsNothing);
+      expect(find.text('Engine default'), findsOneWidget);
+      await tester.tap(find.byTooltip('Close Reasoning effort choices'));
+      await tester.pumpAndSettle();
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        'dynamic-high',
+      );
+      await tester.tap(effortButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Engine default'));
+      await tester.pumpAndSettle();
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        isNull,
+      );
+      await tester.tap(effortButton);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Careful reasoning'));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Retain draft',
+      );
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pumpAndSettle();
+      expect(viewModel.lastPromptOptions!.reasoningEffort, 'dynamic-high');
+      expect(viewModel.lastPromptOptions!.agentName, 'coding');
+      expect(viewModel.enqueueCallCount, 1);
+      await tester.pumpWidget(const SizedBox.shrink());
+      await pumpScreen(
+        tester,
+        capabilitiesViewModel: capabilities,
+        activeProfile: native,
+      );
+      capabilities.value = ready;
+      await tester.pumpAndSettle();
+      expect(find.text('Careful reasoning'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Other model'));
+      await tester.pumpAndSettle();
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        isNull,
+      );
+      expect(effortButton, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'composer model choice is inline immediate and closing preserves draft focus',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(320, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -492,41 +1027,182 @@ void main() {
       await pumpScreen(tester, capabilitiesViewModel: capabilities);
       capabilities.value = choices;
       await tester.pump();
+      await tester.enterText(find.byType(TextField), 'Use chosen model');
+      final focus = tester
+          .widget<EditableText>(find.byType(EditableText))
+          .focusNode;
       await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
       await tester.pumpAndSettle();
-      expect(find.byType(BottomSheet), findsOneWidget);
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(
+        find.byKey(const ValueKey('composer-inline-selection')),
+        findsOneWidget,
+      );
+      expect(find.text('Apply'), findsNothing);
+      expect(find.widgetWithText(TextField, 'Search model'), findsNothing);
       expect(find.text('Prompt execution'), findsNothing);
       expect(find.text('Disconnected model'), findsNothing);
-      await tester.enterText(
-        find.widgetWithText(TextField, 'Search model'),
-        'connected',
+      expect(focus.hasFocus, isTrue);
+      await tester.tap(find.byTooltip('Close Model choices'));
+      await tester.pumpAndSettle();
+      expect(find.text('Model default'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+      await tester.pumpAndSettle();
+      await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
+      await tester.pumpAndSettle();
+      expect(find.text('Model default'), findsOneWidget);
+      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Chosen model'));
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('composer-inline-selection')),
+        findsNothing,
       );
-      await tester.pump();
-      await tester.tap(find.text('Chosen model'));
-      await tester.pump();
-      await tester.tap(find.text('Cancel'));
-      await tester.pumpAndSettle();
-      expect(find.text('Model default'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Chosen model'));
-      await tester.pump();
-      tester.state<NavigatorState>(find.byType(Navigator)).pop();
-      await tester.pumpAndSettle();
-      expect(find.text('Model default'), findsOneWidget);
-      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
-      await tester.pumpAndSettle();
-      await tester.tap(find.text('Chosen model'));
-      await tester.pump();
-      await tester.tap(find.text('Apply'));
-      await tester.pumpAndSettle();
-      await tester.enterText(find.byType(TextField), 'Use chosen model');
-      await tester.pump();
+      expect(
+        viewModel.executionOptionsFor(profile, session).modelId,
+        'chosen-id',
+      );
+      expect(focus.hasFocus, isTrue);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Use chosen model',
+      );
       await tester.tap(find.byTooltip('Queue this prompt'));
       await tester.pump();
       expect(viewModel.lastPromptOptions?.modelProviderId, 'connected');
       expect(viewModel.lastPromptOptions?.modelId, 'chosen-id');
       expect(viewModel.enqueueCallCount, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('inline choices are lazy and reject stale catalog callbacks', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 900));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final capabilities = CapabilitiesViewModel(
+      CapabilitiesRepository(
+        OpenCodeCapabilitiesService(
+          OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+        ),
+        const _StaticPasswordStore(),
+      ),
+    );
+    addTearDown(capabilities.dispose);
+    final catalog = OpenCodeCapabilities(
+      models: List.generate(
+        100,
+        (index) => OpenCodeModel(
+          providerId: 'local',
+          id: 'id-$index',
+          name: 'Model $index',
+          isProviderConnected: true,
+        ),
+      ),
+      agents: [],
+      commands: [],
+    );
+    await pumpScreen(tester, capabilitiesViewModel: capabilities);
+    capabilities.value = CapabilitiesReady(catalog);
+    await tester.pump();
+    await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+    await tester.pumpAndSettle();
+    final panel = tester.widget<InlineSelectionPanel<(String, String)?>>(
+      find.byKey(const ValueKey('composer-inline-selection')),
+    );
+    expect(panel.radioIndicator, isTrue);
+    expect(panel.options, hasLength(101));
+    expect(find.text('Model 99'), findsNothing);
+    final scrollable = find.descendant(
+      of: find.byKey(const ValueKey('inline-selection-Model')),
+      matching: find.byType(Scrollable),
+    );
+    await tester.scrollUntilVisible(
+      find.text('Model 99'),
+      400,
+      scrollable: scrollable,
+    );
+    await tester.tap(find.text('Model 99'));
+    await tester.pumpAndSettle();
+    expect(viewModel.executionOptionsFor(profile, session).modelId, 'id-99');
+    await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+    await tester.pumpAndSettle();
+    final stale = tester
+        .widget<InlineSelectionPanel<(String, String)?>>(
+          find.byKey(const ValueKey('composer-inline-selection')),
+        )
+        .onSelected!;
+    capabilities.value = const CapabilitiesReady(
+      OpenCodeCapabilities(models: [], agents: [], commands: []),
+    );
+    await tester.pump();
+    stale(('local', 'id-0'));
+    await tester.pump();
+    expect(viewModel.executionOptionsFor(profile, session).modelId, 'id-99');
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'inline model choices keep approval and queue reachable at height 160 and scale 2',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      await pumpScreen(tester, capabilitiesViewModel: capabilities);
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'local',
+              id: 'actual',
+              name: 'Actual model',
+              isProviderConnected: true,
+            ),
+          ],
+          agents: [],
+          commands: [],
+        ),
+      );
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 'Keep this draft');
+      await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
+      await tester.pumpAndSettle();
+      await viewModel.enqueuePrompt('Pending queued prompt');
+      viewModel.pendingApproval.value = const PendingPermissionApproval(
+        sessionId: 'session-1',
+        permissionId: 'inline-short',
+        toolType: 'shell',
+        title: 'Exact command',
+      );
+      await tester.binding.setSurfaceSize(const Size(390, 160));
+      await pumpScreen(
+        tester,
+        capabilitiesViewModel: capabilities,
+        textScale: 2,
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Deny'));
+      expect(find.text('Deny').hitTestable(), findsOneWidget);
+      await tester.ensureVisible(find.text('Pending queued prompt'));
+      expect(find.text('Pending queued prompt').hitTestable(), findsOneWidget);
+      await tester.ensureVisible(find.byType(TextField));
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Keep this draft',
+      );
+      expect(viewModel.executionOptionsFor(profile, session).modelId, isNull);
+      expect(viewModel.lastPermissionResponse, isNull);
       expect(tester.takeException(), isNull);
     },
   );
@@ -972,11 +1648,11 @@ void main() {
       (tester) async {
         await tester.binding.setSurfaceSize(const Size(393, 851));
         addTearDown(() => tester.binding.setSurfaceSize(null));
-        viewModel.pendingApproval.value = const PendingPermissionApproval(
+        viewModel.pendingApproval.value = PendingPermissionApproval(
           permissionId: 'approval-bottom',
           sessionId: 'session-1',
           toolType: 'bash',
-          title: 'Permit this operation?',
+          title: 'Permit this operation?\n' * 100,
         );
         await pumpScreen(tester, viewInsetsBottom: keyboard);
         final composer = find.byKey(
@@ -1032,15 +1708,10 @@ void main() {
         final composerController = tester
             .widget<TextField>(find.byType(TextField))
             .controller!;
-        composerController.text = 'Retained draft';
+        await tester.enterText(find.byType(TextField), 'Retained draft');
         await tester.pump();
         await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
         await tester.pumpAndSettle();
-        await tester.enterText(
-          find.widgetWithText(TextField, 'Search model'),
-          'nomatch',
-        );
-        await tester.pump();
         await pumpScreen(
           tester,
           capabilitiesViewModel: capabilities,
@@ -1049,36 +1720,19 @@ void main() {
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         expect(composerController.text, 'Retained draft');
-        expect(find.byType(SelectionPicker<OpenCodeModel>), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('composer-inline-selection')),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(TextField, 'Search model'), findsNothing);
         expect(
           tester
-              .widget<EditableText>(
-                find.descendant(
-                  of: find.widgetWithText(TextField, 'Search model'),
-                  matching: find.byType(EditableText),
-                ),
-              )
+              .widget<EditableText>(find.byType(EditableText))
               .focusNode
               .hasFocus,
           isTrue,
         );
-        final searchField = tester.widget<TextField>(
-          find.widgetWithText(TextField, 'Search model'),
-        );
-        expect(
-          searchField.controller?.text ??
-              tester
-                  .widget<EditableText>(
-                    find.descendant(
-                      of: find.widgetWithText(TextField, 'Search model'),
-                      matching: find.byType(EditableText),
-                    ),
-                  )
-                  .controller
-                  .text,
-          'nomatch',
-        );
-        tester.state<NavigatorState>(find.byType(Navigator)).pop();
+        await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
         final original = tester
@@ -1483,6 +2137,66 @@ void main() {
     },
   );
 
+  testWidgets(
+    'accepted enqueue preserves edits typed while storage was pending',
+    (tester) async {
+      viewModel.pendingEnqueue = Completer<bool>();
+      await pumpScreen(tester);
+      await tester.enterText(find.byType(TextField), 'First prompt');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pump();
+      await tester.enterText(find.byType(TextField), 'Next draft');
+      viewModel.pendingEnqueue!.complete(true);
+      await tester.pump();
+      expect(viewModel.enqueuedTexts, ['First prompt']);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Next draft',
+      );
+    },
+  );
+
+  testWidgets(
+    'one pending enqueue cannot be submitted twice; failure keeps the draft',
+    (tester) async {
+      viewModel.pendingEnqueue = Completer<bool>();
+      await pumpScreen(tester);
+      await tester.enterText(find.byType(TextField), 'Recoverable draft');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pump();
+      await tester.tap(
+        find.byTooltip('Queue this prompt'),
+        warnIfMissed: false,
+      );
+      await tester.pump();
+      expect(viewModel.enqueueCallCount, 1);
+      viewModel.pendingEnqueue!.complete(false);
+      await tester.pump();
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Recoverable draft',
+      );
+    },
+  );
+
+  testWidgets(
+    'completion after leaving a screen never clears a disposed controller',
+    (tester) async {
+      viewModel.pendingEnqueue = Completer<bool>();
+      await pumpScreen(tester);
+      await tester.enterText(find.byType(TextField), 'Submitted draft');
+      await tester.pump();
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pump();
+      await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+      viewModel.pendingEnqueue!.complete(true);
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('desktop plain Enter queues once and clears the composer', (
     tester,
   ) async {
@@ -1656,6 +2370,15 @@ void main() {
 
   testWidgets('selects a discovered slash command and queues its arguments '
       'with advertised agent and model defaults', (tester) async {
+    viewModel.rememberExecutionOptions(
+      profile,
+      session,
+      const PromptExecutionOptions(
+        modelProviderId: 'old-provider',
+        modelId: 'old-model',
+        reasoningEffort: 'old-effort',
+      ),
+    );
     await tester.binding.setSurfaceSize(const Size(390, 700));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     final capabilities = CapabilitiesViewModel(
@@ -1711,6 +2434,7 @@ void main() {
     expect(viewModel.lastCommandArguments, 'lib/');
     expect(viewModel.lastCommandOptions!.agentName, 'build');
     expect(viewModel.lastCommandOptions!.modelProviderId, 'anthropic');
+    expect(viewModel.lastCommandOptions!.reasoningEffort, isNull);
     capabilities.dispose();
   });
 
@@ -3529,6 +4253,30 @@ void main() {
     expect(viewModel.leaveCalled, isTrue);
   });
 
+  testWidgets(
+    'metadata refresh disposes the originally opened session identity',
+    (tester) async {
+      await pumpScreen(tester);
+      final originalState = tester.state(find.byType(ConversationScreen));
+      final refreshed = OpenCodeSession(
+        id: session.id,
+        projectId: session.projectId,
+        directory: session.directory,
+        title: 'Refreshed title',
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt.add(const Duration(seconds: 1)),
+      );
+      await pumpScreen(tester, activeSession: refreshed);
+      expect(
+        tester.state(find.byType(ConversationScreen)),
+        same(originalState),
+      );
+      expect(viewModel.leaveCalled, isFalse);
+      await tester.pumpWidget(const SizedBox());
+      expect(viewModel.lastLeftSession, same(session));
+    },
+  );
+
   group('approval dock', () {
     testWidgets('shows nothing when there is no pending approval', (
       tester,
@@ -3539,7 +4287,7 @@ void main() {
       expect(find.text('Submit answers'), findsNothing);
     });
 
-    testWidgets('renders a pending permission with allow once/always/deny, and '
+    testWidgets('renders a legacy permission with allow once/deny, and '
         'submitting once calls respondToPermission', (tester) async {
       viewModel.pendingApproval.value = const PendingPermissionApproval(
         sessionId: 'session-1',
@@ -3553,7 +4301,7 @@ void main() {
       expect(find.textContaining('bash'), findsOneWidget);
       expect(find.text('Run rm -rf /tmp/build'), findsOneWidget);
       expect(find.text('Allow once'), findsOneWidget);
-      expect(find.text('Always allow'), findsOneWidget);
+      expect(find.text('Always allow'), findsNothing);
       expect(find.text('Deny'), findsOneWidget);
 
       await tester.tap(find.text('Allow once'));
@@ -3596,11 +4344,16 @@ void main() {
         permissionId: 'perm-1',
         toolType: 'edit',
         title: 'Edit a file',
+        alwaysPatterns: ['src/*'],
+        ruleScope: PermissionRuleScope.directoryInstance,
       );
       await pumpScreen(tester);
 
       await tester.tap(find.text('Always allow'));
-      await tester.pump();
+      await tester.pumpAndSettle();
+      expect(viewModel.lastPermissionResponse, isNull);
+      await tester.tap(find.text('Confirm always allow'));
+      await tester.pumpAndSettle();
       expect(viewModel.lastPermissionResponse, PermissionResponse.always);
 
       viewModel.pendingApproval.value = const PendingPermissionApproval(

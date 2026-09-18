@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:prompt/core/security/credentials_store.dart';
+import 'package:prompt/core/async/result.dart';
 import 'package:prompt/data/local/prompt_database.dart' show PromptDatabase;
 import 'package:prompt/data/remote/opencode_event_service.dart';
 import 'package:prompt/data/remote/opencode_transport.dart';
@@ -20,10 +21,13 @@ import 'package:prompt/features/chat/domain/prompt_attachment.dart';
 import 'package:prompt/features/chat/domain/session_artifacts.dart';
 import 'package:prompt/features/chat/presentation/conversation_view_model.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/queue/data/queue_prompts_dao.dart';
 import 'package:prompt/features/queue/data/queue_prompts_repository.dart';
 import 'package:prompt/features/queue/data/queue_send_coordinator.dart';
 import 'package:prompt/features/queue/domain/queued_prompt.dart';
+import 'package:prompt/features/queue/domain/prompt_execution_options.dart';
+import 'package:prompt/features/queue/domain/queue_failure.dart';
 import 'package:prompt/features/sessions/domain/open_code_session.dart';
 import 'package:prompt/features/sessions/data/opencode_sessions_service.dart';
 import 'package:prompt/features/sessions/data/sessions_repository.dart';
@@ -56,8 +60,23 @@ class _StaticPasswordStore implements CredentialsStore {
 }
 
 class _CancelledAttachmentPicker implements AttachmentPicker {
+  AttachmentPickResult result = const AttachmentPickCancelled();
   @override
-  Future<AttachmentPickResult> pick() async => const AttachmentPickCancelled();
+  Future<AttachmentPickResult> pick() async => result;
+}
+
+class _DelayedOptionsRepository extends QueuePromptsRepository {
+  _DelayedOptionsRepository(super.dao);
+  final reads = <Completer<Result<PromptExecutionOptions?, QueueFailure>>>[];
+  @override
+  Future<Result<PromptExecutionOptions?, QueueFailure>> latestExecutionOptions({
+    required ServerProfile profile,
+    required OpenCodeSession session,
+  }) {
+    final gate = Completer<Result<PromptExecutionOptions?, QueueFailure>>();
+    reads.add(gate);
+    return gate.future;
+  }
 }
 
 /// A scripted OpenCode REST backend covering the transcript load, and the
@@ -200,12 +219,16 @@ void main() {
   late int repositoryProviderCallCount;
   late int coordinatorProviderCallCount;
   late ConversationViewModel viewModel;
+  late _CancelledAttachmentPicker attachmentPicker;
+  QueuePromptsRepository? repositoryOverride;
 
   QueuePromptsRepository buildQueueRepository() {
     return QueuePromptsRepository(DriftQueuePromptsDao(database));
   }
 
   setUp(() {
+    repositoryOverride = null;
+    attachmentPicker = _CancelledAttachmentPicker();
     database = PromptDatabase.forTesting(NativeDatabase.memory());
     backend = _ScriptedChatBackend();
     chatRepository = ChatRepository(
@@ -228,7 +251,8 @@ void main() {
       ),
       queueRepositoryProvider: () async {
         repositoryProviderCallCount++;
-        return sharedRepository ??= buildQueueRepository();
+        return repositoryOverride ??
+            (sharedRepository ??= buildQueueRepository());
       },
       queueCoordinatorProvider: () async {
         coordinatorProviderCallCount++;
@@ -240,7 +264,7 @@ void main() {
           credentialsStore: const _StaticPasswordStore(),
         );
       },
-      attachmentPicker: _CancelledAttachmentPicker(),
+      attachmentPicker: attachmentPicker,
     );
   });
 
@@ -254,6 +278,224 @@ void main() {
     expect(repositoryProviderCallCount, 0);
     expect(coordinatorProviderCallCount, 0);
   });
+
+  test(
+    'leaving an old route cannot deactivate a newer same-ID session object',
+    () async {
+      backend.sessionStatusType = 'busy';
+      await viewModel.open(profile, session);
+      final newer = OpenCodeSession(
+        id: session.id,
+        projectId: session.projectId,
+        directory: session.directory,
+        title: 'New route',
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      );
+      await viewModel.open(profile, newer);
+      await viewModel.leaveSession(session);
+      expect(
+        await viewModel.enqueuePrompt('New route still owns coordination'),
+        isTrue,
+      );
+      await viewModel.leaveSession(newer);
+      expect(await viewModel.enqueuePrompt('No active route'), isFalse);
+    },
+  );
+
+  test(
+    'options hydration preserves an explicit user reset made during read',
+    () async {
+      final delayed = _DelayedOptionsRepository(DriftQueuePromptsDao(database));
+      repositoryOverride = delayed;
+      final opening = viewModel.open(profile, session);
+      await _settle();
+      expect(
+        viewModel.executionOptionsLoad.value,
+        ExecutionOptionsLoadState.loading,
+      );
+      expect(
+        await viewModel.enqueuePrompt('Do not send before hydration'),
+        isFalse,
+      );
+      viewModel.rememberExecutionOptions(
+        profile,
+        session,
+        const PromptExecutionOptions(),
+      );
+      delayed.reads.single.complete(
+        const Ok(
+          PromptExecutionOptions(
+            modelProviderId: 'old',
+            modelId: 'old',
+            reasoningEffort: 'low',
+          ),
+        ),
+      );
+      await opening;
+      expect(viewModel.executionOptionsFor(profile, session).isEmpty, isTrue);
+      expect(
+        viewModel.executionOptionsLoad.value,
+        ExecutionOptionsLoadState.ready,
+      );
+    },
+  );
+
+  test(
+    'options hydration failure blocks new sends and explicit retry recovers',
+    () async {
+      final delayed = _DelayedOptionsRepository(DriftQueuePromptsDao(database));
+      repositoryOverride = delayed;
+      final opening = viewModel.open(profile, session);
+      await _settle();
+      delayed.reads.single.complete(const Err(QueueFailure.storageUnavailable));
+      await opening;
+      expect(
+        viewModel.executionOptionsLoad.value,
+        ExecutionOptionsLoadState.failed,
+      );
+      expect(
+        await viewModel.enqueuePrompt('Do not fall back silently'),
+        isFalse,
+      );
+      final retry = viewModel.open(profile, session);
+      await _settle();
+      delayed.reads.last.complete(const Ok(null));
+      await retry;
+      expect(
+        viewModel.executionOptionsLoad.value,
+        ExecutionOptionsLoadState.ready,
+      );
+      expect(viewModel.executionOptionsFor(profile, session).isEmpty, isTrue);
+    },
+  );
+
+  test(
+    'late options read cannot cross profiles for the same session object',
+    () async {
+      final delayed = _DelayedOptionsRepository(DriftQueuePromptsDao(database));
+      repositoryOverride = delayed;
+      final old = viewModel.open(profile, session);
+      await _settle();
+      final other = ServerProfile(
+        origin: Uri.parse('http://10.80.0.2:4096'),
+        username: profile.username,
+      );
+      final current = viewModel.open(other, session);
+      await _settle();
+      expect(delayed.reads, hasLength(2));
+      delayed.reads.last.complete(
+        const Ok(
+          PromptExecutionOptions(
+            modelProviderId: 'current',
+            modelId: 'current',
+          ),
+        ),
+      );
+      await current;
+      delayed.reads.first.complete(
+        const Ok(
+          PromptExecutionOptions(modelProviderId: 'stale', modelId: 'stale'),
+        ),
+      );
+      await old;
+      expect(viewModel.executionOptionsFor(other, session).modelId, 'current');
+      expect(viewModel.executionOptionsFor(profile, session).modelId, isNull);
+      expect(
+        viewModel.executionOptionsLoad.value,
+        ExecutionOptionsLoadState.ready,
+      );
+    },
+  );
+
+  test(
+    'fresh view model restores acknowledged durable model and effort',
+    () async {
+      final dao = DriftQueuePromptsDao(database);
+      const options = PromptExecutionOptions(
+        modelProviderId: 'provider',
+        modelId: 'chosen-model',
+        agentName: 'coding',
+        reasoningEffort: 'low',
+      );
+      await dao.enqueue(
+        id: 'persisted',
+        serverProfileId: profile.id,
+        sessionId: session.id,
+        directory: session.directory,
+        promptText: 'Already sent',
+        executionOptions: options,
+        now: DateTime(2024),
+      );
+      await dao.markSending('persisted', now: DateTime(2024));
+      await dao.markAcknowledged('persisted', now: DateTime(2024));
+      await viewModel.open(profile, session);
+      final restored = viewModel.executionOptionsFor(profile, session);
+      expect(restored.modelProviderId, 'provider');
+      expect(restored.modelId, 'chosen-model');
+      expect(restored.agentName, 'coding');
+      expect(restored.reasoningEffort, 'low');
+    },
+  );
+
+  test(
+    'native image aggregate pick limits preserve prior selection and reject PDF enqueue',
+    () async {
+      final nativeProfile = profile.withCapabilities(
+        BackendCapabilities(
+          [
+            BackendFeature.sessions,
+            BackendFeature.text,
+            BackendFeature.attachments,
+            BackendFeature.imageAttachments,
+          ],
+          attachmentConstraints: AttachmentConstraints(
+            mimeTypes: ['image/png'],
+            maxCount: 5,
+            maxBytesPerAttachment: 5 * 1024 * 1024,
+            maxTotalBytes: 10 * 1024 * 1024,
+          ),
+        ),
+      );
+      await viewModel.open(nativeProfile, session);
+      await _settle();
+      PromptAttachment image() => PromptAttachment(
+        name: 'image.png',
+        bytes: Uint8List(4 * 1024 * 1024)
+          ..setRange(0, 8, [137, 80, 78, 71, 13, 10, 26, 10]),
+      );
+      final first = image();
+      attachmentPicker.result = AttachmentsPicked([first]);
+      expect(await viewModel.pickAttachments(), isA<AttachmentsPicked>());
+      final second = image();
+      attachmentPicker.result = AttachmentsPicked([second]);
+      expect(await viewModel.pickAttachments(), isA<AttachmentsPicked>());
+      final third = image();
+      attachmentPicker.result = AttachmentsPicked([third]);
+      expect(await viewModel.pickAttachments(), isA<AttachmentPickRejected>());
+      expect(third.isReleased, isTrue);
+      expect(first.isReleased, isFalse);
+      expect(viewModel.attachments.value, [first, second]);
+      viewModel.releaseAttachments();
+      final pdf = PromptAttachment(
+        name: 'file.pdf',
+        bytes: Uint8List.fromList([37, 80, 68, 70, 45]),
+      );
+      viewModel.attachments.value = [pdf];
+      final errors = <String>[];
+      final subscription = viewModel.queueErrors.listen(errors.add);
+      addTearDown(subscription.cancel);
+      expect(
+        await viewModel.enqueuePrompt('Do not submit unsupported PDF'),
+        isFalse,
+      );
+      await _settle();
+      expect(viewModel.queue.value, isEmpty);
+      expect(backend.promptAsyncCallCount, 0);
+      expect(errors.single, contains('images only'));
+      expect(pdf.isReleased, isFalse);
+    },
+  );
 
   test('open loads the transcript and reports an empty queue for a fresh '
       'session', () async {
@@ -815,18 +1057,75 @@ void main() {
     expect(screenshot.isReleased, isTrue);
   });
 
+  test(
+    'immutable picker image clears selection after durable enqueue success',
+    () async {
+      backend.sessionStatusType = 'idle';
+      await viewModel.open(profile, session);
+      await _settle();
+      final platform = Uint8List.fromList([
+        137,
+        80,
+        78,
+        71,
+        13,
+        10,
+        26,
+        10,
+      ]).asUnmodifiableView();
+      final attachment = PromptAttachment(
+        name: 'immutable.png',
+        bytes: platform,
+      );
+      final owned = attachment.bytes;
+      viewModel.attachments.value = [attachment];
+      expect(await viewModel.enqueuePrompt('Synthetic image'), isTrue);
+      await _settle();
+      expect(viewModel.attachments.value, isEmpty);
+      expect(attachment.isReleased, isTrue);
+      expect(owned, everyElement(0));
+      expect(backend.promptAsyncCallCount, 1);
+      expect(backend.promptAsyncParts.single[1]['mime'], 'image/png');
+      expect(platform, [137, 80, 78, 71, 13, 10, 26, 10]);
+    },
+  );
+
   test('enqueuePrompt queues while busy instead of sending directly', () async {
     backend.sessionStatusType = 'busy';
     await viewModel.open(profile, session);
     await _settle();
-
-    await viewModel.enqueuePrompt('queued while busy');
-    await _settle();
-
-    expect(viewModel.queue.value.single.state, QueuedPromptState.queued);
-    expect(backend.promptAsyncCallCount, 0);
-    expect(backend.abortCallCount, 0);
+    final first = PromptAttachment(
+      name: 'first.txt',
+      bytes: Uint8List.fromList([65]),
+    );
+    final next = PromptAttachment(
+      name: 'next.txt',
+      bytes: Uint8List.fromList([66]),
+    );
+    viewModel.attachments.value = [first];
+    final accepted = viewModel.enqueuePrompt('Stored first');
+    viewModel.attachments.value = [first, next];
+    expect(await accepted, isTrue);
+    expect(viewModel.attachments.value, [next]);
+    expect(first.isReleased, isTrue);
+    expect(next.isReleased, isFalse);
   });
+
+  test(
+    'enqueuePrompt queues while busy instead of sending directly without attachments',
+    () async {
+      backend.sessionStatusType = 'busy';
+      await viewModel.open(profile, session);
+      await _settle();
+
+      await viewModel.enqueuePrompt('queued while busy');
+      await _settle();
+
+      expect(viewModel.queue.value.single.state, QueuedPromptState.queued);
+      expect(backend.promptAsyncCallCount, 0);
+      expect(backend.abortCallCount, 0);
+    },
+  );
 
   test(
     'releases selected attachment bytes when the conversation leaves',

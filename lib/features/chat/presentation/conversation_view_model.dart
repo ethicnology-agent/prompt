@@ -22,6 +22,8 @@ sealed class ConversationUiState {
   const ConversationUiState();
 }
 
+enum ExecutionOptionsLoadState { ready, loading, failed }
+
 class ConversationLoading extends ConversationUiState {
   const ConversationLoading();
 }
@@ -96,6 +98,9 @@ class ConversationViewModel {
   // view model outlives individual conversation screens and keeps one buffer
   // per server session until the user submits it or the view model is disposed.
   final Map<(String, String), _SessionInputMemory> _sessionInputMemories = {};
+  final ValueNotifier<ExecutionOptionsLoadState> executionOptionsLoad =
+      ValueNotifier(ExecutionOptionsLoadState.ready);
+  int _optionsLoadRevision = 0;
 
   PromptExecutionOptions executionOptionsFor(
     ServerProfile profile,
@@ -240,6 +245,8 @@ class ConversationViewModel {
   /// session first, mirroring [QueueSendCoordinator]'s single-active-session
   /// rule.
   Future<void> open(ServerProfile profile, OpenCodeSession session) async {
+    final optionsRevision = ++_optionsLoadRevision;
+    executionOptionsLoad.value = ExecutionOptionsLoadState.loading;
     _requestedSession = session;
     messages.value = const ConversationLoading();
     history.value = const ConversationHistoryUiState.initial();
@@ -248,7 +255,9 @@ class ConversationViewModel {
     pendingApproval.value = null;
     refreshing.value = false;
     await _leaveCurrentSession();
-    if (_disposed || _requestedSession != session) {
+    if (_disposed ||
+        _requestedSession != session ||
+        optionsRevision != _optionsLoadRevision) {
       return;
     }
     _profile = profile;
@@ -259,9 +268,42 @@ class ConversationViewModel {
         await _queueRepositoryProvider();
     final queueCoordinator = _queueCoordinator ??=
         await _queueCoordinatorProvider();
-    if (_disposed || _session != session) {
+    if (_disposed ||
+        _session != session ||
+        optionsRevision != _optionsLoadRevision) {
       return;
     }
+
+    final key = (profile.id, session.id);
+    if (_sessionInputMemories[key]?.executionOptions == null) {
+      final result = await queueRepository.latestExecutionOptions(
+        profile: profile,
+        session: session,
+      );
+      if (_disposed ||
+          optionsRevision != _optionsLoadRevision ||
+          _profile?.id != profile.id ||
+          _session != session) {
+        return;
+      }
+      // A selection made during the read (including an explicit default reset)
+      // wins over older durable history.
+      if (_sessionInputMemories[key]?.executionOptions == null) {
+        switch (result) {
+          case Ok<PromptExecutionOptions?, QueueFailure>(:final value):
+            if (value != null) {
+              rememberExecutionOptions(profile, session, value);
+            }
+          case Err<PromptExecutionOptions?, QueueFailure>():
+            executionOptionsLoad.value = ExecutionOptionsLoadState.failed;
+            messages.value = const ConversationError(
+              ChatFailure.unexpectedResponse,
+            );
+            return;
+        }
+      }
+    }
+    executionOptionsLoad.value = ExecutionOptionsLoadState.ready;
 
     _queueSubscription = queueRepository
         .watchQueue(profile: profile, session: session)
@@ -529,9 +571,17 @@ class ConversationViewModel {
     String text, {
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
   }) async {
+    if (executionOptionsLoad.value != ExecutionOptionsLoadState.ready) {
+      return false;
+    }
     // The composer's selection is copied into the durable queue record, so
     // the memory-only buffers can be released as soon as it is stored.
-    final selected = attachments.value;
+    final selected = List<PromptAttachment>.of(attachments.value);
+    final validation = _validateAttachmentSelection(selected);
+    if (validation != null) {
+      _queueErrors.add(validation);
+      return false;
+    }
     final queuedAttachments = [
       for (final attachment in selected)
         QueuedAttachment(
@@ -557,7 +607,12 @@ class ConversationViewModel {
       _queueErrors.add(failure.message);
       return false;
     }
-    releaseAttachments();
+    _releaseAttachments(selected);
+    if (!_disposed) {
+      attachments.value = attachments.value
+          .where((attachment) => !selected.contains(attachment))
+          .toList(growable: false);
+    }
     return true;
   }
 
@@ -624,8 +679,23 @@ class ConversationViewModel {
     if (_disposed) {
       return const AttachmentPickCancelled();
     }
-    final result = await _attachmentPicker.pick();
-    if (_disposed) {
+    final profile = _profile;
+    final session = _session;
+    final constraints = profile?.capabilities.attachmentConstraints;
+    if (profile?.capabilities.supports(BackendFeature.imageAttachments) ==
+            true &&
+        constraints == null) {
+      return const AttachmentPickRejected(
+        'Image limits are unavailable. Reconnect before attaching images.',
+      );
+    }
+    final picker = _attachmentPicker;
+    final result = constraints != null && picker is ConstrainedAttachmentPicker
+        ? await picker.pickWithConstraints(constraints)
+        : await picker.pick();
+    if (_disposed ||
+        !identical(profile, _profile) ||
+        !identical(session, _session)) {
       if (result case AttachmentsPicked(:final attachments)) {
         _releaseAttachments(attachments);
       }
@@ -633,6 +703,14 @@ class ConversationViewModel {
     }
     if (result case AttachmentsPicked(:final attachments)) {
       final current = this.attachments.value;
+      final validation = _validateAttachmentSelection([
+        ...current,
+        ...attachments,
+      ]);
+      if (validation != null) {
+        _releaseAttachments(attachments);
+        return AttachmentPickRejected(validation);
+      }
       final combinedCount = current.length + attachments.length;
       final combinedBytes =
           current.fold<int>(
@@ -653,6 +731,19 @@ class ConversationViewModel {
       this.attachments.value = [...current, ...attachments];
     }
     return result;
+  }
+
+  String? _validateAttachmentSelection(List<PromptAttachment> selected) {
+    if (selected.isEmpty) return null;
+    final capabilities = _profile?.capabilities;
+    if (capabilities?.supports(BackendFeature.imageAttachments) == true) {
+      final constraints = capabilities?.attachmentConstraints;
+      if (constraints == null) {
+        return 'Image limits are unavailable. Reconnect before attaching images.';
+      }
+      return attachmentConstraintError(selected, constraints);
+    }
+    return null;
   }
 
   void removeAttachment(PromptAttachment attachment) {
@@ -680,6 +771,9 @@ class ConversationViewModel {
     String arguments, {
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
   }) async {
+    if (executionOptionsLoad.value != ExecutionOptionsLoadState.ready) {
+      return false;
+    }
     final profile = _profile;
     final session = _session;
     final queueRepository = _queueRepository;
@@ -788,6 +882,7 @@ class ConversationViewModel {
   /// screen leaves the active session, and internally by [open] before
   /// switching to a different one.
   Future<void> leave() async {
+    _optionsLoadRevision++;
     _requestedSession = null;
     await _leaveCurrentSession();
   }
@@ -823,6 +918,7 @@ class ConversationViewModel {
   }
 
   Future<void> dispose() async {
+    _optionsLoadRevision++;
     if (_disposed) {
       return;
     }
@@ -849,6 +945,7 @@ class ConversationViewModel {
     pendingApproval.dispose();
     refreshing.dispose();
     history.dispose();
+    executionOptionsLoad.dispose();
     unawaited(_queueErrors.close());
     unawaited(_transcriptErrors.close());
   }
