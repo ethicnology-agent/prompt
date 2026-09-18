@@ -51,6 +51,7 @@ class DraftComposerPanel extends StatelessWidget {
     this.attachments,
     this.configuration,
     this.actions,
+    this.composerWrapper,
     this.onSubmit,
     this.onAttach,
     this.onTerminal,
@@ -68,6 +69,7 @@ class DraftComposerPanel extends StatelessWidget {
   final Widget? attachments;
   final Widget? configuration;
   final Widget? actions;
+  final Widget Function(Widget composer)? composerWrapper;
   final VoidCallback? onSubmit;
   final VoidCallback? onAttach;
   final VoidCallback? onTerminal;
@@ -100,70 +102,72 @@ class DraftComposerPanel extends StatelessWidget {
                 child: configuration!,
               ),
             ),
-          Material(
-            key: const ValueKey('draft-composer-card'),
-            color: scheme.surfaceContainerLow,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(28),
-              side: BorderSide(color: scheme.outlineVariant),
-            ),
-            child: Padding(
-              padding: const EdgeInsets.all(8),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ?attachments,
-                  Row(
-                    children: [
-                      if (!expanded && onTerminal != null)
-                        AppIconButton(
-                          icon: Icons.terminal_rounded,
-                          tooltip: 'Remote terminal',
-                          onPressed: onTerminal,
-                        ),
-                      Expanded(
-                        child: AppTextField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          enabled: enabled,
-                          readOnly: readOnly,
-                          minLines: 1,
-                          maxLines: 4,
-                          onChanged: onChanged,
-                          textInputAction: TextInputAction.newline,
-                          hint: hint,
-                          variant: AppTextFieldVariant.borderless,
-                        ),
-                      ),
-                      if (!expanded) _submit(),
-                    ],
-                  ),
-                  if (expanded)
-                    ComposerActionBar(
-                      leading: [
-                        if (onAttach != null)
-                          AppIconButton(
-                            icon: Icons.add_rounded,
-                            tooltip: 'Attach files',
-                            onPressed: onAttach,
-                          ),
-                        if (onTerminal != null)
+          _wrapComposer(
+            Material(
+              key: const ValueKey('draft-composer-card'),
+              color: scheme.surfaceContainerLow,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(28),
+                side: BorderSide(color: scheme.outlineVariant),
+              ),
+              child: Padding(
+                padding: const EdgeInsets.all(8),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    ?attachments,
+                    Row(
+                      children: [
+                        if (!expanded && onTerminal != null)
                           AppIconButton(
                             icon: Icons.terminal_rounded,
                             tooltip: 'Remote terminal',
                             onPressed: onTerminal,
                           ),
-                        if (onClose != null)
-                          AppIconButton(
-                            icon: Icons.keyboard_hide_outlined,
-                            tooltip: 'Close new session options',
-                            onPressed: onClose,
+                        Expanded(
+                          child: AppTextField(
+                            controller: controller,
+                            focusNode: focusNode,
+                            enabled: enabled,
+                            readOnly: readOnly,
+                            minLines: 1,
+                            maxLines: 4,
+                            onChanged: onChanged,
+                            textInputAction: TextInputAction.newline,
+                            hint: hint,
+                            variant: AppTextFieldVariant.borderless,
                           ),
+                        ),
+                        if (!expanded) _submit(),
                       ],
-                      controls: actions,
-                      trailing: _submit(),
                     ),
-                ],
+                    if (expanded)
+                      ComposerActionBar(
+                        leading: [
+                          if (onAttach != null)
+                            AppIconButton(
+                              icon: Icons.add_rounded,
+                              tooltip: 'Attach files',
+                              onPressed: onAttach,
+                            ),
+                          if (onTerminal != null)
+                            AppIconButton(
+                              icon: Icons.terminal_rounded,
+                              tooltip: 'Remote terminal',
+                              onPressed: onTerminal,
+                            ),
+                          if (onClose != null)
+                            AppIconButton(
+                              icon: Icons.keyboard_hide_outlined,
+                              tooltip: 'Close new session options',
+                              onPressed: onClose,
+                            ),
+                        ],
+                        controls: actions,
+                        trailing: _submit(),
+                      ),
+                  ],
+                ),
               ),
             ),
           ),
@@ -171,4 +175,7 @@ class DraftComposerPanel extends StatelessWidget {
       ),
     );
   }
+
+  Widget _wrapComposer(Widget composer) =>
+      composerWrapper?.call(composer) ?? composer;
 }

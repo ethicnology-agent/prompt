@@ -372,6 +372,7 @@ class ApprovalDockState extends State<ApprovalDock> {
               bottom: i == approval.questions.length - 1 ? 12 : 16,
             ),
             child: _QuestionCard(
+              enabled: !_submitting,
               prompt: approval.questions[i],
               selected: _selectedOptions[i]!,
               customController: _customControllers[i]!,
@@ -411,6 +412,7 @@ class ApprovalDockState extends State<ApprovalDock> {
   }
 
   void _toggleOption(int index, String label, bool multiple) {
+    if (!mounted || _submitting) return;
     setState(() {
       final current = _selectedOptions[index]!;
       if (multiple) {
@@ -426,6 +428,12 @@ class ApprovalDockState extends State<ApprovalDock> {
   }
 
   Future<void> _submitAnswers(PendingQuestionApproval approval) async {
+    if (!mounted ||
+        _submitting ||
+        !identical(widget.approval, approval) ||
+        !_everyQuestionAnswered(approval)) {
+      return;
+    }
     final answers = <List<String>>[];
     for (var i = 0; i < approval.questions.length; i++) {
       final answer = <String>[...?_selectedOptions[i]];
@@ -446,6 +454,12 @@ class ApprovalDockState extends State<ApprovalDock> {
   }
 
   Future<void> _reject(String requestId) async {
+    if (!mounted ||
+        _submitting ||
+        widget.approval is! PendingQuestionApproval ||
+        (widget.approval as PendingQuestionApproval).requestId != requestId) {
+      return;
+    }
     setState(() => _submitting = true);
     final succeeded = await widget.onRejectQuestion(requestId);
     if (mounted && !succeeded) {
@@ -460,6 +474,7 @@ class ApprovalDockState extends State<ApprovalDock> {
 /// [QuestionPrompt.allowsCustomAnswer] is true.
 class _QuestionCard extends StatelessWidget {
   const _QuestionCard({
+    required this.enabled,
     required this.prompt,
     required this.selected,
     required this.customController,
@@ -467,6 +482,7 @@ class _QuestionCard extends StatelessWidget {
   });
 
   final QuestionPrompt prompt;
+  final bool enabled;
   final Set<String> selected;
   final TextEditingController customController;
   final ValueChanged<String> onToggleOption;
@@ -497,7 +513,9 @@ class _QuestionCard extends StatelessWidget {
                     child: FilterChip(
                       label: Text(option.label),
                       selected: selected.contains(option.label),
-                      onSelected: (_) => onToggleOption(option.label),
+                      onSelected: enabled
+                          ? (_) => onToggleOption(option.label)
+                          : null,
                     ),
                   ),
               ],
@@ -509,6 +527,7 @@ class _QuestionCard extends StatelessWidget {
               label: 'Custom answer for ${prompt.header}',
               child: AppTextField(
                 controller: customController,
+                readOnly: !enabled,
                 hint: 'Or type your own answer',
                 dense: true,
               ),

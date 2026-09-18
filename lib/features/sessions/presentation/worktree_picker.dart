@@ -4,6 +4,7 @@ import '../../../core/ui/ui.dart';
 import '../domain/session_worktree.dart';
 import 'session_creation_view_model.dart';
 
+/// Explicit creation form; existing worktrees are chosen in the composer card.
 class WorktreePicker extends StatefulWidget {
   const WorktreePicker({required this.viewModel, super.key});
 
@@ -15,6 +16,23 @@ class WorktreePicker extends StatefulWidget {
 
 class _WorktreePickerState extends State<WorktreePicker> {
   final _name = TextEditingController();
+  late final String? _profileId;
+  late final Object? _backend;
+  late final String _directory;
+
+  bool _sameScope(SessionCreationState state) =>
+      state.profile?.id == _profileId &&
+      state.backend == _backend &&
+      state.directory == _directory;
+
+  @override
+  void initState() {
+    super.initState();
+    // Capture the scope before the first rebuild or asynchronous refresh.
+    _profileId = widget.viewModel.value.profile?.id;
+    _backend = widget.viewModel.value.backend;
+    _directory = widget.viewModel.value.directory;
+  }
 
   @override
   void dispose() {
@@ -31,6 +49,7 @@ class _WorktreePickerState extends State<WorktreePicker> {
       final busy =
           state.worktreePhase == WorktreePhase.loading ||
           state.worktreePhase == WorktreePhase.creating;
+      final enabled = !busy && _sameScope(state) && state.canCreateWorktree;
       return Padding(
         padding: EdgeInsets.fromLTRB(
           16,
@@ -43,7 +62,10 @@ class _WorktreePickerState extends State<WorktreePicker> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
-              Text('Worktree', style: Theme.of(context).textTheme.titleLarge),
+              Text(
+                'Create worktree',
+                style: Theme.of(context).textTheme.titleLarge,
+              ),
               const SizedBox(height: 12),
               if (busy) const LinearProgressIndicator(),
               if (state.worktreeFailure != null)
@@ -51,50 +73,46 @@ class _WorktreePickerState extends State<WorktreePicker> {
                   padding: const EdgeInsets.symmetric(vertical: 12),
                   child: Text(state.worktreeFailure!.message),
                 ),
-              for (final worktree in state.worktrees)
-                CreationConfigurationRow(
-                  icon: Icons.account_tree_outlined,
-                  label: worktree.directory,
-                  value: worktree.branch ?? worktree.directory,
-                  onTap: busy
-                      ? null
-                      : () {
-                          widget.viewModel.selectWorktree(worktree);
-                          Navigator.of(context).pop();
-                        },
-                ),
-              if (state.canCreateWorktree) ...[
-                const SizedBox(height: 12),
-                AppTextField(
-                  controller: _name,
-                  enabled: !busy,
-                  label: 'New worktree name',
-                ),
-                const SizedBox(height: 8),
+              if (!_sameScope(state))
                 const Text(
-                  'Creates a separate folder and a new branch on your machine.',
+                  'The selected machine or folder changed. Close and reopen worktree creation.',
                 ),
-                AppButton(
-                  label: 'Create worktree',
-                  onPressed: busy
-                      ? null
-                      : () async {
-                          await widget.viewModel.createWorktree(
-                            _name.text.trim(),
-                          );
-                          if (!context.mounted) return;
-                          if (widget.viewModel.value.worktreePhase ==
-                                  WorktreePhase.ready &&
-                              widget.viewModel.value.worktreeFailure == null) {
-                            Navigator.of(context).pop();
-                          }
-                        },
-                ),
-              ],
+              const SizedBox(height: 12),
+              AppTextField(
+                controller: _name,
+                enabled: enabled,
+                label: 'New worktree name',
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Creates a separate folder and a new branch on your machine.',
+              ),
               AppButton(
-                label: 'Refresh worktrees',
-                variant: AppButtonVariant.tertiary,
-                onPressed: busy ? null : widget.viewModel.refreshWorktrees,
+                label: 'Create worktree',
+                onPressed: !enabled
+                    ? null
+                    : () async {
+                        final current = widget.viewModel.value;
+                        if (!_sameScope(current) ||
+                            !current.canCreateWorktree ||
+                            current.worktreePhase == WorktreePhase.creating) {
+                          return;
+                        }
+                        final navigator = Navigator.of(context);
+                        final route = ModalRoute.of(context);
+                        await widget.viewModel.createWorktree(
+                          _name.text.trim(),
+                        );
+                        if (!context.mounted) return;
+                        final completed = widget.viewModel.value;
+                        if (completed.profile?.id == _profileId &&
+                            completed.backend == _backend &&
+                            completed.worktreePhase == WorktreePhase.ready &&
+                            completed.worktreeFailure == null &&
+                            route?.navigator == navigator) {
+                          navigator.removeRoute(route!);
+                        }
+                      },
               ),
               AppButton(
                 label: 'Close',

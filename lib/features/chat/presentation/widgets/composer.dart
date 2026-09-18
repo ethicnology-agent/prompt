@@ -507,7 +507,7 @@ class _VoiceModeBarState extends State<_VoiceModeBar> {
                     : recording
                     ? widget.onHoldEnd == null
                           ? null
-                          : () => unawaited(widget.onHoldEnd!())
+                          : () => unawaited(_endCapture())
                     : widget.onHoldStart == null
                     ? null
                     : () => unawaited(_beginCapture()),

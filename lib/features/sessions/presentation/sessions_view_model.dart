@@ -305,16 +305,7 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
         _publishGroups([
           for (final group in groups)
             group.profile.id == profile.id
-                ? SessionCatalogGroup(
-                    profile: group.profile,
-                    sessions: group.sessions
-                        .where((item) => item.id != session.id)
-                        .toList(),
-                    projects: group.projects,
-                    activities: group.activities,
-                    unavailableDirectories: group.unavailableDirectories,
-                    failure: group.failure,
-                  )
+                ? _withoutSessionTree(group, session.id)
                 : group,
         ]);
         return null;
@@ -324,13 +315,18 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
         :final projects,
         :final unavailableDirectories,
       )) {
+        final removed = _sessionTreeIds(sessions, session.id);
         final nextActivities = Map<String, SessionActivity>.from(
           _baseActivities,
-        )..remove(session.id);
+        )..removeWhere((id, _) => removed.contains(id));
         _baseActivities = Map.unmodifiable(nextActivities);
+        _liveActivities = Map.unmodifiable({
+          for (final entry in _liveActivities.entries)
+            if (!removed.contains(entry.key)) entry.key: entry.value,
+        });
         value = SessionsReady(
           List.unmodifiable(
-            sessions.where((candidate) => candidate.id != session.id),
+            sessions.where((candidate) => !removed.contains(candidate.id)),
           ),
           projects,
           activities: _overlayActivities(_baseActivities),
@@ -339,6 +335,42 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
       }
     }
     return null;
+  }
+
+  Set<String> _sessionTreeIds(List<OpenCodeSession> sessions, String root) {
+    final children = <String, List<String>>{};
+    for (final session in sessions) {
+      if (session.parentId case final parent?) {
+        children.putIfAbsent(parent, () => []).add(session.id);
+      }
+    }
+    final removed = <String>{};
+    final pending = [root];
+    while (pending.isNotEmpty) {
+      final id = pending.removeLast();
+      if (removed.add(id)) pending.addAll(children[id] ?? const []);
+    }
+    return removed;
+  }
+
+  SessionCatalogGroup _withoutSessionTree(
+    SessionCatalogGroup group,
+    String root,
+  ) {
+    final removed = _sessionTreeIds(group.sessions, root);
+    return SessionCatalogGroup(
+      profile: group.profile,
+      sessions: group.sessions
+          .where((session) => !removed.contains(session.id))
+          .toList(),
+      projects: group.projects,
+      activities: {
+        for (final entry in group.activities.entries)
+          if (!removed.contains(entry.key)) entry.key: entry.value,
+      },
+      unavailableDirectories: group.unavailableDirectories,
+      failure: group.failure,
+    );
   }
 
   void _addSession(ServerProfile profile, OpenCodeSession session) {

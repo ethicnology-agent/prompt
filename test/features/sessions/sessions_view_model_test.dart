@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -14,12 +15,101 @@ import 'package:prompt/features/sessions/data/sessions_repository.dart';
 import 'package:prompt/features/sessions/domain/session_load_result.dart';
 import 'package:prompt/features/sessions/domain/session_activity.dart';
 import 'package:prompt/features/sessions/presentation/sessions_view_model.dart';
+import 'package:prompt/features/sessions/domain/open_code_session.dart';
+import 'package:prompt/features/sessions/domain/scoped_session.dart';
 
 void main() {
   final profile = ServerProfile(
     origin: Uri.parse('http://10.80.0.1:4096'),
     username: 'opencode',
   );
+
+  for (final scoped in [false, true]) {
+    test(
+      'delete removes descendants from the catalog in its own scope scoped=$scoped',
+      () async {
+        final records = [
+          for (final item in [
+            ('parent', null),
+            ('child', 'parent'),
+            ('grandchild', 'child'),
+            ('other', null),
+          ])
+            <String, Object?>{
+              'id': item.$1,
+              'parentID': item.$2,
+              'projectID': 'project',
+              'directory': '/srv/app',
+              'title': item.$1,
+              'time': {'created': 1000, 'updated': 1000},
+            },
+        ];
+        final client = MockClient(
+          (request) async => http.Response(
+            request.method == 'GET' && request.url.path == '/session'
+                ? jsonEncode(records)
+                : 'true',
+            200,
+          ),
+        );
+        addTearDown(client.close);
+        final model = SessionsViewModel(
+          SessionsRepository(
+            OpenCodeSessionsService(OpenCodeTransport(client)),
+            const _PasswordStore(),
+          ),
+        );
+        addTearDown(model.dispose);
+        final sessions = [
+          for (final record in records)
+            OpenCodeSession(
+              id: record['id']! as String,
+              parentId: record['parentID'] as String?,
+              projectId: 'project',
+              directory: '/srv/app',
+              title: record['title']! as String,
+              createdAt: DateTime(2026),
+              updatedAt: DateTime(2026),
+            ),
+        ];
+        final otherProfile = ServerProfile(
+          origin: Uri.parse('http://10.80.0.2:4096'),
+          username: 'opencode',
+        );
+        model.value = SessionsReady(
+          sessions,
+          const [],
+          catalogGroups: scoped
+              ? [
+                  SessionCatalogGroup(
+                    profile: profile,
+                    sessions: sessions,
+                    activities: {
+                      for (final item in sessions)
+                        item.id: SessionActivity.idle,
+                    },
+                  ),
+                  SessionCatalogGroup(
+                    profile: otherProfile,
+                    sessions: sessions,
+                  ),
+                ]
+              : null,
+        );
+        expect(await model.delete(profile, sessions.first), isNull);
+        final state = model.value as SessionsReady;
+        if (scoped) {
+          expect(state.catalogGroups!.first.sessions.map((item) => item.id), [
+            'other',
+          ]);
+          expect(state.catalogGroups!.first.activities.keys, ['other']);
+          expect(state.catalogGroups!.last.sessions, sessions);
+        } else {
+          expect(state.sessions.map((item) => item.id), ['other']);
+        }
+      },
+    );
+  }
 
   test(
     'returns a typed suggestion failure for an unavailable capability',

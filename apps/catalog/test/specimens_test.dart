@@ -171,7 +171,14 @@ void main() {
             expect(viewer.controller.debugImage, isNull);
           }
           if (specimen.name == 'Inline selection panel') {
-            await tester.ensureVisible(find.text('Focused model'));
+            await tester.scrollUntilVisible(
+              find.text('Focused model'),
+              80,
+              scrollable: find.descendant(
+                of: find.byType(InlineSelectionPanel<String>),
+                matching: find.byType(Scrollable),
+              ),
+            );
             await tester.pumpAndSettle();
             await tester.tap(find.text('Focused model'));
             await tester.pump();

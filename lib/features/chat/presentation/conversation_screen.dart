@@ -84,7 +84,7 @@ class ConversationScreen extends StatefulWidget {
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
-enum _ComposerChoice { model, agent, effort }
+enum _ComposerChoice { model, agent, effort, command }
 
 class _ConversationScreenState extends State<ConversationScreen>
     with WidgetsBindingObserver {
@@ -250,6 +250,16 @@ class _ConversationScreenState extends State<ConversationScreen>
     final text = submittedText.trim();
     final command = _selectedCommand;
     final hasAttachments = widget.viewModel.attachments.value.isNotEmpty;
+    if (command != null && hasAttachments) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'Slash commands cannot include attachments. Remove the attachments or choose Message.',
+          ),
+        ),
+      );
+      return;
+    }
     if (text.isEmpty && command == null && !hasAttachments) {
       return;
     }
@@ -334,43 +344,12 @@ class _ConversationScreenState extends State<ConversationScreen>
     );
   }
 
-  Future<void> _selectCommand(List<OpenCodeSlashCommand> commands) async {
-    final selectedName = await _showAdaptiveChoice<String>(
-      title: 'Slash command',
-      builder: (context, controller) => ListView(
-        controller: controller,
-        shrinkWrap: true,
-        children: [
-          ListTile(
-            title: const Text('Message'),
-            subtitle: const Text('Send a regular queued prompt'),
-            onTap: () => Navigator.of(context).pop(const _Selection('')),
-          ),
-          for (final command in commands)
-            ListTile(
-              title: Text('/${command.name}'),
-              subtitle: Text(command.description ?? 'Run slash command'),
-              selected: command.name == _selectedCommand?.name,
-              onTap: () => Navigator.of(context).pop(_Selection(command.name)),
-            ),
-        ],
-      ),
-    );
-    if (!mounted || selectedName == null) {
-      return;
-    }
-    setState(
-      () => _selectedCommand = selectedName.value!.isEmpty
-          ? null
-          : commands.firstWhere(
-              (command) => command.name == selectedName.value,
-            ),
-    );
-  }
+  void _selectCommand() => _toggleComposerChoice(_ComposerChoice.command);
 
   Future<void> _selectExecutionOptions(
     OpenCodeCapabilities capabilities,
   ) async {
+    final owner = (widget.profile.id, widget.session.id);
     final selected = await _showAdaptiveChoice<PromptExecutionOptions>(
       title: 'Prompt execution',
       builder: (context, controller) {
@@ -387,7 +366,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                 value: model?.name ?? 'Default',
                 onTap: () async {
                   final choice = await _chooseModel(capabilities.models, model);
-                  if (choice != null) {
+                  if (choice != null && context.mounted) {
                     setDialogState(() {
                       if (model?.providerId != choice.value?.providerId ||
                           model?.id != choice.value?.id) {
@@ -403,7 +382,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                 value: agent?.name ?? 'Default',
                 onTap: () async {
                   final choice = await _chooseAgent(capabilities.agents, agent);
-                  if (choice != null) {
+                  if (choice != null && context.mounted) {
                     setDialogState(() => agent = choice.value);
                   }
                 },
@@ -437,7 +416,9 @@ class _ConversationScreenState extends State<ConversationScreen>
         );
       },
     );
-    if (selected != null && mounted) {
+    if (selected != null &&
+        mounted &&
+        owner == (widget.profile.id, widget.session.id)) {
       _executionOptions.value = selected.value!;
       widget.viewModel.rememberExecutionOptions(
         widget.profile,
@@ -550,33 +531,36 @@ class _ConversationScreenState extends State<ConversationScreen>
     required String title,
     required T? selected,
     required List<SelectionOption<T>> options,
-    bool includeDefault = true,
   }) {
-    Widget picker(BuildContext context) => SelectionPicker<T>(
-      title: title,
-      options: options,
-      selected: selected,
-      includeDefault: includeDefault,
-      onApply: (value) => Navigator.of(context).pop(_Selection(value)),
-      onCancel: () => Navigator.of(context).pop(),
-    );
-    return showModalBottomSheet<_Selection<T>>(
+    return showDialog<_Selection<T>>(
       context: context,
-      isScrollControlled: true,
       useSafeArea: true,
-      showDragHandle: false,
-      constraints: const BoxConstraints(maxWidth: 560),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: SizedBox(
-          height:
-              (MediaQuery.sizeOf(context).height -
-                      MediaQuery.viewInsetsOf(context).bottom -
-                      MediaQuery.paddingOf(context).top)
-                  .clamp(0.0, 560.0),
-          child: picker(context),
+      builder: (context) => Dialog(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        insetPadding: const EdgeInsets.all(16),
+        child: LayoutBuilder(
+          builder: (context, constraints) => SizedBox(
+            width: 560,
+            child: InlineSelectionPanel<T?>(
+              title: title,
+              radioIndicator: true,
+              listHeight: (constraints.maxHeight - 56).clamp(0.0, 344.0),
+              selected: selected,
+              options: [
+                InlineSelectionOption<T?>(value: null, label: 'Default'),
+                for (final option in options)
+                  InlineSelectionOption<T?>(
+                    value: option.value,
+                    label: option.label,
+                    description: option.description,
+                  ),
+              ],
+              onSelected: (value) =>
+                  Navigator.of(context).pop(_Selection<T>(value)),
+              onClose: () => Navigator.of(context).pop(),
+            ),
+          ),
         ),
       ),
     );
@@ -1005,7 +989,7 @@ class _ConversationScreenState extends State<ConversationScreen>
         if (commands.isNotEmpty &&
             widget.profile.capabilities.supports(BackendFeature.commands))
           AppIconButton(
-            onPressed: () => _selectCommand(commands),
+            onPressed: _selectCommand,
             tooltip: 'Choose slash command',
             icon: Icons.code_rounded,
           ),
@@ -1347,13 +1331,17 @@ class _ConversationScreenState extends State<ConversationScreen>
         !widget.profile.capabilities.supports(BackendFeature.sessionFork)) {
       return;
     }
+    final navigator = Navigator.of(detailsContext);
+    final detailsRoute = ModalRoute.of(detailsContext);
     _forkInProgress.value = true;
     try {
       final result = await widget.viewModel.fork();
       if (!mounted || !detailsContext.mounted) return;
       switch (result) {
         case Ok(:final value):
-          Navigator.of(detailsContext).pop();
+          if (navigator.mounted && detailsRoute?.navigator == navigator) {
+            navigator.removeRoute(detailsRoute!);
+          }
           widget.onOpenFork!(value);
         case Err(:final failure):
           ScaffoldMessenger.of(
@@ -1470,7 +1458,7 @@ class _ConversationScreenState extends State<ConversationScreen>
         revision == _composerChoiceRevision &&
         _composerChoice == kind &&
         owner == (widget.profile.id, widget.session.id);
-    final height = (availableHeight * .3).clamp(48.0, 240.0);
+    final height = (availableHeight - 56).clamp(0.0, 344.0);
     return ValueListenableBuilder<CapabilitiesUiState>(
       valueListenable: viewModel,
       builder: (context, state, _) {
@@ -1480,6 +1468,42 @@ class _ConversationScreenState extends State<ConversationScreen>
         final options = _executionOptions.value;
         final key = const ValueKey('composer-inline-selection');
         switch (kind) {
+          case _ComposerChoice.command:
+            return InlineSelectionPanel<String?>(
+              key: key,
+              title: 'Slash command',
+              radioIndicator: true,
+              listHeight: height,
+              selected: _selectedCommand?.name,
+              options: [
+                const InlineSelectionOption(
+                  value: null,
+                  label: 'Message',
+                  description: 'Send a regular queued prompt',
+                ),
+                for (final command
+                    in capabilities?.commands ?? <OpenCodeSlashCommand>[])
+                  InlineSelectionOption(
+                    value: command.name,
+                    label: '/${command.name}',
+                    description: command.description ?? 'Run slash command',
+                  ),
+              ],
+              onSelected: capabilities == null
+                  ? null
+                  : (name) {
+                      if (!current()) return;
+                      final fresh = _currentCapabilities;
+                      if (fresh == null) return;
+                      final command = fresh.commands
+                          .where((command) => command.name == name)
+                          .firstOrNull;
+                      if (name != null && command == null) return;
+                      setState(() => _selectedCommand = command);
+                      _closeComposerChoice();
+                    },
+              onClose: _closeComposerChoice,
+            );
           case _ComposerChoice.model:
             return InlineSelectionPanel<(String, String)?>(
               key: key,
@@ -1564,18 +1588,20 @@ class _ConversationScreenState extends State<ConversationScreen>
     bool constrainWidth = false,
     double availableHeight = 800,
   }) => TextFieldTapRegion(
-    child: TapRegion(
-      onTapOutside: (_) => _closeComposerChoice(),
-      child: SafeArea(
-        key: const ValueKey('conversation-composer-panel'),
-        top: false,
-        child: Align(
-          alignment: Alignment.center,
-          child: ConstrainedBox(
-            key: const ValueKey('conversation-composer-content'),
-            constraints: BoxConstraints(
-              maxWidth: constrainWidth ? 960 : double.infinity,
-            ),
+    child: SafeArea(
+      key: const ValueKey('conversation-composer-panel'),
+      top: false,
+      child: Align(
+        alignment: Alignment.center,
+        child: ConstrainedBox(
+          key: const ValueKey('conversation-composer-content'),
+          constraints: BoxConstraints(
+            maxWidth: constrainWidth ? 960 : double.infinity,
+          ),
+          child: AnchoredChoiceOverlay(
+            open: _composerChoice != null,
+            onDismiss: _closeComposerChoice,
+            popupBuilder: (_, height) => _inlineComposerChoices(height),
             child: Container(
               margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
               decoration: BoxDecoration(
@@ -1588,7 +1614,6 @@ class _ConversationScreenState extends State<ConversationScreen>
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  _inlineComposerChoices(availableHeight),
                   if (!_composerOptionsReady)
                     Padding(
                       padding: const EdgeInsets.all(8),
@@ -1771,9 +1796,8 @@ class _ConversationScreenState extends State<ConversationScreen>
             body: LayoutBuilder(
               builder: (context, bodyConstraints) {
                 final compactHeight =
-                    _composerChoice != null ||
                     bodyConstraints.maxHeight <
-                        240 * MediaQuery.textScalerOf(context).scale(14) / 14;
+                    240 * MediaQuery.textScalerOf(context).scale(14) / 14;
                 Widget footer(Widget child) => Flexible(
                   flex: compactHeight ? 3 : 0,
                   fit: FlexFit.loose,

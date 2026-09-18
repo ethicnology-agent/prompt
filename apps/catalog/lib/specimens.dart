@@ -468,7 +468,12 @@ class _InlineSelectionSpecimenState extends State<_InlineSelectionSpecimen> {
           selected: _selected,
           listHeight: 220,
           options: const [
-            InlineSelectionOption(value: 'default', label: 'Engine default'),
+            InlineSelectionOption(
+              value: 'default',
+              label: 'Engine default',
+              description: 'Balanced everyday tasks',
+              groupLabel: 'Available models',
+            ),
             InlineSelectionOption(
               value: 'focused',
               label: 'Focused model',
@@ -478,6 +483,7 @@ class _InlineSelectionSpecimenState extends State<_InlineSelectionSpecimen> {
             InlineSelectionOption(
               value: 'fast',
               label: 'Fast model',
+              description: 'Quick responses for simple requests',
               groupLabel: 'Available models',
             ),
           ],

@@ -11,6 +11,8 @@ class NewSessionDock extends StatefulWidget {
     this.focusNode,
     this.configuration,
     this.actions,
+    this.composerWrapper,
+    this.onDismissChoice,
     this.expanded,
     this.enabled = true,
     this.readOnly = false,
@@ -28,6 +30,8 @@ class NewSessionDock extends StatefulWidget {
   final FocusNode? focusNode;
   final Widget? configuration;
   final Widget? actions;
+  final Widget Function(Widget composer)? composerWrapper;
+  final VoidCallback? onDismissChoice;
   final bool? expanded;
   final bool enabled;
   final bool readOnly;
@@ -102,7 +106,13 @@ class _NewSessionDockState extends State<NewSessionDock> {
       return PopScope(
         canPop: !_expanded,
         onPopInvokedWithResult: (didPop, _) {
-          if (!didPop && _expanded) _close();
+          if (!didPop && _expanded) {
+            if (widget.onDismissChoice case final dismiss?) {
+              dismiss();
+            } else {
+              _close();
+            }
+          }
         },
         child: LayoutBuilder(
           builder: (context, constraints) {
@@ -127,6 +137,7 @@ class _NewSessionDockState extends State<NewSessionDock> {
                 attachments: widget.attachments,
                 configuration: widget.configuration,
                 actions: widget.actions,
+                composerWrapper: widget.composerWrapper,
                 onSubmit: widget.onCreate,
                 onTerminal: widget.onTerminal,
                 onAttach: widget.onAttach,

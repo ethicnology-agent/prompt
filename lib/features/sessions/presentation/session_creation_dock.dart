@@ -13,7 +13,9 @@ import 'new_session_dock.dart';
 import 'session_creation_view_model.dart';
 import 'worktree_picker.dart';
 
-enum _InlineChoice { engine, model, effort }
+enum _InlineChoice { machine, project, worktree, engine, model, effort }
+
+enum _WorktreeAction { create, refresh }
 
 typedef _ModelIdentity = ({String providerId, String modelId});
 
@@ -49,10 +51,10 @@ class _SessionCreationDockState extends State<SessionCreationDock>
   bool _initialized = false;
   bool _launching = false;
   bool _showDirectory = false;
-  bool _customDirectory = false;
   _InlineChoice? _choice;
   String? _choiceProfileId;
   AgentBackend? _choiceBackend;
+  String? _choiceDirectory;
   _ModelIdentity? _effortModel;
   final _directoryController = TextEditingController();
   final _directoryFocus = FocusNode();
@@ -140,54 +142,14 @@ class _SessionCreationDockState extends State<SessionCreationDock>
     }
   }
 
-  Future<T?> _choose<T>(
-    String title,
-    List<SelectionOption<T>> options,
-    T? selected,
-  ) async {
-    widget.focusNode.unfocus();
-    return showModalBottomSheet<T>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      showDragHandle: false,
-      constraints: const BoxConstraints(maxWidth: 560),
-      builder: (context) => Padding(
-        padding: EdgeInsets.only(
-          bottom: MediaQuery.viewInsetsOf(context).bottom,
-        ),
-        child: SizedBox(
-          height:
-              (MediaQuery.sizeOf(context).height -
-                      MediaQuery.viewInsetsOf(context).bottom -
-                      MediaQuery.paddingOf(context).top)
-                  .clamp(0.0, 560.0),
-          child: SelectionPicker<T>(
-            title: title,
-            includeDefault: false,
-            options: options,
-            selected: selected,
-            onApply: (value) => Navigator.of(context).pop(value),
-            onCancel: () => Navigator.of(context).pop(),
-          ),
-        ),
-      ),
-    );
-  }
-
   void _directory(SessionCreationState state) {
     _directoryController.text = state.directory;
-    setState(() {
-      _showDirectory = true;
-      _customDirectory = false;
-      _choice = null;
-    });
+    _openChoice(_InlineChoice.project, state);
   }
 
   void _closeDirectory() {
     setState(() {
       _showDirectory = false;
-      _customDirectory = false;
     });
     widget.focusNode.requestFocus();
   }
@@ -215,98 +177,51 @@ class _SessionCreationDockState extends State<SessionCreationDock>
             ),
           ],
         ),
-        if (!_customDirectory) ...[
-          if (state.projects.isEmpty)
-            const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('No server projects reported.'),
-            )
-          else
-            SizedBox(
-              height:
-                  (state.projects.length *
-                          56.0 *
-                          MediaQuery.textScalerOf(context).scale(1))
-                      .clamp(56.0, 180.0),
-              child: ListView.builder(
-                key: const ValueKey('creation-project-choices'),
-                primary: false,
-                itemCount: state.projects.length,
-                itemBuilder: (context, index) {
-                  final project = state.projects[index];
-                  return CreationConfigurationRow(
-                    icon: project.directory == state.directory
-                        ? Icons.check
-                        : Icons.folder_outlined,
-                    label: 'Server project',
-                    value: project.directory,
-                    onTap: !enabled
+        Padding(
+          padding: const EdgeInsets.all(12),
+          child: Form(
+            key: _directoryForm,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                AppTextFormField(
+                  controller: _directoryController,
+                  focusNode: _directoryFocus,
+                  enabled: enabled,
+                  label: 'Absolute server path',
+                  validator: (value) {
+                    final path = value?.trim() ?? '';
+                    return (path.startsWith('/') ||
+                                RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path)) &&
+                            !RegExp(r'[\x00-\x1f\x7f]').hasMatch(path)
                         ? null
-                        : () {
-                            widget.viewModel.updateDirectory(project.directory);
-                            _closeDirectory();
-                          },
-                  );
-                },
-              ),
-            ),
-          AppButton(
-            label: 'Enter custom path',
-            variant: AppButtonVariant.tertiary,
-            leftAligned: true,
-            onPressed: !enabled
-                ? null
-                : () {
-                    setState(() => _customDirectory = true);
-                    _directoryFocus.requestFocus();
+                        : 'Enter an absolute path on the connected machine.';
                   },
-          ),
-        ] else
-          Padding(
-            padding: const EdgeInsets.all(12),
-            child: Form(
-              key: _directoryForm,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  AppTextFormField(
-                    controller: _directoryController,
-                    focusNode: _directoryFocus,
-                    enabled: enabled,
-                    label: 'Absolute server path',
-                    validator: (value) {
-                      final path = value?.trim() ?? '';
-                      return (path.startsWith('/') ||
-                                  RegExp(r'^[A-Za-z]:[\\/]').hasMatch(path)) &&
-                              !RegExp(r'[\x00-\x1f\x7f]').hasMatch(path)
-                          ? null
-                          : 'Enter an absolute path on the connected machine.';
-                    },
-                  ),
-                  const SizedBox(height: 8),
-                  const Text(
-                    'Folder on the connected machine, not on this phone.',
-                  ),
-                  AppButton(
-                    label: 'Use folder',
-                    onPressed: !enabled
-                        ? null
-                        : () {
-                            if (!(_directoryForm.currentState?.validate() ??
-                                false)) {
-                              return;
-                            }
-                            widget.viewModel.updateDirectory(
-                              _directoryController.text.trim(),
-                            );
-                            _closeDirectory();
-                          },
-                  ),
-                ],
-              ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Folder on the connected machine, not on this phone.',
+                ),
+                AppButton(
+                  label: 'Use folder',
+                  onPressed: !enabled
+                      ? null
+                      : () {
+                          if (!(_directoryForm.currentState?.validate() ??
+                              false)) {
+                            return;
+                          }
+                          widget.viewModel.updateDirectory(
+                            _directoryController.text.trim(),
+                          );
+                          _closeDirectory();
+                        },
+                ),
+              ],
             ),
           ),
+        ),
       ],
     );
   }
@@ -316,8 +231,8 @@ class _SessionCreationDockState extends State<SessionCreationDock>
       _choice = choice;
       _choiceProfileId = state.profile?.id;
       _choiceBackend = state.backend;
+      _choiceDirectory = state.directory;
       _showDirectory = false;
-      _customDirectory = false;
     });
     widget.focusNode.requestFocus();
   }
@@ -355,6 +270,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
     final openedProfile = _choiceProfileId;
     final openedBackend = _choiceBackend;
     final openedChoice = _choice;
+    final openedDirectory = _choiceDirectory;
     final effortIdentity = _effortModel;
     bool canApply(SessionCreationState current) =>
         _choice == openedChoice &&
@@ -362,12 +278,130 @@ class _SessionCreationDockState extends State<SessionCreationDock>
         current.backend == openedBackend &&
         _choiceIsCurrent(current);
     final enabled = _choiceIsCurrent(state);
+    if (_choice == _InlineChoice.worktree) {
+      final loading = state.worktreePhase == WorktreePhase.loading;
+      bool currentScope(SessionCreationState current) =>
+          canApply(current) && current.directory == openedDirectory;
+      return InlineSelectionPanel<Object>(
+        title: 'Worktree',
+        listHeight: listHeight,
+        options: [
+          for (final tree in state.worktrees)
+            InlineSelectionOption<Object>(
+              value: tree.directory,
+              label: tree.branch == null
+                  ? tree.directory
+                  : _branchLabel(tree.branch!),
+              description: tree.branch == null ? null : tree.directory,
+            ),
+          if (state.canCreateWorktree)
+            const InlineSelectionOption<Object>(
+              value: _WorktreeAction.create,
+              icon: Icons.add_rounded,
+              label: 'Create new worktree',
+              description: 'Choose a name for a separate folder and branch',
+            ),
+          InlineSelectionOption<Object>(
+            value: _WorktreeAction.refresh,
+            icon: Icons.refresh_rounded,
+            label: loading ? 'Loading worktrees…' : 'Refresh worktrees',
+            description:
+                state.worktreeFailure?.message ??
+                (state.worktrees.isEmpty && !loading
+                    ? 'No worktrees reported for this folder.'
+                    : null),
+          ),
+        ],
+        selected: state.directory,
+        onClose: _closeChoice,
+        onSelected: !enabled || loading || !currentScope(state)
+            ? null
+            : (choice) {
+                final current = widget.viewModel.value;
+                if (!currentScope(current) ||
+                    current.worktreePhase == WorktreePhase.loading) {
+                  return;
+                }
+                if (choice == _WorktreeAction.refresh) {
+                  unawaited(widget.viewModel.refreshWorktrees());
+                } else if (choice == _WorktreeAction.create) {
+                  if (!current.canCreateWorktree) return;
+                  _closeChoice();
+                  unawaited(_createWorktree());
+                } else {
+                  final tree = current.worktrees
+                      .where((tree) => tree.directory == choice)
+                      .firstOrNull;
+                  if (tree == null) return;
+                  widget.viewModel.selectWorktree(tree);
+                  _closeChoice();
+                }
+              },
+      );
+    }
+    if (_choice == _InlineChoice.machine) {
+      return InlineSelectionPanel<String>(
+        title: 'Machine',
+        listHeight: listHeight,
+        options: [
+          InlineSelectionOption(
+            value: widget.profile.id,
+            label: widget.profile.displayOrigin,
+            description: 'Connected private server',
+          ),
+        ],
+        selected: widget.profile.id,
+        onClose: _closeChoice,
+        onSelected: !enabled
+            ? null
+            : (_) {
+                if (canApply(widget.viewModel.value)) _closeChoice();
+              },
+      );
+    }
+    if (_choice == _InlineChoice.project) {
+      return InlineSelectionPanel<String>(
+        title: 'Project',
+        listHeight: listHeight,
+        options: [
+          for (final project in state.projects)
+            InlineSelectionOption(
+              value: project.directory,
+              label: project.directory,
+              description: 'Server project',
+            ),
+          const InlineSelectionOption(
+            value: '',
+            icon: Icons.edit_outlined,
+            label: 'Enter custom path',
+            description: 'Absolute path on the connected machine',
+          ),
+        ],
+        selected: state.directory.isEmpty ? null : state.directory,
+        onClose: _closeChoice,
+        onSelected: !enabled
+            ? null
+            : (directory) {
+                final current = widget.viewModel.value;
+                if (!canApply(current)) return;
+                if (directory.isEmpty) {
+                  setState(() {
+                    _choice = null;
+                    _showDirectory = true;
+                  });
+                  _directoryFocus.requestFocus();
+                } else if (current.projects.any(
+                  (project) => project.directory == directory,
+                )) {
+                  widget.viewModel.updateDirectory(directory);
+                  _closeChoice();
+                }
+              },
+      );
+    }
     if (_choice == _InlineChoice.engine) {
       return InlineSelectionPanel<AgentBackend>(
-        listHeight:
-            (state.backends.length *
-                    (56 * MediaQuery.textScalerOf(context).scale(14) / 14))
-                .clamp(48.0, listHeight),
+        listHeight: listHeight,
         title: 'Coding engine',
         options: [
           for (final backend in state.backends)
@@ -408,7 +442,6 @@ class _SessionCreationDockState extends State<SessionCreationDock>
             InlineSelectionOption(
               value: (providerId: model.providerId, modelId: model.id),
               label: model.name,
-              description: model.id,
               groupLabel: model.providerId,
             ),
         ],
@@ -507,9 +540,13 @@ class _SessionCreationDockState extends State<SessionCreationDock>
     );
   }
 
-  Future<void> _worktree() async {
-    widget.focusNode.unfocus();
+  void _worktree(SessionCreationState state) {
+    _openChoice(_InlineChoice.worktree, state);
     unawaited(widget.viewModel.refreshWorktrees());
+  }
+
+  Future<void> _createWorktree() async {
+    widget.focusNode.unfocus();
     await showModalBottomSheet<void>(
       context: context,
       isScrollControlled: true,
@@ -517,6 +554,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
       constraints: const BoxConstraints(maxWidth: 560),
       builder: (_) => WorktreePicker(viewModel: widget.viewModel),
     );
+    if (mounted) widget.focusNode.requestFocus();
   }
 
   void _model(SessionCreationState state) =>
@@ -545,15 +583,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
           icon: Icons.desktop_windows_outlined,
           label: 'Machine',
           value: widget.profile.displayOrigin,
-          onTap: busy
-              ? null
-              : () => _choose<ServerProfile>('Machine', [
-                  SelectionOption(
-                    value: widget.profile,
-                    label: widget.profile.displayOrigin,
-                    description: 'Connected private server',
-                  ),
-                ], widget.profile),
+          onTap: busy ? null : () => _openChoice(_InlineChoice.machine, state),
         ),
         CreationConfigurationRow(
           icon: Icons.folder_outlined,
@@ -564,8 +594,10 @@ class _SessionCreationDockState extends State<SessionCreationDock>
         CreationConfigurationRow(
           icon: Icons.account_tree_outlined,
           label: 'Worktree',
-          value: worktree?.branch ?? 'Select worktree',
-          onTap: busy || state.profile == null ? null : _worktree,
+          value: worktree?.branch == null
+              ? 'Select worktree'
+              : _branchLabel(worktree!.branch!),
+          onTap: busy || state.profile == null ? null : () => _worktree(state),
         ),
         CreationConfigurationRow(
           icon: Icons.memory_outlined,
@@ -627,19 +659,6 @@ class _SessionCreationDockState extends State<SessionCreationDock>
           state.phase == SessionCreationPhase.ready &&
           !state.queuePending &&
           state.worktreePhase != WorktreePhase.creating;
-      // Budget each optional control as its own wrapped row. This is an
-      // upper allowance, not a device-width assumption: the outer scroller
-      // remains available when large text or a tiny window cannot fit both.
-      final choiceChromeHeight =
-          (184 +
-                  (selectedModel != null &&
-                          effortChoices?.isNotEmpty == true &&
-                          MediaQuery.textScalerOf(context).scale(14) > 18
-                      ? 64
-                      : 0)) *
-              MediaQuery.textScalerOf(context).scale(14) /
-              14 +
-          (widget.viewModel.attachments.value.isNotEmpty ? 80 : 0);
       return LayoutBuilder(
         builder: (context, constraints) => NewSessionDock(
           draftController: widget.controller,
@@ -673,20 +692,15 @@ class _SessionCreationDockState extends State<SessionCreationDock>
               ? _send
               : null,
           onTerminal: null,
-          configuration: _choice != null
-              ? _choicePanel(
-                  state,
-                  constraints.hasBoundedHeight
-                      // Leave room for the picker header, configuration gap,
-                      // draft field and action row above the keyboard. Tiny
-                      // viewports retain the surrounding scroll fallback.
-                      ? (constraints.maxHeight - choiceChromeHeight).clamp(
-                          48.0,
-                          240.0,
-                        )
-                      : 240.0,
-                )
-              : _showDirectory
+          onDismissChoice: _choice == null ? null : _closeChoice,
+          composerWrapper: (composer) => AnchoredChoiceOverlay(
+            open: _choice != null,
+            onDismiss: _closeChoice,
+            popupBuilder: (_, height) =>
+                _choicePanel(state, (height - 56).clamp(0.0, 344.0)),
+            child: composer,
+          ),
+          configuration: _showDirectory
               ? _directoryPanel(state)
               : _configuration(state),
           hint: _expanded
@@ -760,3 +774,6 @@ String _engineName(AgentBackend backend) => switch (backend) {
   AgentBackend.gatewayCodex => 'Codex',
   AgentBackend.gatewayOpenCode || AgentBackend.directOpenCode => 'OpenCode',
 };
+
+String _branchLabel(String branch) =>
+    branch.startsWith('refs/heads/') ? branch.substring(11) : branch;

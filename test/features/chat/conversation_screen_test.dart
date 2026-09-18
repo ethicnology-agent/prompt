@@ -1165,12 +1165,27 @@ void main() {
       capabilities.value = choices;
       await tester.pump();
       await tester.enterText(find.byType(TextField), 'Use chosen model');
+      final composerBefore = tester.getRect(
+        find.byKey(const ValueKey('conversation-composer-content')),
+      );
       final focus = tester
           .widget<EditableText>(find.byType(EditableText))
           .focusNode;
       await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
       await tester.pumpAndSettle();
       expect(find.byType(BottomSheet), findsNothing);
+      expect(
+        tester.getRect(
+          find.byKey(const ValueKey('conversation-composer-content')),
+        ),
+        composerBefore,
+      );
+      expect(
+        tester
+            .getRect(find.byKey(const ValueKey('composer-inline-selection')))
+            .bottom,
+        lessThanOrEqualTo(composerBefore.top),
+      );
       expect(
         find.byKey(const ValueKey('composer-inline-selection')),
         findsOneWidget,
@@ -1282,7 +1297,7 @@ void main() {
   });
 
   testWidgets(
-    'inline model choices keep approval and queue reachable at height 160 and scale 2',
+    'closing floating choices restores approval and queue at height 160 and scale 2',
     (tester) async {
       await tester.binding.setSurfaceSize(const Size(390, 900));
       addTearDown(() => tester.binding.setSurfaceSize(null));
@@ -1329,6 +1344,12 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+      await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('composer-inline-selection')),
+        findsNothing,
+      );
       await tester.ensureVisible(find.text('Deny'));
       expect(find.text('Deny').hitTestable(), findsOneWidget);
       await tester.ensureVisible(find.text('Pending queued prompt'));
@@ -1506,6 +1527,47 @@ void main() {
     expect(viewModel.sendNowCallCount, 0);
     expect(tester.takeException(), isNull);
   });
+
+  testWidgets(
+    'fork completion closes its details route and preserves a newer rename dialog',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 844));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final opened = <OpenCodeSession>[];
+      viewModel.pendingFork = Completer<SessionCreateResult?>();
+      await pumpScreen(tester, onOpenFork: opened.add);
+      await tester.tap(find.byTooltip('Session details and actions'));
+      await tester.pumpAndSettle();
+      final details = tester.widget<SessionDetailsScreen>(
+        find.byType(SessionDetailsScreen),
+      );
+      details.onFork!();
+      await tester.pump();
+      details.onRename!();
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      final forked = OpenCodeSession(
+        id: 'pending-fork',
+        projectId: session.projectId,
+        directory: session.directory,
+        title: 'Forked',
+        createdAt: session.createdAt,
+        updatedAt: session.updatedAt,
+      );
+      viewModel.pendingFork!.complete(Ok(forked));
+      await tester.pumpAndSettle();
+      expect(find.byType(AlertDialog), findsOneWidget);
+      expect(
+        find.byType(SessionDetailsScreen, skipOffstage: false),
+        findsNothing,
+      );
+      expect(opened, [same(forked)]);
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(find.byType(ConversationScreen), findsOneWidget);
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   for (final failure in SessionsFailure.values) {
     testWidgets('details fork displays typed $failure and permits retry', (
@@ -2598,13 +2660,61 @@ void main() {
       greaterThanOrEqualTo(tester.getBottomLeft(find.byType(TextField)).dy),
     );
 
+    await tester.enterText(find.byType(TextField), 'lib/');
+    final composerBefore = tester.getRect(
+      find.byKey(const ValueKey('conversation-composer-content')),
+    );
+    final focus = tester
+        .widget<EditableText>(find.byType(EditableText))
+        .focusNode;
     await tester.tap(find.byTooltip('Choose slash command'));
     await tester.pumpAndSettle();
-    expect(find.byType(BottomSheet), findsOneWidget);
+    expect(find.byType(BottomSheet), findsNothing);
+    expect(find.byType(AnchoredChoiceOverlay), findsOneWidget);
+    expect(find.text('Apply'), findsNothing);
+    expect(focus.hasFocus, isTrue);
+    expect(
+      tester.getRect(
+        find.byKey(const ValueKey('conversation-composer-content')),
+      ),
+      composerBefore,
+    );
     expect(find.text('/review'), findsOneWidget);
+    await tester.tap(find.byTooltip('Close Slash command choices'));
+    await tester.pumpAndSettle();
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'lib/',
+    );
+    expect(viewModel.enqueueCommandCallCount, 0);
+    await tester.tap(find.byTooltip('Choose slash command'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('/review'));
     await tester.pumpAndSettle();
-    await tester.enterText(find.byType(TextField), 'lib/');
+    expect(focus.hasFocus, isTrue);
+    final attachment = PromptAttachment(
+      name: 'notes.txt',
+      bytes: Uint8List.fromList([1]),
+    );
+    viewModel.attachments.value = [attachment];
+    await tester.pump();
+    await tester.tap(find.byTooltip('Queue command'));
+    await tester.pump();
+    expect(viewModel.enqueueCommandCallCount, 0);
+    expect(
+      find.text(
+        'Slash commands cannot include attachments. Remove the attachments or choose Message.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.widget<TextField>(find.byType(TextField)).controller!.text,
+      'lib/',
+    );
+    expect(viewModel.attachments.value, [attachment]);
+    expect(attachment.isReleased, isFalse);
+    await tester.tap(find.byTooltip('Remove attachment'));
+    await tester.pump();
     await tester.tap(find.byTooltip('Queue command'));
     await tester.pump();
 
@@ -2616,6 +2726,100 @@ void main() {
     expect(viewModel.lastCommandOptions!.reasoningEffort, isNull);
     capabilities.dispose();
   });
+
+  testWidgets(
+    'secondary execution choices are immediate within cancellable transaction',
+    (tester) async {
+      viewModel.artifacts.value = const SessionArtifactsReady(
+        todos: [],
+        diffs: [],
+      );
+      await tester.binding.setSurfaceSize(const Size(1280, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      await pumpScreen(tester, capabilitiesViewModel: capabilities);
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'provider',
+              id: 'model',
+              name: 'Alternate model',
+              isProviderConnected: true,
+            ),
+          ],
+          agents: [
+            OpenCodeAgent(
+              name: 'Alternate agent',
+              description: '',
+              mode: OpenCodeAgentMode.primary,
+              isBuiltIn: false,
+            ),
+          ],
+          commands: [],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Keep this draft');
+      (String?, String?, String?, String?) savedOptions() {
+        final options = viewModel.executionOptionsFor(profile, session);
+        return (
+          options.modelProviderId,
+          options.modelId,
+          options.agentName,
+          options.reasoningEffort,
+        );
+      }
+
+      final before = savedOptions();
+      await tester.tap(find.widgetWithText(ListTile, 'Model').first);
+      await tester.pumpAndSettle();
+      expect(find.text('Prompt execution'), findsOneWidget);
+      await tester.tap(find.widgetWithText(ListTile, 'Model').last);
+      await tester.pumpAndSettle();
+      expect(find.byType(SelectionPicker<OpenCodeModel>), findsNothing);
+      expect(find.byTooltip('Close Model choices'), findsOneWidget);
+      expect(find.text('Apply').hitTestable(), findsNothing);
+      await tester.tap(find.text('Alternate model').last);
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Close Model choices'), findsNothing);
+      expect(savedOptions(), before);
+      await tester.tap(find.widgetWithText(ListTile, 'Agent').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Alternate agent').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(savedOptions(), before);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Keep this draft',
+      );
+      await tester.tap(find.widgetWithText(ListTile, 'Model').first);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Model').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Alternate model').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      expect(viewModel.executionOptionsFor(profile, session).modelId, 'model');
+      expect(viewModel.enqueueCallCount, 0);
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Keep this draft',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'shows a send-now control only for a prompt that is still queued',
@@ -3889,13 +4093,9 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claude Sonnet').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Apply').last);
-    await tester.pumpAndSettle();
     await tester.tap(find.text('Default').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('build').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Apply').last);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Apply'));
     await tester.pumpAndSettle();
@@ -3966,8 +4166,6 @@ void main() {
     expect(tester.takeException(), isNull);
 
     await tester.tap(find.text(longModelName));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Apply').last);
     await tester.pumpAndSettle();
     expect(find.text(longModelName), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -4054,8 +4252,6 @@ void main() {
     await tester.tap(find.text('Fable').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('GPT-5.6 Sol').last);
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Apply').last);
     await tester.pumpAndSettle();
     await tester.ensureVisible(find.text('Apply'));
     await tester.pumpAndSettle();

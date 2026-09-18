@@ -16,8 +16,181 @@ import 'package:prompt/features/queue/queue.dart';
 import 'package:prompt/features/chat/chat.dart';
 import 'package:prompt/features/sessions/sessions.dart';
 import 'package:prompt/features/sessions/presentation/session_creation_dock.dart';
+import 'package:prompt/features/sessions/presentation/worktree_picker.dart';
 
 void main() {
+  testWidgets(
+    'machine chooser applies immediately and preserves composer and draft',
+    (tester) async {
+      final fixture = _Fixture();
+      addTearDown(fixture.dispose);
+      final controller = TextEditingController(text: 'Prepared draft');
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: 393,
+                child: SessionCreationDock(
+                  profile: fixture.profile,
+                  viewModel: fixture.model,
+                  controller: controller,
+                  focusNode: focus,
+                  onLaunch: (_) {},
+                  onExpandedChanged: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      final machine = find.byWidgetPredicate(
+        (widget) =>
+            widget is CreationConfigurationRow && widget.label == 'Machine',
+      );
+      await tester.ensureVisible(machine);
+      final bounds = tester.getRect(find.byType(TextField));
+      await tester.tap(machine);
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.text('Apply'), findsNothing);
+      expect(tester.getRect(find.byType(TextField)), bounds);
+      expect(focus.hasFocus, isTrue);
+      final card = find.byType(InlineSelectionPanel<String>);
+      expect(
+        tester.widget<InlineSelectionPanel<String>>(card).selected,
+        fixture.profile.id,
+      );
+      await tester.tap(
+        find.descendant(
+          of: card,
+          matching: find.text(fixture.profile.displayOrigin),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(card, findsNothing);
+      expect(machine, findsOneWidget);
+      await tester.tap(machine);
+      await tester.pumpAndSettle();
+      await tester.binding.handlePopRoute();
+      await tester.pumpAndSettle();
+      expect(card, findsNothing);
+      expect(focus.hasFocus, isTrue);
+      expect(controller.text, 'Prepared draft');
+      expect(fixture.created, isEmpty);
+    },
+  );
+
+  testWidgets(
+    'worktree choices float and creating requires an explicit form action',
+    (tester) async {
+      final fixture = _Fixture(worktrees: true);
+      addTearDown(fixture.dispose);
+      final controller = TextEditingController(text: 'Prepared worktree draft');
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: 393,
+                child: SessionCreationDock(
+                  profile: fixture.profile,
+                  viewModel: fixture.model,
+                  controller: controller,
+                  focusNode: focus,
+                  onLaunch: (_) {},
+                  onExpandedChanged: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      final worktree = find.byWidgetPredicate(
+        (widget) =>
+            widget is CreationConfigurationRow && widget.label == 'Worktree',
+      );
+      await tester.ensureVisible(worktree);
+      final composer = tester.getRect(find.byType(TextField));
+      await tester.tap(worktree);
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.byType(WorktreePicker), findsNothing);
+      expect(tester.getRect(find.byType(TextField)), composer);
+      expect(focus.hasFocus, isTrue);
+      final selected = find.byWidgetPredicate(
+        (widget) => widget is ListTile && widget.selected,
+      );
+      expect(selected, findsOneWidget);
+      expect(
+        find.descendant(of: selected, matching: find.text('main')),
+        findsOneWidget,
+      );
+      expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
+      final card = find.byType(InlineSelectionPanel<Object>);
+      await tester.tap(find.text('Refresh worktrees'));
+      await tester.pumpAndSettle();
+      expect(fixture.worktreeLoads, 2);
+      await tester.tap(find.descendant(of: card, matching: find.text('topic')));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.directory, '/other');
+      await tester.tap(worktree);
+      await tester.pumpAndSettle();
+      final staleSelect = tester
+          .widget<InlineSelectionPanel<Object>>(card)
+          .onSelected!;
+      fixture.model.updateDirectory('/changed');
+      await tester.pumpAndSettle();
+      staleSelect('/workspace');
+      expect(fixture.model.value.directory, '/changed');
+      await tester.tap(find.byTooltip('Close Worktree choices'));
+      await tester.pumpAndSettle();
+      await tester.tap(worktree);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new worktree'));
+      await tester.pumpAndSettle();
+      expect(find.byType(WorktreePicker), findsOneWidget);
+      expect(fixture.worktreeCreates, isEmpty);
+      final create = find.widgetWithText(AppButton, 'Create worktree');
+      final staleCreate = tester.widget<AppButton>(create).onPressed!;
+      fixture.model.updateDirectory('/moved');
+      await tester.pumpAndSettle();
+      expect(tester.widget<AppButton>(create).onPressed, isNull);
+      staleCreate();
+      await tester.pumpAndSettle();
+      expect(fixture.worktreeCreates, isEmpty);
+      await tester.tap(find.text('Close'));
+      await tester.pumpAndSettle();
+      expect(focus.hasFocus, isTrue);
+      await tester.tap(worktree);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Create new worktree'));
+      await tester.pumpAndSettle();
+      await tester.enterText(
+        find.widgetWithText(TextField, 'New worktree name'),
+        'isolated',
+      );
+      await tester.tap(create);
+      await tester.pumpAndSettle();
+      expect(fixture.worktreeCreates, ['isolated']);
+      expect(fixture.model.value.directory, '/new');
+      expect(find.byType(WorktreePicker), findsNothing);
+      expect(controller.text, 'Prepared worktree draft');
+      expect(fixture.created, isEmpty);
+    },
+  );
   for (final width in [360.0, 400.0]) {
     for (final scale in [1.0, 2.0]) {
       testWidgets(
@@ -60,9 +233,7 @@ void main() {
           await tester.ensureVisible(find.text('Codex'));
           await tester.tap(find.text('Codex'));
           await tester.pumpAndSettle();
-          final available = tester.getRect(
-            find.byKey(const ValueKey('available-dock')),
-          );
+          final available = tester.getRect(find.byType(Scaffold));
           final close = find.byTooltip('Close Coding engine choices');
           expect(
             tester.getRect(close).top,
@@ -76,15 +247,26 @@ void main() {
           expect(focus.hasFocus, isTrue);
           await tester.tap(close);
           await tester.pumpAndSettle();
+          await tester.ensureVisible(find.text('Model default'));
+          await tester.pumpAndSettle();
+          final composerBefore = tester.getRect(find.byType(TextField));
+          final editableBefore = tester.state<EditableTextState>(
+            find.byType(EditableText),
+          );
           await tester.tap(find.text('Model default'));
           await tester.pumpAndSettle();
+          expect(tester.getRect(find.byType(TextField)), composerBefore);
+          expect(
+            tester.state<EditableTextState>(find.byType(EditableText)),
+            same(editableBefore),
+          );
           final modelClose = find.byTooltip('Close Model choices');
           expect(
             tester.getRect(modelClose).top,
             greaterThanOrEqualTo(available.top),
           );
           expect(modelClose.hitTestable(), findsOneWidget);
-          expect(find.text('Model').hitTestable(), findsOneWidget);
+          expect(find.text('MODEL').hitTestable(), findsOneWidget);
           expect(focus.hasFocus, isTrue);
           await tester.tap(modelClose);
           await tester.pumpAndSettle();
@@ -229,6 +411,9 @@ void main() {
         await tester.pumpAndSettle();
         expect(fixture.model.value.options.modelId, isNull);
         expect(find.byType(SessionCreationDock), findsOneWidget);
+        expect(find.byTooltip('Close Model choices'), findsNothing);
+        expect(controller.text, 'Preserve this draft');
+        expect(focus.hasFocus, isTrue);
         await tapVisible(find.text('Model default'));
         await tapVisible(find.text('Available model'));
         expect(fixture.model.value.options.modelProviderId, 'codex');
@@ -439,17 +624,28 @@ void main() {
         );
         fixture.model.updateOptions(options);
         await tester.pumpAndSettle();
+        await tester.ensureVisible(folder);
+        final composerBounds = tester.getRect(find.byType(TextField));
         await tapVisible(folder);
+        expect(tester.getRect(find.byType(TextField)), composerBounds);
         expect(find.byType(Dialog), findsNothing);
         expect(find.byType(BottomSheet), findsNothing);
         expect(find.byType(TextField), findsOneWidget);
         expect(focus.hasFocus, isTrue);
-        expect(find.text('Project'), findsOneWidget);
+        expect(find.text('PROJECT'), findsOneWidget);
         expect(find.text('~'), findsNothing);
         await tapVisible(find.text('/workspace'));
         expect(fixture.model.value.directory, '/workspace');
         expect(focus.hasFocus, isTrue);
         await tapVisible(folder);
+        expect(
+          tester
+              .widget<InlineSelectionPanel<String>>(
+                find.byType(InlineSelectionPanel<String>),
+              )
+              .selected,
+          '/workspace',
+        );
         await tapVisible(find.text('Enter custom path'));
         final custom = find.widgetWithText(
           TextFormField,
@@ -477,7 +673,7 @@ void main() {
         expect(find.byType(SessionCreationDock), findsOneWidget);
         expect(find.text('Project'), findsNothing);
         await tapVisible(folder);
-        await tapVisible(find.byTooltip('Close project choices'));
+        await tapVisible(find.byTooltip('Close Project choices'));
         expect(fixture.model.value.directory, '/chosen/project');
         expect(controller.text, 'Keep prepared draft');
         expect(fixture.model.value.options.modelId, options.modelId);
@@ -653,7 +849,7 @@ void main() {
       );
       expect(fixture.created, isEmpty);
       expect(controller.text, 'First message');
-      await tester.tap(find.text('Close'));
+      await tester.tap(find.byTooltip('Close Worktree choices'));
       await tester.pumpAndSettle();
       await tester.tap(find.byTooltip('New session from draft'));
       await tester.pumpAndSettle();
@@ -720,13 +916,14 @@ class _Picker implements AttachmentPicker {
 }
 
 class _Fixture {
-  _Fixture({AttachmentPicker? picker}) {
+  _Fixture({AttachmentPicker? picker, bool worktrees = false}) {
     client = MockClient((request) async {
       final path = request.url.path;
       Object data = [];
       if (path == '/prompt/capabilities') {
         data = {
           'protocolVersion': 1,
+          if (worktrees) 'machine': {'worktrees': true},
           'engines': {
             for (final engine in ['codex', 'claude'])
               engine: {
@@ -748,6 +945,28 @@ class _Fixture {
               },
           },
         };
+      } else if (path == '/prompt/worktrees') {
+        final records = [
+          for (final item in [('main', '/workspace'), ('topic', '/other')])
+            {
+              'branch': item.$1,
+              'directory': item.$2,
+              'detached': false,
+              'locked': false,
+            },
+        ];
+        if (request.method == 'POST') {
+          worktreeCreates.add(jsonDecode(request.body)['name'] as String);
+          data = {
+            'branch': 'new',
+            'directory': '/new',
+            'detached': false,
+            'locked': false,
+          };
+        } else {
+          worktreeLoads++;
+          data = {'canCreate': true, 'worktrees': records};
+        }
       } else if (path.endsWith('/global/health')) {
         data = <String, Object>{};
       } else if (path.endsWith('/project')) {
@@ -800,6 +1019,9 @@ class _Fixture {
     final transport = OpenCodeTransport(client);
     final credentials = _Credentials();
     model = SessionCreationViewModel(
+      worktrees: worktrees
+          ? WorktreeRepository(WorktreeService(transport), credentials)
+          : null,
       attachmentPicker: picker,
       connections: ConnectionRepository(
         OpenCodeHealthService(transport),
@@ -822,6 +1044,8 @@ class _Fixture {
     backend: AgentBackend.gatewayCodex,
   );
   final created = <String>[];
+  final worktreeCreates = <String>[];
+  int worktreeLoads = 0;
   late final http.Client client;
   late final SessionCreationViewModel model;
   void dispose() {
