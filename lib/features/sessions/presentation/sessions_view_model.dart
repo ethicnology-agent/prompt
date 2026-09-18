@@ -8,6 +8,8 @@ import '../domain/open_code_project.dart';
 import '../domain/open_code_session.dart';
 import '../domain/session_activity.dart';
 import '../domain/session_load_result.dart';
+import '../domain/scoped_session.dart';
+import '../application/load_session_catalog.dart';
 
 sealed class SessionsUiState {
   const SessionsUiState();
@@ -27,12 +29,41 @@ class SessionsReady extends SessionsUiState {
     this.projects, {
     this.activities = const <String, SessionActivity>{},
     this.unavailableDirectories = const <String>{},
+    this.catalogGroups,
   });
 
   final List<OpenCodeSession> sessions;
   final List<OpenCodeProject> projects;
   final Map<String, SessionActivity> activities;
   final Set<String> unavailableDirectories;
+  final List<SessionCatalogGroup>? catalogGroups;
+
+  List<ScopedSession> entriesFor(ServerProfile fallback) {
+    final groups = catalogGroups;
+    if (groups == null) {
+      return [
+        for (final session in sessions)
+          ScopedSession(
+            fallback,
+            session,
+            activity:
+                activities[session.id] ??
+                (unavailableDirectories.contains(session.directory)
+                    ? SessionActivity.unavailable
+                    : SessionActivity.unknown),
+          ),
+      ];
+    }
+    return [
+      for (final group in groups)
+        if (group.profile.origin == fallback.origin &&
+            group.profile.username == fallback.username)
+          ...group.entries,
+    ]..sort(
+      (left, right) =>
+          right.session.updatedAt.compareTo(left.session.updatedAt),
+    );
+  }
 }
 
 class SessionsEmpty extends SessionsUiState {
@@ -46,9 +77,13 @@ class SessionsError extends SessionsUiState {
 }
 
 class SessionsViewModel extends ValueNotifier<SessionsUiState> {
-  SessionsViewModel(this._repository) : super(const SessionsIdle());
+  SessionsViewModel(this._repository, {this._catalogLoader})
+    : super(const SessionsIdle());
 
   final SessionsRepository _repository;
+  final LoadSessionCatalog? _catalogLoader;
+  ServerProfile? _catalogSource;
+  bool _scopedCatalog = false;
   int _revision = 0;
   int _suggestionRevision = 0;
   ValueListenable<Map<String, OpenCodeSessionStatus>>? _liveStatuses;
@@ -83,6 +118,38 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
 
   Future<void> load(ServerProfile profile) async {
     final revision = ++_revision;
+    final loader = _catalogLoader;
+    _scopedCatalog = profile.backend.isGateway && loader != null;
+    if (_catalogSource?.origin != profile.origin ||
+        _catalogSource?.username != profile.username) {
+      value = const SessionsLoading();
+    }
+    _catalogSource = profile;
+    if (_scopedCatalog) {
+      final previous = value is SessionsReady
+          ? (value as SessionsReady).catalogGroups ??
+                const <SessionCatalogGroup>[]
+          : const <SessionCatalogGroup>[];
+      if (value is! SessionsReady) value = const SessionsLoading();
+      final loaded = await loader!(profile);
+      if (revision != _revision) return;
+      final groups = <SessionCatalogGroup>[
+        for (final group in loaded)
+          if (group.failure != null)
+            previous
+                    .where((old) => old.profile.id == group.profile.id)
+                    .firstOrNull
+                    ?.failed(group.failure!) ??
+                group
+          else
+            group,
+        for (final old in previous)
+          if (!loaded.any((group) => group.profile.id == old.profile.id))
+            old.failed(SessionsFailure.unavailable),
+      ];
+      _publishGroups(groups);
+      return;
+    }
     if (value is! SessionsReady) {
       value = const SessionsLoading();
     }
@@ -129,7 +196,7 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
     );
     if (revision == _revision) {
       if (result case Ok<OpenCodeSession, SessionsFailure>(:final value)) {
-        _addSession(value);
+        _addSession(profile, value);
       }
     }
     return result;
@@ -168,6 +235,13 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
   ) => Map.unmodifiable({...activities, ..._liveActivities});
 
   void _overlayCurrentState() {
+    // Coordinator statuses have no profile identity. Never apply them to an
+    // aggregated gateway catalog, even when IDs happen to be different today.
+    if (_scopedCatalog ||
+        (value is SessionsReady &&
+            (value as SessionsReady).catalogGroups != null)) {
+      return;
+    }
     if (value case SessionsReady(
       :final sessions,
       :final projects,
@@ -194,6 +268,7 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
     }
     if (revision == _revision) {
       _replaceSession(
+        profile,
         session,
         OpenCodeSession(
           id: session.id,
@@ -226,6 +301,24 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
       return failure;
     }
     if (revision == _revision) {
+      if (value case SessionsReady(catalogGroups: final groups?)) {
+        _publishGroups([
+          for (final group in groups)
+            group.profile.id == profile.id
+                ? SessionCatalogGroup(
+                    profile: group.profile,
+                    sessions: group.sessions
+                        .where((item) => item.id != session.id)
+                        .toList(),
+                    projects: group.projects,
+                    activities: group.activities,
+                    unavailableDirectories: group.unavailableDirectories,
+                    failure: group.failure,
+                  )
+                : group,
+        ]);
+        return null;
+      }
       if (value case SessionsReady(
         :final sessions,
         :final projects,
@@ -248,7 +341,8 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
     return null;
   }
 
-  void _addSession(OpenCodeSession session) {
+  void _addSession(ServerProfile profile, OpenCodeSession session) {
+    if (_mutateScoped(profile, session, add: true)) return;
     if (value case SessionsReady(
       :final sessions,
       :final projects,
@@ -267,7 +361,12 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
     }
   }
 
-  void _replaceSession(OpenCodeSession previous, OpenCodeSession replacement) {
+  void _replaceSession(
+    ServerProfile profile,
+    OpenCodeSession previous,
+    OpenCodeSession replacement,
+  ) {
+    if (_mutateScoped(profile, replacement)) return;
     if (value case SessionsReady(
       :final sessions,
       :final projects,
@@ -288,7 +387,57 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
 
   @override
   void dispose() {
+    _revision++;
+    _suggestionRevision++;
     unbindLiveStatuses();
     super.dispose();
+  }
+
+  bool _mutateScoped(
+    ServerProfile profile,
+    OpenCodeSession replacement, {
+    bool add = false,
+  }) {
+    if (value case SessionsReady(catalogGroups: final groups?)) {
+      _publishGroups([
+        for (final group in groups)
+          group.profile.id == profile.id
+              ? SessionCatalogGroup(
+                  profile: group.profile,
+                  sessions: [
+                    if (add) replacement,
+                    for (final item in group.sessions)
+                      if (item.id != replacement.id)
+                        item
+                      else if (!add)
+                        replacement,
+                  ],
+                  projects: group.projects,
+                  activities: group.activities,
+                  unavailableDirectories: group.unavailableDirectories,
+                  failure: group.failure,
+                )
+              : group,
+      ]);
+      return true;
+    }
+    return false;
+  }
+
+  void _publishGroups(List<SessionCatalogGroup> groups) {
+    final sessions = [for (final group in groups) ...group.sessions]
+      ..sort((a, b) => b.updatedAt.compareTo(a.updatedAt));
+    value = SessionsReady(
+      List.unmodifiable(sessions),
+      List.unmodifiable([
+        for (final group in groups)
+          for (final project in group.projects)
+            OpenCodeProject(
+              id: scopedProjectKey(group.profile, project.id),
+              directory: project.directory,
+            ),
+      ]),
+      catalogGroups: List.unmodifiable(groups),
+    );
   }
 }

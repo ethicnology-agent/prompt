@@ -1,5 +1,7 @@
 library;
 
+export 'domain/scoped_session.dart';
+export 'application/load_session_catalog.dart';
 export 'domain/open_code_project.dart';
 export 'domain/open_code_session.dart';
 export 'domain/session_load_result.dart';
