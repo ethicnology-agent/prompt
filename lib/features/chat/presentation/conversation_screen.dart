@@ -1728,7 +1728,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                   final control = NavigationTitleButton(
                     label: title,
                     semanticLabel: 'Open session details: $title',
-                    subtitle: isPhone ? null : directoryName(session.directory),
+                    subtitle: directoryName(session.directory),
                     onPressed: _openSessionDetails,
                   );
                   return SizedBox(

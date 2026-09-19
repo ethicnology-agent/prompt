@@ -1412,7 +1412,7 @@ void main() {
       );
       expect(
         find.descendant(of: appBar, matching: find.text('project')),
-        findsNothing,
+        findsOneWidget,
       );
       expect(
         find.descendant(of: appBar, matching: find.byType(AppIconButton)),
@@ -1454,6 +1454,13 @@ void main() {
       final original = tester
           .widget<NavigationTitleButton>(find.byType(NavigationTitleButton))
           .label;
+      expect(
+        tester
+            .widget<NavigationTitleButton>(find.byType(NavigationTitleButton))
+            .subtitle,
+        'project',
+      );
+      expect(find.text('project'), findsOneWidget);
       await tester.tap(find.byType(NavigationTitleButton));
       await tester.pumpAndSettle();
       expect(find.byType(SessionDetailsScreen), findsOneWidget);
