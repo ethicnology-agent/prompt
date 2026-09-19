@@ -20,7 +20,7 @@ class NewSessionDock extends StatefulWidget {
     this.onExpandedChanged,
     this.onChanged,
     this.onAttach,
-    this.hint = 'What would you like to do?',
+    this.hint = 'Plan, ask, build…',
     super.key,
   });
 

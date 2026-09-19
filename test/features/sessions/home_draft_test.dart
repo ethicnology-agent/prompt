@@ -648,7 +648,7 @@ void main() {
       final draft = find.byWidgetPredicate(
         (widget) =>
             widget is TextField &&
-            widget.decoration?.hintText == 'What would you like to do?',
+            widget.decoration?.hintText == 'Plan, ask, build…',
       );
       final create = find.byTooltip('New session from draft');
       const text = 'A draft kept through keyboard changes';
@@ -740,7 +740,7 @@ void main() {
     final draft = find.byWidgetPredicate(
       (widget) =>
           widget is TextField &&
-          widget.decoration?.hintText == 'What would you like to do?',
+          widget.decoration?.hintText == 'Plan, ask, build…',
     );
     await tester.enterText(draft, 'An unsent synthetic draft');
     expect(created, 0);

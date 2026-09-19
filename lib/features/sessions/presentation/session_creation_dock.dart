@@ -770,7 +770,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
               : _configuration(state),
           hint: _expanded
               ? 'Ask ${_engineName(state.backend ?? widget.profile.backend)}'
-              : 'What would you like to do?',
+              : 'Plan, ask, build…',
           actions: LayoutBuilder(
             builder: (context, constraints) {
               final choices = <Widget>[

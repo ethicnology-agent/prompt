@@ -57,7 +57,7 @@ class DraftComposerPanel extends StatelessWidget {
     this.onAttach,
     this.onTerminal,
     this.onChanged,
-    this.hint = 'What would you like to do?',
+    this.hint = 'Plan, ask, build…',
     super.key,
   });
 
