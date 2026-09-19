@@ -1002,57 +1002,62 @@ class _ConversationScreenState extends State<ConversationScreen>
       OpenCodeCapabilities? capabilities,
     }) => ComposerActionBar(
       key: const ValueKey('composer-action-toolbar'),
-      controls:
-          capabilities == null ||
-              (!capabilities.models.any((model) => model.isProviderConnected) &&
-                  !hasAgentChoices(capabilities.agents) &&
-                  capabilities.permissionModes.isEmpty)
-          ? null
-          : ValueListenableBuilder<PromptExecutionOptions>(
-              valueListenable: _executionOptions,
-              builder: (context, options, _) => Wrap(
-                spacing: 4,
-                runSpacing: 4,
-                children: [
-                  if (capabilities.permissionModes.isNotEmpty)
-                    CompactChoiceButton(
-                      key: const ValueKey('composer-permission-picker'),
-                      label: _permissionLabel(
-                        capabilities,
-                        options.permissionModeId,
-                      ),
-                      semanticLabel:
-                          'Permissions: ${_permissionLabel(capabilities, options.permissionModeId)}',
-                      onPressed: _selectComposerPermission,
-                    ),
-                  if (hasAgentChoices(capabilities.agents))
-                    CompactChoiceButton(
-                      key: const ValueKey('composer-agent-picker'),
-                      label:
-                          _selectedAgent(capabilities.agents)?.name ??
-                          options.agentName ??
-                          'Agent default',
-                      semanticLabel:
-                          'Agent: ${_selectedAgent(capabilities.agents)?.name ?? options.agentName ?? 'Agent default'}',
-                      onPressed: () => _selectComposerAgent(capabilities),
-                    ),
-                  if (capabilities.models.any(
-                    (model) => model.isProviderConnected,
-                  ))
-                    CompactChoiceButton(
-                      key: const ValueKey('composer-model-picker'),
-                      label:
-                          _selectedModel(capabilities.models)?.name ??
-                          options.modelId ??
-                          'Model default',
-                      semanticLabel:
-                          'Model: ${_selectedModel(capabilities.models)?.name ?? options.modelId ?? 'CLI / server default'}',
-                      onPressed: () => _selectComposerModel(capabilities),
-                    ),
-                  _effortControl(capabilities, options),
-                ],
+      controls: ValueListenableBuilder<PromptExecutionOptions>(
+        valueListenable: _executionOptions,
+        builder: (context, options, _) {
+          final permissionModes =
+              capabilities?.permissionModes ?? const <PermissionModeChoice>[];
+          final permissionLabel = permissionModes.isEmpty
+              ? widget.profile.backend.defaultPermissionLabel
+              : _permissionLabel(capabilities!, options.permissionModeId);
+          final hasModelChoices =
+              capabilities?.models.any((model) => model.isProviderConnected) ??
+              false;
+          final selectedModel = capabilities == null
+              ? null
+              : _selectedModel(capabilities.models);
+          return Wrap(
+            spacing: 4,
+            runSpacing: 4,
+            children: [
+              CompactChoiceButton(
+                key: const ValueKey('composer-permission-picker'),
+                label: permissionLabel,
+                semanticLabel: permissionModes.isEmpty
+                    ? 'Permissions: $permissionLabel; fixed by connected engine'
+                    : 'Permissions: $permissionLabel',
+                onPressed: permissionModes.isEmpty
+                    ? null
+                    : _selectComposerPermission,
               ),
-            ),
+              if (capabilities != null && hasAgentChoices(capabilities.agents))
+                CompactChoiceButton(
+                  key: const ValueKey('composer-agent-picker'),
+                  label:
+                      _selectedAgent(capabilities.agents)?.name ??
+                      options.agentName ??
+                      'Agent default',
+                  semanticLabel:
+                      'Agent: ${_selectedAgent(capabilities.agents)?.name ?? options.agentName ?? 'Agent default'}',
+                  onPressed: () => _selectComposerAgent(capabilities),
+                ),
+              CompactChoiceButton(
+                key: const ValueKey('composer-model-picker'),
+                label:
+                    selectedModel?.name ??
+                    options.modelId ??
+                    (hasModelChoices ? 'Model default' : 'Model'),
+                semanticLabel:
+                    'Model: ${selectedModel?.name ?? options.modelId ?? 'CLI / server default'}',
+                onPressed: capabilities != null && hasModelChoices
+                    ? () => _selectComposerModel(capabilities)
+                    : null,
+              ),
+              if (capabilities != null) _effortControl(capabilities, options),
+            ],
+          );
+        },
+      ),
       leading: [
         if (widget.profile.capabilities.supports(BackendFeature.attachments))
           AppIconButton(

@@ -880,6 +880,8 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
     final permission = capabilities?.permissionModes
         .where((mode) => mode.id == effectivePermissionId)
         .firstOrNull;
+    final permissionModes =
+        capabilities?.permissionModes ?? const <PermissionModeChoice>[];
     final defaultLabel =
         widget.profile.backend == AgentBackend.gatewayClaude ||
             widget.profile.backend == AgentBackend.gatewayCodex
@@ -888,36 +890,39 @@ class _NewSessionSheetState extends State<_NewSessionSheet> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        if (capabilities?.permissionModes.isNotEmpty == true)
-          ListTile(
-            contentPadding: EdgeInsets.zero,
-            title: const Text('Permissions'),
-            subtitle: Text(permission?.label ?? 'Selected policy unavailable'),
-            trailing: const Icon(Icons.expand_more),
-            onTap: _submitting
-                ? null
-                : () => _pick<PermissionModeChoice>(
-                    title: 'Permissions',
-                    selected: _options.permissionModeId == null
-                        ? null
-                        : permission,
-                    choices: [
-                      for (final item in capabilities!.permissionModes)
-                        SelectionOption(
-                          value: item,
-                          label: item.label,
-                          description: item.description,
-                        ),
-                    ],
-                    apply: (value) => _options = PromptExecutionOptions(
-                      modelProviderId: _options.modelProviderId,
-                      modelId: _options.modelId,
-                      agentName: _options.agentName,
-                      reasoningEffort: _options.reasoningEffort,
-                      permissionModeId: value?.id,
-                    ),
-                  ),
+        ListTile(
+          contentPadding: EdgeInsets.zero,
+          title: const Text('Permissions'),
+          subtitle: Text(
+            permission?.label ?? widget.profile.backend.defaultPermissionLabel,
           ),
+          trailing: permissionModes.isEmpty
+              ? null
+              : const Icon(Icons.expand_more),
+          onTap: _submitting || permissionModes.isEmpty
+              ? null
+              : () => _pick<PermissionModeChoice>(
+                  title: 'Permissions',
+                  selected: _options.permissionModeId == null
+                      ? null
+                      : permission,
+                  choices: [
+                    for (final item in permissionModes)
+                      SelectionOption(
+                        value: item,
+                        label: item.label,
+                        description: item.description,
+                      ),
+                  ],
+                  apply: (value) => _options = PromptExecutionOptions(
+                    modelProviderId: _options.modelProviderId,
+                    modelId: _options.modelId,
+                    agentName: _options.agentName,
+                    reasoningEffort: _options.reasoningEffort,
+                    permissionModeId: value?.id,
+                  ),
+                ),
+        ),
         ListTile(
           contentPadding: EdgeInsets.zero,
           title: const Text('Model'),

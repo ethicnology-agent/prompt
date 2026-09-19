@@ -720,6 +720,9 @@ class _SessionCreationDockState extends State<SessionCreationDock>
       final selectedPermission = permissionModes
           .where((mode) => mode.id == effectivePermissionId)
           .firstOrNull;
+      final permissionLabel =
+          selectedPermission?.label ??
+          (state.backend ?? widget.profile.backend).defaultPermissionLabel;
       final controlsEnabled =
           state.phase == SessionCreationPhase.ready &&
           !state.queuePending &&
@@ -788,16 +791,16 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                           },
                   ),
                 ],
-                if (permissionModes.isNotEmpty)
-                  CompactChoiceButton(
-                    key: const ValueKey('creation-permission-picker'),
-                    label: selectedPermission?.label ?? 'Permissions',
-                    semanticLabel:
-                        'Permissions: ${selectedPermission?.label ?? 'Unavailable policy'}',
-                    onPressed: controlsEnabled
-                        ? () => _permission(state)
-                        : null,
-                  ),
+                CompactChoiceButton(
+                  key: const ValueKey('creation-permission-picker'),
+                  label: permissionLabel,
+                  semanticLabel: permissionModes.isEmpty
+                      ? 'Permissions: $permissionLabel; fixed by connected engine'
+                      : 'Permissions: $permissionLabel',
+                  onPressed: controlsEnabled && permissionModes.isNotEmpty
+                      ? () => _permission(state)
+                      : null,
+                ),
                 CompactChoiceButton(
                   label: selectedModel?.name ?? 'Model default',
                   semanticLabel:

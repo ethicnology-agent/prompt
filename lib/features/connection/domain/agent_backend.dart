@@ -9,6 +9,14 @@ enum AgentBackend {
   final String? engine;
   bool get isGateway => engine != null;
 
+  /// Honest fallback shown while an engine has not advertised selectable
+  /// permission policies. Native CLI gateways still require explicit approval
+  /// for uncertain tool use; OpenCode keeps its own server-side default.
+  String get defaultPermissionLabel => switch (this) {
+    gatewayClaude || gatewayCodex => 'Auto',
+    directOpenCode || gatewayOpenCode => 'Default',
+  };
+
   static AgentBackend? fromStorage(String value) {
     for (final backend in values) {
       if (backend.name == value) return backend;

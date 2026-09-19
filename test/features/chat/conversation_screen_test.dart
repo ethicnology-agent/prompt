@@ -880,14 +880,20 @@ void main() {
         await tester.enterText(find.byType(TextField), 'Keep draft');
         await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
         await tester.pumpAndSettle();
-        expect(find.text('Default'), findsOneWidget);
+        final inlinePanel = find.byKey(
+          const ValueKey('composer-inline-selection'),
+        );
+        expect(
+          find.descendant(of: inlinePanel, matching: find.text('Default')),
+          findsOneWidget,
+        );
         expect(
           find.text('CLI catalog default'),
           native ? findsNothing : findsOneWidget,
         );
         expect(find.text('Real named default'), findsOneWidget);
         final panel = tester.widget<InlineSelectionPanel<(String, String)?>>(
-          find.byKey(const ValueKey('composer-inline-selection')),
+          inlinePanel,
         );
         expect(
           panel.options.any((option) => option.value == (provider, 'actual')),
@@ -905,7 +911,9 @@ void main() {
         );
         await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
         await tester.pumpAndSettle();
-        await tester.tap(find.text('Default'));
+        await tester.tap(
+          find.descendant(of: inlinePanel, matching: find.text('Default')),
+        );
         await tester.pumpAndSettle();
         final reset = viewModel.executionOptionsFor(active, session);
         expect(reset.modelId, isNull);
@@ -1252,6 +1260,36 @@ void main() {
       await tester.pumpAndSettle();
       expect(viewModel.lastPromptOptions?.permissionModeId, 'auto');
       expect(viewModel.enqueueCallCount, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'composer keeps native permission default visible without a catalog',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final native = ServerProfile(
+        origin: profile.origin,
+        username: profile.username,
+        backend: AgentBackend.gatewayCodex,
+      );
+      await pumpScreen(tester, activeProfile: native);
+      await tester.pumpAndSettle();
+      final picker = find.byKey(const ValueKey('composer-permission-picker'));
+      expect(picker, findsOneWidget);
+      final button = tester.widget<CompactChoiceButton>(picker);
+      expect(button.label, 'Auto');
+      expect(button.onPressed, isNull);
+      final modelPicker = find.byKey(const ValueKey('composer-model-picker'));
+      expect(modelPicker, findsOneWidget);
+      final modelButton = tester.widget<CompactChoiceButton>(modelPicker);
+      expect(modelButton.label, 'Model');
+      expect(modelButton.onPressed, isNull);
+      expect(
+        viewModel.executionOptionsFor(native, session).permissionModeId,
+        isNull,
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -4359,19 +4397,20 @@ void main() {
     capabilities.value = capabilityState;
     await tester.pump();
 
-    expect(find.text('Model'), findsOneWidget);
+    final modelTile = find.widgetWithText(ListTile, 'Model');
+    expect(modelTile, findsOneWidget);
     expect(find.text('Agent'), findsOneWidget);
     expect(find.text('OpenCode default'), findsNWidgets(2));
 
-    await tester.tap(find.text('Model'));
+    await tester.tap(modelTile);
     await tester.pumpAndSettle();
     expect(find.byType(AlertDialog), findsOneWidget);
     expect(tester.takeException(), isNull);
-    await tester.tap(find.text('Default').first);
+    await tester.tap(find.widgetWithText(ListTile, 'Default').first);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Claude Sonnet').last);
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Default').last);
+    await tester.tap(find.widgetWithText(ListTile, 'Default').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('build').last);
     await tester.pumpAndSettle();
@@ -4434,11 +4473,11 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.text('Session artifacts'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model').last);
+    await tester.tap(find.widgetWithText(ListTile, 'Model').last);
     await tester.pumpAndSettle();
     expect(find.byType(BottomSheet), findsNWidgets(2));
     expect(find.byType(AlertDialog), findsNothing);
-    await tester.tap(find.text('Model').last);
+    await tester.tap(find.widgetWithText(ListTile, 'Model').last);
     await tester.pumpAndSettle();
     expect(find.text(longModelName), findsOneWidget);
     expect(tester.takeException(), isNull);
@@ -4525,7 +4564,7 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Unsent first draft');
     await tester.tap(find.byTooltip('Session artifacts'));
     await tester.pumpAndSettle();
-    await tester.tap(find.text('Model'));
+    await tester.tap(find.widgetWithText(ListTile, 'Model').last);
     await tester.pumpAndSettle();
     await tester.tap(find.text('Fable').last);
     await tester.pumpAndSettle();

@@ -502,6 +502,45 @@ void main() {
   );
 
   testWidgets(
+    'creation keeps the safe native permission default visible without choices',
+    (tester) async {
+      final fixture = _Fixture();
+      addTearDown(fixture.dispose);
+      final controller = TextEditingController();
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: promptTheme(),
+          home: Scaffold(
+            body: SizedBox(
+              width: 393,
+              child: SessionCreationDock(
+                profile: fixture.profile,
+                viewModel: fixture.model,
+                controller: controller,
+                focusNode: focus,
+                onLaunch: (_) {},
+                onExpandedChanged: (_) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      final picker = find.byKey(const ValueKey('creation-permission-picker'));
+      expect(picker, findsOneWidget);
+      final button = tester.widget<CompactChoiceButton>(picker);
+      expect(button.label, 'Auto');
+      expect(button.onPressed, isNull);
+      expect(fixture.model.value.options.permissionModeId, isNull);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'obsolete inline model and effort callbacks cannot change another scope',
     (tester) async {
       final fixture = _Fixture();
