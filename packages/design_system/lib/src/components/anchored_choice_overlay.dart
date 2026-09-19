@@ -15,13 +15,19 @@ class AnchoredChoiceOverlay extends StatefulWidget {
     required this.onDismiss,
     required this.popupBuilder,
     this.maxWidth = 560,
-  }) : assert(maxWidth > 0);
+    this.maxHeight = 400,
+    this.horizontalInset = 16,
+  }) : assert(maxWidth > 0),
+       assert(maxHeight > 0),
+       assert(horizontalInset >= 0);
 
   final Widget child;
   final bool open;
   final VoidCallback onDismiss;
   final Widget Function(BuildContext context, double maxHeight) popupBuilder;
   final double maxWidth;
+  final double maxHeight;
+  final double horizontalInset;
 
   @override
   State<AnchoredChoiceOverlay> createState() => _AnchoredChoiceOverlayState();
@@ -113,8 +119,11 @@ class _AnchoredChoiceOverlayState extends State<AnchoredChoiceOverlay>
       Offset.zero & info.childSize,
     );
     final size = info.overlaySize;
-    final left = metrics.viewPadding.left + 16;
-    final right = math.max(left, size.width - metrics.viewPadding.right - 16);
+    final left = metrics.viewPadding.left + widget.horizontalInset;
+    final right = math.max(
+      left,
+      size.width - metrics.viewPadding.right - widget.horizontalInset,
+    );
     final top = metrics.viewPadding.top + 16;
     final bottom = math.max(
       top,
@@ -131,7 +140,10 @@ class _AnchoredChoiceOverlayState extends State<AnchoredChoiceOverlay>
     // When the composer leaves almost no space, use the readable viewport.
     // The popup may cover part of the composer, but never pushes its layout.
     final popupBottom = above >= 96 ? math.min(anchor.top - 8, bottom) : bottom;
-    final maxHeight = math.min(400.0, math.max(0.0, popupBottom - top));
+    final maxHeight = math.min(
+      widget.maxHeight,
+      math.max(0.0, popupBottom - top),
+    );
     final hole = Rect.fromLTRB(
       anchor.left.clamp(0.0, size.width).toDouble(),
       anchor.top.clamp(0.0, size.height).toDouble(),

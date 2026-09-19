@@ -1271,7 +1271,7 @@ void main() {
         OpenCodeCapabilities(
           models: [
             OpenCodeModel(
-              providerId: 'connected',
+              providerId: 'codex',
               id: 'chosen-id',
               name: 'Chosen model',
               isProviderConnected: true,
@@ -1321,6 +1321,7 @@ void main() {
       expect(find.widgetWithText(TextField, 'Search model'), findsNothing);
       expect(find.text('Prompt execution'), findsNothing);
       expect(find.text('Disconnected model'), findsNothing);
+      expect(find.text('OpenAI'), findsOneWidget);
       expect(focus.hasFocus, isTrue);
       await tester.tap(find.byTooltip('Close Model choices'));
       await tester.pumpAndSettle();
@@ -1332,6 +1333,13 @@ void main() {
       expect(find.text('Model default'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
       await tester.pumpAndSettle();
+      final popup = tester.getRect(
+        find.byKey(const ValueKey('composer-inline-selection')),
+      );
+      expect(popup.left, 24);
+      expect(popup.right, 296);
+      expect(popup.height, lessThanOrEqualTo(280));
+      expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
       await tester.tap(find.text('Chosen model'));
       await tester.pumpAndSettle();
       expect(
@@ -1349,7 +1357,7 @@ void main() {
       );
       await tester.tap(find.byTooltip('Queue this prompt'));
       await tester.pump();
-      expect(viewModel.lastPromptOptions?.modelProviderId, 'connected');
+      expect(viewModel.lastPromptOptions?.modelProviderId, 'codex');
       expect(viewModel.lastPromptOptions?.modelId, 'chosen-id');
       expect(viewModel.enqueueCallCount, 1);
       expect(tester.takeException(), isNull);

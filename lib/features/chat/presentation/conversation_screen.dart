@@ -637,6 +637,14 @@ class _ConversationScreenState extends State<ConversationScreen>
         (permissionModeId == null ? 'Default' : 'Unavailable');
   }
 
+  String _providerLabel(String providerId) =>
+      switch (providerId.toLowerCase()) {
+        'codex' || 'openai' => 'OpenAI',
+        'anthropic' || 'claude' => 'Anthropic',
+        'opencode' => 'OpenCode',
+        _ => providerId,
+      };
+
   void _selectComposerPermission() =>
       _toggleComposerChoice(_ComposerChoice.permission);
 
@@ -1624,7 +1632,8 @@ class _ConversationScreenState extends State<ConversationScreen>
                     InlineSelectionOption(
                       value: (model.providerId, model.id),
                       label: model.name,
-                      groupLabel: model.providerId,
+                      groupLabel: _providerLabel(model.providerId),
+                      icon: Icons.auto_awesome_outlined,
                     ),
               ],
               onSelected: capabilities == null
@@ -1706,6 +1715,8 @@ class _ConversationScreenState extends State<ConversationScreen>
             open: _composerChoice != null,
             onDismiss: _closeComposerChoice,
             popupBuilder: (_, height) => _inlineComposerChoices(height),
+            maxHeight: 280,
+            horizontalInset: 24,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [

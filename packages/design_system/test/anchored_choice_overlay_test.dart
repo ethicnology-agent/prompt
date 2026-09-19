@@ -130,6 +130,42 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  testWidgets('caller can tighten the popup bounds around its anchor', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(400, 800);
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Align(
+            alignment: Alignment.bottomCenter,
+            child: AnchoredChoiceOverlay(
+              open: true,
+              onDismiss: () {},
+              maxHeight: 280,
+              horizontalInset: 24,
+              popupBuilder: (_, maxHeight) =>
+                  const Material(key: _popupKey, child: SizedBox(height: 1000)),
+              child: const SizedBox(
+                key: _anchorKey,
+                width: double.infinity,
+                height: 120,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    final popup = tester.getRect(find.byKey(_popupKey));
+    expect(popup.height, 280);
+    expect(popup.left, 24);
+    expect(popup.right, 376);
+  });
+
   testWidgets('outside tap consumes background action and preserves focus', (
     tester,
   ) async {
