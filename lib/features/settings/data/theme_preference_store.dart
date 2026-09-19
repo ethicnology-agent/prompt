@@ -7,6 +7,10 @@ abstract interface class ThemePreferenceStore {
   Future<void> save(ThemeMode mode);
 }
 
+class ThemePreferenceSaveException implements Exception {
+  const ThemePreferenceSaveException();
+}
+
 class SharedPreferencesThemePreferenceStore implements ThemePreferenceStore {
   static const _key = 'appearance.theme_mode';
 
@@ -23,7 +27,9 @@ class SharedPreferencesThemePreferenceStore implements ThemePreferenceStore {
   @override
   Future<void> save(ThemeMode mode) async {
     final preferences = await SharedPreferences.getInstance();
-    await preferences.setString(_key, mode.name);
+    if (!await preferences.setString(_key, mode.name)) {
+      throw const ThemePreferenceSaveException();
+    }
   }
 }
 

@@ -167,55 +167,25 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
                     ),
                   ),
                   const SizedBox(height: 16),
-                  Card(
-                    child: Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            'Appearance',
-                            style: Theme.of(context).textTheme.titleMedium,
+                  SettingsGroup(
+                    title: 'PREFERENCES',
+                    children: [
+                      ListTile(
+                        leading: const Icon(Icons.contrast_rounded),
+                        title: const Text('Appearance'),
+                        subtitle: const Text(
+                          'Choose your preferred color scheme',
+                        ),
+                        trailing: const Icon(Icons.chevron_right),
+                        onTap: () => Navigator.of(context).push<void>(
+                          MaterialPageRoute<void>(
+                            builder: (_) => AppearanceScreen(
+                              themeViewModel: widget.themeViewModel,
+                            ),
                           ),
-                          const SizedBox(height: 4),
-                          const Text(
-                            'Choose how Prompt displays its interface.',
-                          ),
-                          const SizedBox(height: 12),
-                          ValueListenableBuilder<ThemeMode>(
-                            valueListenable: widget.themeViewModel,
-                            builder: (context, selected, _) =>
-                                SegmentedButton<ThemeMode>(
-                                  segments: const [
-                                    ButtonSegment(
-                                      value: ThemeMode.system,
-                                      icon: Icon(
-                                        Icons.brightness_auto_outlined,
-                                      ),
-                                      label: Text('System'),
-                                    ),
-                                    ButtonSegment(
-                                      value: ThemeMode.light,
-                                      icon: Icon(Icons.light_mode_outlined),
-                                      label: Text('Light'),
-                                    ),
-                                    ButtonSegment(
-                                      value: ThemeMode.dark,
-                                      icon: Icon(Icons.dark_mode_outlined),
-                                      label: Text('Dark'),
-                                    ),
-                                  ],
-                                  selected: {selected},
-                                  onSelectionChanged: (selection) {
-                                    widget.themeViewModel.select(
-                                      selection.single,
-                                    );
-                                  },
-                                ),
-                          ),
-                        ],
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                   switch (state) {

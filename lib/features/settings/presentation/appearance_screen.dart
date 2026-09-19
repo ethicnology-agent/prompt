@@ -53,6 +53,40 @@ class AppearanceScreen extends StatelessWidget {
               ],
             ),
           ),
+          ValueListenableBuilder<ThemeSaveState>(
+            valueListenable: themeViewModel.saveState,
+            builder: (context, state, _) => switch (state) {
+              ThemeSaveState.idle ||
+              ThemeSaveState.saved => const SizedBox.shrink(),
+              ThemeSaveState.saving => Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: Semantics(
+                  liveRegion: true,
+                  child: const Text('Saving appearance…'),
+                ),
+              ),
+              ThemeSaveState.failed => Padding(
+                padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Semantics(
+                      liveRegion: true,
+                      child: const Text(
+                        'Appearance changed for this session, but could not be saved.',
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    AppButton(
+                      label: 'Retry',
+                      variant: AppButtonVariant.secondary,
+                      onPressed: themeViewModel.retrySave,
+                    ),
+                  ],
+                ),
+              ),
+            },
+          ),
           Padding(
             padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
             child: Text(

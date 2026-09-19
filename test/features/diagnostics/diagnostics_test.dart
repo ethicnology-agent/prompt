@@ -543,6 +543,8 @@ void main() {
     );
     await tester.pumpAndSettle();
 
+    await tester.tap(find.text('Appearance'));
+    await tester.pumpAndSettle();
     await tester.tap(find.text('Dark'));
     await tester.pump();
 

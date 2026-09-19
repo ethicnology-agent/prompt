@@ -1,10 +1,64 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prompt/core/ui/ui.dart';
-import 'package:prompt/features/settings/presentation/appearance_screen.dart';
 import 'package:prompt/features/settings/settings.dart';
 
 void main() {
+  testWidgets(
+    'failed appearance save shows a safe retry and keeps the choice',
+    (tester) async {
+      final store = _FailingStore();
+      final model = ThemeViewModel(store);
+      addTearDown(model.dispose);
+      await tester.pumpWidget(
+        MaterialApp(home: AppearanceScreen(themeViewModel: model)),
+      );
+      await tester.tap(find.text('Dark'));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(model.value, ThemeMode.dark);
+      expect(
+        find.text(
+          'Appearance changed for this session, but could not be saved.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining('fixture private storage details'),
+        findsNothing,
+      );
+      await tester.tap(find.text('Retry'));
+      await tester.pumpAndSettle();
+      expect(store.saved, ThemeMode.dark);
+      expect(find.text('Retry'), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('an older failed save cannot replace a newer appearance choice', (
+    tester,
+  ) async {
+    final gate = Completer<void>();
+    final store = _FailingStore()..firstGate = gate;
+    final model = ThemeViewModel(store);
+    addTearDown(model.dispose);
+    await tester.pumpWidget(
+      MaterialApp(home: AppearanceScreen(themeViewModel: model)),
+    );
+    await tester.tap(find.text('Dark'));
+    await tester.pump();
+    await tester.tap(find.text('Light'));
+    await tester.pump();
+    gate.complete();
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(model.value, ThemeMode.light);
+    expect(store.saved, ThemeMode.light);
+    expect(find.text('Retry'), findsNothing);
+  });
+
   for (final compact in [false, true]) {
     testWidgets('appearance navigation and saved selection compact=$compact', (
       tester,
@@ -115,5 +169,24 @@ void main() {
       expect(restored.value, ThemeMode.dark);
       expect(tester.takeException(), isNull);
     });
+  }
+}
+
+class _FailingStore implements ThemePreferenceStore {
+  Completer<void>? firstGate;
+  int saves = 0;
+  ThemeMode? saved;
+
+  @override
+  Future<ThemeMode> load() async => ThemeMode.system;
+
+  @override
+  Future<void> save(ThemeMode mode) async {
+    saves++;
+    if (saves == 1) {
+      await firstGate?.future;
+      throw Exception('fixture private storage details');
+    }
+    saved = mode;
   }
 }
