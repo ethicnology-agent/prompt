@@ -293,13 +293,15 @@ class _MessageBubble extends StatelessWidget {
               BasicMarkdownText(
                 text: message.text,
                 style: theme.textTheme.bodyLarge?.copyWith(color: foreground),
-                onBlockTap: (text) {
-                  Clipboard.setData(ClipboardData(text: text));
-                  ScaffoldMessenger.of(
-                    context,
-                  ).showSnackBar(const SnackBar(content: Text('Text copied')));
-                },
               ),
+              if (!userMessage) ...[
+                const SizedBox(height: 4),
+                AppIconButton(
+                  icon: Icons.content_copy_outlined,
+                  tooltip: 'Copy response',
+                  onPressed: () => _copyResponse(context),
+                ),
+              ],
             ],
             // Once OpenCode has produced a visible response, the prompt is
             // treated and this transcript action no longer needs space.
@@ -330,6 +332,22 @@ class _MessageBubble extends StatelessWidget {
               child: content,
             ),
     );
+  }
+
+  Future<void> _copyResponse(BuildContext context) async {
+    try {
+      await Clipboard.setData(ClipboardData(text: message.text.trim()));
+    } on PlatformException {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Could not copy response')));
+      return;
+    }
+    if (!context.mounted) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(const SnackBar(content: Text('Response copied')));
   }
 }
 

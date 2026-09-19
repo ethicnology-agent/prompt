@@ -3061,28 +3061,8 @@ void main() {
       ),
     );
     expect(messageText.textSpan?.style?.color, tokens.userMessageForeground);
-    expect(messageText.onTap, isNotNull);
-    String? copiedText;
-    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-      SystemChannels.platform,
-      (call) async {
-        if (call.method == 'Clipboard.setData') {
-          copiedText =
-              (call.arguments as Map<Object?, Object?>)['text'] as String?;
-        }
-        return null;
-      },
-    );
-    addTearDown(
-      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
-        SystemChannels.platform,
-        null,
-      ),
-    );
-    await tester.tap(find.text('Hi there'));
-    await tester.pump();
-    expect(find.text('Text copied'), findsOneWidget);
-    expect(copiedText, 'Hi there');
+    expect(messageText.onTap, isNull);
+    expect(find.byTooltip('Copy response'), findsNothing);
     final revertButton = tester.widget<TextButton>(
       find.ancestor(
         of: find.byIcon(Icons.undo_rounded),
@@ -3093,6 +3073,88 @@ void main() {
       revertButton.style?.foregroundColor?.resolve({}),
       tokens.userMessageForeground,
     );
+  });
+
+  testWidgets(
+    'copies only visible assistant prose through an explicit action',
+    (tester) async {
+      viewModel.messages.value = ConversationReady([
+        ChatMessage(
+          id: 'assistant-1',
+          role: ChatMessageRole.assistant,
+          createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+          text: '  Visible **response**  ',
+          details: const [
+            ChatToolDetail(
+              id: 'tool-1',
+              tool: 'read',
+              status: 'completed',
+              output: 'Private tool output',
+            ),
+          ],
+        ),
+      ]);
+      String? copiedText;
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (call) async {
+          if (call.method == 'Clipboard.setData') {
+            copiedText =
+                (call.arguments as Map<Object?, Object?>)['text'] as String?;
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+
+      await pumpScreen(tester);
+
+      expect(copiedText, isNull);
+      expect(find.byTooltip('Copy response'), findsOneWidget);
+      await tester.tap(find.byTooltip('Copy response'));
+      await tester.pump();
+      expect(copiedText, 'Visible **response**');
+      expect(copiedText, isNot(contains('Private tool output')));
+      expect(find.text('Response copied'), findsOneWidget);
+    },
+  );
+
+  testWidgets('reports when an explicit assistant copy fails', (tester) async {
+    viewModel.messages.value = ConversationReady([
+      ChatMessage(
+        id: 'assistant-1',
+        role: ChatMessageRole.assistant,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(0),
+        text: 'Visible response',
+      ),
+    ]);
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      SystemChannels.platform,
+      (call) async {
+        if (call.method == 'Clipboard.setData') {
+          throw PlatformException(code: 'clipboard-unavailable');
+        }
+        return null;
+      },
+    );
+    addTearDown(
+      () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        null,
+      ),
+    );
+
+    await pumpScreen(tester);
+    await tester.tap(find.byTooltip('Copy response'));
+    await tester.pump();
+
+    expect(find.text('Could not copy response'), findsOneWidget);
+    expect(tester.takeException(), isNull);
   });
 
   testWidgets(
