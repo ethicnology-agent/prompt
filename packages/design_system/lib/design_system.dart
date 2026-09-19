@@ -3,6 +3,7 @@ export 'src/app_theme.dart';
 export 'src/components/app_button.dart';
 export 'src/components/app_choice_chip.dart';
 export 'src/components/app_dialog.dart';
+export 'src/components/app_segmented_control.dart';
 export 'src/components/app_status_indicator.dart';
 export 'src/components/app_text_field.dart';
 export 'src/components/anchored_choice_overlay.dart';

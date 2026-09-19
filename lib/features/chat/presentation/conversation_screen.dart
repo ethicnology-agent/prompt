@@ -1127,11 +1127,11 @@ class _ConversationScreenState extends State<ConversationScreen>
     );
   }
 
-  Widget _jumpButton() => FloatingActionButton.small(
-    heroTag: 'scroll-to-latest',
+  Widget _jumpButton() => AppIconButton(
+    variant: AppIconButtonVariant.tonal,
     onPressed: _jumpToLatest,
     tooltip: 'Scroll to latest message',
-    child: const Icon(Icons.south),
+    icon: Icons.south_rounded,
   );
 
   Widget _artifactsPanel({bool lazy = false}) {

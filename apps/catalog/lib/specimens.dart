@@ -25,6 +25,7 @@ final specimens = <Specimen>[
   Specimen('Image viewer', (_) => const _ImageViewerSpecimen()),
   Specimen('Inline selection panel', (_) => const _InlineSelectionSpecimen()),
   Specimen('Compact choice button', (_) => const _CompactChoiceSpecimen()),
+  Specimen('Segmented control', (_) => const _SegmentedControlSpecimen()),
   Specimen(
     'Choice chips',
     (_) => Wrap(
@@ -712,6 +713,30 @@ class _CompactChoiceSpecimenState extends State<_CompactChoiceSpecimen> {
           : 'Model: Default synthetic model with a very long name',
       onPressed: () => setState(() => _selected = !_selected),
     ),
+  );
+}
+
+class _SegmentedControlSpecimen extends StatefulWidget {
+  const _SegmentedControlSpecimen();
+
+  @override
+  State<_SegmentedControlSpecimen> createState() =>
+      _SegmentedControlSpecimenState();
+}
+
+class _SegmentedControlSpecimenState extends State<_SegmentedControlSpecimen> {
+  int _selected = 0;
+
+  @override
+  Widget build(BuildContext context) => AppSegmentedControl<int>(
+    segments: const [
+      AppSegment(value: 0, label: 'Overview'),
+      AppSegment(value: 1, label: 'Findings'),
+      AppSegment(value: 2, label: 'Opinions'),
+      AppSegment(value: 3, label: 'Disagreements'),
+    ],
+    selected: _selected,
+    onSelected: (value) => setState(() => _selected = value),
   );
 }
 

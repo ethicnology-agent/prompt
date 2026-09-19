@@ -547,20 +547,17 @@ class _ReviewScreenState extends State<ReviewScreen> {
         for (final pass in run.passes) _gutter(_passTile(pass)),
         const SizedBox(height: 8),
         _gutter(
-          SingleChildScrollView(
-            scrollDirection: Axis.horizontal,
-            child: SegmentedButton<int>(
-              segments: const [
-                ButtonSegment(value: 0, label: Text('Overview')),
-                ButtonSegment(value: 1, label: Text('Findings')),
-                ButtonSegment(value: 2, label: Text('Opinions')),
-                ButtonSegment(value: 3, label: Text('Disagreements')),
-                ButtonSegment(value: 4, label: Text('Metrics')),
-                ButtonSegment(value: 5, label: Text('Diff')),
-              ],
-              selected: {_tab},
-              onSelectionChanged: (v) => setState(() => _tab = v.first),
-            ),
+          AppSegmentedControl<int>(
+            segments: const [
+              AppSegment(value: 0, label: 'Overview'),
+              AppSegment(value: 1, label: 'Findings'),
+              AppSegment(value: 2, label: 'Opinions'),
+              AppSegment(value: 3, label: 'Disagreements'),
+              AppSegment(value: 4, label: 'Metrics'),
+              AppSegment(value: 5, label: 'Diff'),
+            ],
+            selected: _tab,
+            onSelected: (value) => setState(() => _tab = value),
           ),
         ),
         const SizedBox(height: 16),
