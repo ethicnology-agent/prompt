@@ -435,11 +435,6 @@ class _SessionCreationDockState extends State<SessionCreationDock>
         listHeight: listHeight,
         title: 'Permissions',
         options: [
-          InlineSelectionOption(
-            value: null,
-            label:
-                'Default (${modes.where((mode) => mode.id == state.capabilities?.defaultPermissionModeId).firstOrNull?.label ?? 'engine policy'})',
-          ),
           for (final mode in modes)
             InlineSelectionOption(
               value: mode.id,
@@ -447,7 +442,9 @@ class _SessionCreationDockState extends State<SessionCreationDock>
               description: mode.description,
             ),
         ],
-        selected: state.options.permissionModeId,
+        selected:
+            state.options.permissionModeId ??
+            state.capabilities?.defaultPermissionModeId,
         onClose: _closeChoice,
         onSelected: !enabled || modes.isEmpty
             ? null
@@ -487,10 +484,6 @@ class _SessionCreationDockState extends State<SessionCreationDock>
         listHeight: listHeight,
         title: 'Model',
         options: [
-          const InlineSelectionOption(
-            value: null,
-            label: 'CLI / server default',
-          ),
           for (final model in models)
             InlineSelectionOption(
               value: (providerId: model.providerId, modelId: model.id),
@@ -548,7 +541,6 @@ class _SessionCreationDockState extends State<SessionCreationDock>
       listHeight: listHeight,
       title: 'Reasoning effort',
       options: [
-        const InlineSelectionOption(value: null, label: 'Engine default'),
         for (final choice in choices)
           InlineSelectionOption(
             value: choice.id,
@@ -802,9 +794,9 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                       : null,
                 ),
                 CompactChoiceButton(
-                  label: selectedModel?.name ?? 'Model default',
+                  label: selectedModel?.name ?? 'Select model',
                   semanticLabel:
-                      'Model: ${selectedModel?.name ?? 'CLI / server default'}',
+                      'Model: ${selectedModel?.name ?? 'Select model'}',
                   onPressed: controlsEnabled && state.capabilities != null
                       ? () => _model(state)
                       : null,
@@ -819,10 +811,10 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                       label:
                           selectedEffort?.label ??
                           (state.options.reasoningEffort == null
-                              ? 'Default'
+                              ? 'Select effort'
                               : 'Unavailable effort'),
                       semanticLabel:
-                          'Reasoning effort: ${selectedEffort?.label ?? (state.options.reasoningEffort == null ? 'Engine default' : 'Unavailable effort')}',
+                          'Reasoning effort: ${selectedEffort?.label ?? (state.options.reasoningEffort == null ? 'Select effort' : 'Unavailable effort')}',
                       onPressed: controlsEnabled
                           ? () => _effort(state, selectedModel)
                           : null,

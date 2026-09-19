@@ -885,7 +885,7 @@ void main() {
         );
         expect(
           find.descendant(of: inlinePanel, matching: find.text('Default')),
-          findsOneWidget,
+          findsNothing,
         );
         expect(
           find.text('CLI catalog default'),
@@ -895,6 +895,8 @@ void main() {
         final panel = tester.widget<InlineSelectionPanel<(String, String)?>>(
           inlinePanel,
         );
+        expect(panel.options.every((option) => option.icon == null), isTrue);
+        expect(find.byIcon(Icons.radio_button_checked), findsOneWidget);
         expect(
           panel.options.any((option) => option.value == (provider, 'actual')),
           isTrue,
@@ -912,12 +914,15 @@ void main() {
         await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
         await tester.pumpAndSettle();
         await tester.tap(
-          find.descendant(of: inlinePanel, matching: find.text('Default')),
+          find.descendant(
+            of: inlinePanel,
+            matching: find.text('Real named default'),
+          ),
         );
         await tester.pumpAndSettle();
         final reset = viewModel.executionOptionsFor(active, session);
-        expect(reset.modelId, isNull);
-        expect(reset.modelProviderId, isNull);
+        expect(reset.modelId, 'default');
+        expect(reset.modelProviderId, 'another-provider');
         expect(reset.reasoningEffort, isNull);
         expect(reset.agentName, 'coding');
         expect(
@@ -1126,7 +1131,7 @@ void main() {
         'dynamic-high',
       );
       expect(find.text('Default'), findsNothing);
-      expect(find.text('Engine default'), findsOneWidget);
+      expect(find.text('Engine default'), findsNothing);
       expect(find.text('Low'), findsOneWidget);
       expect(find.text('Real model choice'), findsNothing);
       await tester.tap(find.byTooltip('Close Reasoning effort choices'));
@@ -1137,11 +1142,11 @@ void main() {
       );
       await tester.tap(effortButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Engine default'));
+      await tester.tap(find.text('Low'));
       await tester.pumpAndSettle();
       expect(
         viewModel.executionOptionsFor(native, session).reasoningEffort,
-        isNull,
+        'low',
       );
       await tester.tap(effortButton);
       await tester.pumpAndSettle();
@@ -1240,6 +1245,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(BottomSheet), findsNothing);
       expect(find.text('PERMISSIONS'), findsOneWidget);
+      final permissionPanel = tester.widget<InlineSelectionPanel<String?>>(
+        find.byType(InlineSelectionPanel<String?>),
+      );
+      expect(
+        permissionPanel.options.every((option) => option.value != null),
+        isTrue,
+      );
+      expect(
+        permissionPanel.selected,
+        ready.capabilities.defaultPermissionModeId,
+      );
       expect(
         find.text('Sandboxed workspace access that can escalate'),
         findsOneWidget,
@@ -1366,12 +1382,12 @@ void main() {
       expect(focus.hasFocus, isTrue);
       await tester.tap(find.byTooltip('Close Model choices'));
       await tester.pumpAndSettle();
-      expect(find.text('Model default'), findsOneWidget);
+      expect(find.text('Select model'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
       await tester.pumpAndSettle();
       await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
       await tester.pumpAndSettle();
-      expect(find.text('Model default'), findsOneWidget);
+      expect(find.text('Select model'), findsOneWidget);
       await tester.tap(find.byKey(const ValueKey('composer-model-picker')));
       await tester.pumpAndSettle();
       final popup = tester.getRect(
@@ -1380,7 +1396,7 @@ void main() {
       expect(popup.left, 24);
       expect(popup.right, 296);
       expect(popup.height, lessThanOrEqualTo(280));
-      expect(find.byIcon(Icons.auto_awesome_outlined), findsOneWidget);
+      expect(find.byIcon(Icons.radio_button_unchecked), findsOneWidget);
       await tester.tap(find.text('Chosen model'));
       await tester.pumpAndSettle();
       expect(
@@ -1441,7 +1457,8 @@ void main() {
       find.byKey(const ValueKey('composer-inline-selection')),
     );
     expect(panel.radioIndicator, isTrue);
-    expect(panel.options, hasLength(101));
+    expect(panel.options, hasLength(100));
+    expect(panel.options.every((option) => option.value != null), isTrue);
     expect(find.text('Model 99'), findsNothing);
     final scrollable = find.descendant(
       of: find.byKey(const ValueKey('inline-selection-Model')),
@@ -4425,15 +4442,25 @@ void main() {
       expect(saved.modelId, 'reasoner');
       expect(saved.reasoningEffort, 'high');
 
-      // Returning to the CLI's default removes the model-specific effort only
-      // when the transaction is applied; cancellation keeps both saved values.
+      // Explicit choices replace reset entries; cancellation keeps saved values.
       await tester.tap(find.widgetWithText(ListTile, 'Model').last);
       await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ListTile, 'Model').last);
       await tester.pumpAndSettle();
-      await tester.tap(find.text('CLI default').last);
+      expect(
+        find.descendant(
+          of: find.byType(InlineSelectionDialog<OpenCodeModel?>),
+          matching: find.text('CLI default'),
+        ),
+        findsNothing,
+      );
+      await tester.tap(find.text('Reasoning model').last);
       await tester.pumpAndSettle();
-      expect(find.widgetWithText(ListTile, 'Effort'), findsNothing);
+      await tester.tap(find.widgetWithText(ListTile, 'Effort').last);
+      await tester.pumpAndSettle();
+      expect(find.text('Default'), findsNothing);
+      await tester.tap(find.text('Low'));
+      await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Cancel'));
       await tester.tap(find.text('Cancel'));
       await tester.pumpAndSettle();

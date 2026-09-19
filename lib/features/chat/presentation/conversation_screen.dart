@@ -370,7 +370,12 @@ class _ConversationScreenState extends State<ConversationScreen>
                   value: _permissionLabel(capabilities, permissionModeId),
                   onTap: () async {
                     final selected = capabilities.permissionModes
-                        .where((mode) => mode.id == permissionModeId)
+                        .where(
+                          (mode) =>
+                              mode.id ==
+                              (permissionModeId ??
+                                  capabilities.defaultPermissionModeId),
+                        )
                         .firstOrNull;
                     final choice = await _showSelectionPicker(
                       title: 'Permissions',
@@ -595,7 +600,6 @@ class _ConversationScreenState extends State<ConversationScreen>
     OpenCodeModel? selected,
   ) => _showSelectionPicker<OpenCodeModel>(
     title: 'Model',
-    defaultLabel: _executionDefaultLabel,
     selected: selected,
     options: [
       for (final candidate in models.where(
@@ -619,7 +623,6 @@ class _ConversationScreenState extends State<ConversationScreen>
     OpenCodeAgent? selected,
   ) => _showSelectionPicker<OpenCodeAgent>(
     title: 'Agent',
-    defaultLabel: _executionDefaultLabel,
     selected: selected,
     options: [
       for (final candidate in agents)
@@ -631,7 +634,6 @@ class _ConversationScreenState extends State<ConversationScreen>
     required String title,
     required T? selected,
     required List<SelectionOption<T>> options,
-    String defaultLabel = 'Default',
   }) {
     return showDialog<_Selection<T>>(
       context: context,
@@ -641,7 +643,6 @@ class _ConversationScreenState extends State<ConversationScreen>
         radioIndicator: true,
         selected: selected,
         options: [
-          InlineSelectionOption<T?>(value: null, label: defaultLabel),
           for (final option in options)
             InlineSelectionOption<T?>(
               value: option.value,
@@ -797,7 +798,7 @@ class _ConversationScreenState extends State<ConversationScreen>
     final label =
         (selected == null ? null : _effortLabel(selected)) ??
         (options.reasoningEffort == null
-            ? 'Effort default'
+            ? 'Select effort'
             : 'Unavailable effort');
     return CompactChoiceButton(
       key: const ValueKey('composer-effort-picker'),
@@ -1115,9 +1116,9 @@ class _ConversationScreenState extends State<ConversationScreen>
                 label:
                     selectedModel?.name ??
                     options.modelId ??
-                    (hasModelChoices ? 'Model default' : 'Model'),
+                    (hasModelChoices ? 'Select model' : 'Model'),
                 semanticLabel:
-                    'Model: ${selectedModel?.name ?? options.modelId ?? 'CLI / server default'}',
+                    'Model: ${selectedModel?.name ?? options.modelId ?? 'Select model'}',
                 onPressed: capabilities != null && hasModelChoices
                     ? () => _selectComposerModel(capabilities)
                     : null,
@@ -1674,20 +1675,15 @@ class _ConversationScreenState extends State<ConversationScreen>
               onClose: _closeComposerChoice,
             );
           case _ComposerChoice.permission:
-            final defaultLabel = capabilities == null
-                ? 'Default'
-                : _permissionLabel(capabilities, null);
             return InlineSelectionPanel<String?>(
               key: key,
               title: 'Permissions',
               radioIndicator: true,
               listHeight: height,
-              selected: options.permissionModeId,
+              selected:
+                  options.permissionModeId ??
+                  capabilities?.defaultPermissionModeId,
               options: [
-                InlineSelectionOption(
-                  value: null,
-                  label: 'Default ($defaultLabel)',
-                ),
                 for (final mode
                     in capabilities?.permissionModes ??
                         <PermissionModeChoice>[])
@@ -1715,14 +1711,12 @@ class _ConversationScreenState extends State<ConversationScreen>
                   ? null
                   : (options.modelProviderId ?? '', options.modelId!),
               options: [
-                const InlineSelectionOption(value: null, label: 'Default'),
                 for (final model in capabilities?.models ?? <OpenCodeModel>[])
                   if (_selectableModel(model))
                     InlineSelectionOption(
                       value: (model.providerId, model.id),
                       label: model.name,
                       groupLabel: _providerLabel(model.providerId),
-                      icon: Icons.auto_awesome_outlined,
                     ),
               ],
               onSelected: capabilities == null
@@ -1740,7 +1734,6 @@ class _ConversationScreenState extends State<ConversationScreen>
               listHeight: height,
               selected: options.agentName,
               options: [
-                const InlineSelectionOption(value: null, label: 'Default'),
                 for (final agent in capabilities?.agents ?? <OpenCodeAgent>[])
                   InlineSelectionOption(value: agent.name, label: agent.name),
               ],
@@ -1761,10 +1754,6 @@ class _ConversationScreenState extends State<ConversationScreen>
               listHeight: height,
               selected: options.reasoningEffort,
               options: [
-                const InlineSelectionOption(
-                  value: null,
-                  label: 'Engine default',
-                ),
                 for (final choice in choices)
                   InlineSelectionOption(
                     value: choice.id,

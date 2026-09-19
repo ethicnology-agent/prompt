@@ -247,13 +247,13 @@ void main() {
           expect(focus.hasFocus, isTrue);
           await tester.tap(close);
           await tester.pumpAndSettle();
-          await tester.ensureVisible(find.text('Model default'));
+          await tester.ensureVisible(find.text('Select model'));
           await tester.pumpAndSettle();
           final composerBefore = tester.getRect(find.byType(TextField));
           final editableBefore = tester.state<EditableTextState>(
             find.byType(EditableText),
           );
-          await tester.tap(find.text('Model default'));
+          await tester.tap(find.text('Select model'));
           await tester.pumpAndSettle();
           expect(tester.getRect(find.byType(TextField)), composerBefore);
           expect(
@@ -306,7 +306,7 @@ void main() {
           if (scale == 1) {
             expect(
               tester.getCenter(find.text('Available model')).dy,
-              tester.getCenter(find.text('Default')).dy,
+              tester.getCenter(find.text('Select effort')).dy,
             );
           }
           expect(controller.text, 'Preserve draft');
@@ -393,7 +393,7 @@ void main() {
         final editingState = tester.state<EditableTextState>(
           find.byType(EditableText),
         );
-        await tapVisible(find.text('Model default'));
+        await tapVisible(find.text('Select model'));
         expect(find.byType(BottomSheet), findsNothing);
         expect(find.byType(Dialog), findsNothing);
         expect(find.text('Apply'), findsNothing);
@@ -414,7 +414,7 @@ void main() {
         expect(find.byTooltip('Close Model choices'), findsNothing);
         expect(controller.text, 'Preserve this draft');
         expect(focus.hasFocus, isTrue);
-        await tapVisible(find.text('Model default'));
+        await tapVisible(find.text('Select model'));
         await tapVisible(find.text('Available model'));
         expect(fixture.model.value.options.modelProviderId, 'codex');
         expect(fixture.model.value.options.modelId, 'actual');
@@ -485,6 +485,17 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.byType(BottomSheet), findsNothing);
       expect(find.text('PERMISSIONS'), findsOneWidget);
+      final permissionPanel = tester.widget<InlineSelectionPanel<String?>>(
+        find.byType(InlineSelectionPanel<String?>),
+      );
+      expect(
+        permissionPanel.options.every((option) => option.value != null),
+        isTrue,
+      );
+      expect(
+        permissionPanel.selected,
+        fixture.model.value.capabilities!.defaultPermissionModeId,
+      );
       expect(
         find.text('Read-only without approval escalation'),
         findsOneWidget,
@@ -618,7 +629,7 @@ void main() {
       );
       await tester.tap(find.byType(TextField));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Model default'));
+      await tester.tap(find.text('Select model'));
       await tester.pumpAndSettle();
       final staleModel = tester
           .widget<InlineSelectionPanel<({String providerId, String modelId})?>>(
@@ -633,7 +644,7 @@ void main() {
       expect(fixture.model.value.options.modelId, isNull);
       await tester.tap(find.byTooltip('Close Model choices'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Model default'));
+      await tester.tap(find.text('Select model'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Available model'));
       await tester.pumpAndSettle();
@@ -870,11 +881,11 @@ void main() {
         find.byKey(const ValueKey('creation-reasoning-effort')),
         findsNothing,
       );
-      await tester.tap(find.text('Model default'));
+      await tester.tap(find.text('Select model'));
       await tester.pumpAndSettle();
       expect(find.text('Default'), findsNothing);
       expect(find.text('CLI default'), findsNothing);
-      expect(find.text('CLI / server default'), findsOneWidget);
+      expect(find.text('CLI / server default'), findsNothing);
       await tester.tap(find.text('Available model'));
       await tester.pumpAndSettle();
       expect(
@@ -903,12 +914,18 @@ void main() {
       expect(fixture.model.value.options.reasoningEffort, 'focused-custom');
       await tester.tap(find.byKey(const ValueKey('creation-reasoning-effort')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Engine default'));
+      expect(find.text('Engine default'), findsNothing);
+      await tester.tap(find.byTooltip('Close Reasoning effort choices'));
       await tester.pumpAndSettle();
-      expect(fixture.model.value.options.reasoningEffort, isNull);
+      expect(fixture.model.value.options.reasoningEffort, 'focused-custom');
       await tester.tap(find.byKey(const ValueKey('creation-reasoning-effort')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Focused thinking'));
+      await tester.tap(
+        find.descendant(
+          of: find.byType(InlineSelectionPanel<String?>),
+          matching: find.text('Focused thinking'),
+        ),
+      );
       await tester.pumpAndSettle();
       await tester.tap(find.text('Available model'));
       await tester.pumpAndSettle();
@@ -971,7 +988,7 @@ void main() {
       expect(controller.text, 'First message');
       expect(fixture.model.value.profile?.backend, AgentBackend.gatewayClaude);
       expect(find.text('Claude Code'), findsOneWidget);
-      await tester.tap(find.text('Model default'));
+      await tester.tap(find.text('Select model'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('Available model'));
       await tester.pumpAndSettle();
