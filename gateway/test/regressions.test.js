@@ -1,9 +1,36 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { PassThrough } from 'node:stream';
 import { createGateway } from '../src/server.js';
 import { CodexAdapter } from '../src/adapters.js';
 import { JsonProcess } from '../src/process.js';
+
+test('invalid JSON envelopes close only their transport and reject pending work safely', async () => {
+  for (const value of [null, [], true, 42, 'invalid envelope']) {
+    const child = new EventEmitter();
+    child.stdin = new PassThrough();
+    child.stdout = new PassThrough();
+    child.connected = true;
+    let stops = 0;
+    child.send = (_, callback) => { stops++; callback?.(); };
+    const rpc = new JsonProcess('fixture', [], '/fixture', () => child);
+    let messages = 0;
+    rpc.on('message', () => { messages++; });
+    const pending = assert.rejects(rpc.request('fixture', {}),
+      (error) => error.code === 'agent_disconnected');
+    try {
+      assert.doesNotThrow(() => child.stdout.emit('data', `${JSON.stringify(value)}\n`));
+      assert.equal(rpc.closed, true);
+      assert.equal(messages, 0);
+      assert.equal(stops, 1);
+    } finally {
+      rpc.close();
+      await pending;
+      child.stdin.destroy(); child.stdout.destroy();
+    }
+  }
+});
 
 test('actual cross-origin responses expose the history cursor', async (t) => {
   const token = 'a-safe-fixture-token-of-32-characters';

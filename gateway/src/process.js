@@ -33,6 +33,9 @@ export class JsonProcess extends EventEmitter {
         if (!line.trim()) continue;
         let value;
         try { value = JSON.parse(line); } catch { this.close(); return; }
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          this.close(); return;
+        }
         if (value.id !== undefined && !value.method) {
           const pending = this.pending.get(value.id);
           if (!pending) continue;
