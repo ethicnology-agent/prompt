@@ -857,7 +857,11 @@ void main() {
 
     expect(find.text(profile.displayOrigin), findsOneWidget);
     expect(find.byTooltip('More actions'), findsOneWidget);
-    final menu = find.byTooltip('More actions');
+    final menuButton = find.descendant(
+      of: find.byWidgetPredicate((widget) => widget is AppMenuButton),
+      matching: find.byWidgetPredicate((widget) => widget is PopupMenuButton),
+    );
+    expect(menuButton, findsOneWidget);
     for (final label in [
       'Browse workspace',
       'Remote terminal',
@@ -865,9 +869,15 @@ void main() {
       'Voice settings',
       'Disconnect',
     ]) {
-      await tester.tap(menu);
+      await tester.tap(menuButton);
       await tester.pumpAndSettle();
-      await tester.tap(find.text(label));
+      final option = find.ancestor(
+        of: find.text(label),
+        matching: find.byWidgetPredicate((widget) => widget is PopupMenuItem),
+      );
+      expect(option, findsOneWidget);
+      expect((tester.widget(option) as dynamic).enabled, isTrue);
+      await tester.tap(option);
       await tester.pumpAndSettle();
     }
     expect(workspaces, 1);
@@ -972,14 +982,7 @@ void main() {
 
     await tester.tap(find.byTooltip('More actions'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.ancestor(
-        of: find.text('Filter sessions'),
-        matching: find.byWidgetPredicate(
-          (widget) => widget is CheckedPopupMenuItem,
-        ),
-      ),
-    );
+    await tester.tap(find.text('Filter sessions'));
     await tester.pumpAndSettle();
     await tester.enterText(find.byType(TextField).first, 'child-session');
     await tester.pump();
@@ -1057,14 +1060,7 @@ void main() {
 
     await tester.tap(find.byTooltip('More actions'));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.ancestor(
-        of: find.text('Filter sessions'),
-        matching: find.byWidgetPredicate(
-          (widget) => widget is CheckedPopupMenuItem,
-        ),
-      ),
-    );
+    await tester.tap(find.text('Filter sessions'));
     await tester.pumpAndSettle();
     final chips = find.byType(ChoiceChip);
     expect(chips, findsNWidgets(2));

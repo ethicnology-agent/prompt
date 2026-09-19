@@ -81,14 +81,7 @@ void main() {
           } else {
             await tester.tap(find.byTooltip('More actions'));
             await tester.pumpAndSettle();
-            await tester.tap(
-              find.ancestor(
-                of: find.text('Filter sessions'),
-                matching: find.byWidgetPredicate(
-                  (widget) => widget is CheckedPopupMenuItem,
-                ),
-              ),
-            );
+            await tester.tap(find.text('Filter sessions'));
           }
           await tester.pumpAndSettle();
           final field = find.byWidgetPredicate((widget) {

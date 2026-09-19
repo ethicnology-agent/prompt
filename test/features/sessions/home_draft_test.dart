@@ -128,9 +128,7 @@ void main() {
       // A project filter may select a different legitimate root of this engine.
       await tester.tap(find.byTooltip('More actions'));
       await tester.pumpAndSettle();
-      await tester.tap(
-        find.byWidgetPredicate((widget) => widget is CheckedPopupMenuItem),
-      );
+      await tester.tap(find.text('Filter sessions'));
       await tester.pumpAndSettle();
       final chips = tester.widgetList<ChoiceChip>(find.byType(ChoiceChip));
       final b = chips

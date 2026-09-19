@@ -363,8 +363,8 @@ class _SessionsScreenState extends State<SessionsScreen> {
     }
   }
 
-  PopupMenuButton<_CatalogAction> _buildCatalogMenu({bool brand = false}) {
-    return PopupMenuButton<_CatalogAction>(
+  AppMenuButton<_CatalogAction> _buildCatalogMenu({bool brand = false}) {
+    return AppMenuButton<_CatalogAction>(
       tooltip: 'More actions',
       icon: brand
           ? Semantics(
@@ -373,59 +373,47 @@ class _SessionsScreenState extends State<SessionsScreen> {
             )
           : null,
       onSelected: _onCatalogAction,
-      itemBuilder: (context) => [
-        CheckedPopupMenuItem(
+      optionsBuilder: (_) => [
+        AppMenuOption(
           value: _CatalogAction.filters,
-          checked: _showFilters,
-          child: const Text('Filter sessions'),
+          label: 'Filter sessions',
+          selected: _showFilters,
         ),
         if (widget.onOpenSettings != null)
-          const PopupMenuItem(
+          const AppMenuOption(
             value: _CatalogAction.settings,
-            child: ListTile(
-              leading: Icon(Icons.settings_outlined),
-              title: Text('Settings'),
-            ),
+            label: 'Settings',
+            icon: Icons.settings_outlined,
           ),
         if (widget.profile.capabilities.supports(BackendFeature.workspace))
-          PopupMenuItem(
+          AppMenuOption(
             value: _CatalogAction.workspace,
+            label: 'Browse workspace',
+            icon: Icons.folder_open_outlined,
             enabled: widget.viewModel.value is SessionsReady,
-            child: const ListTile(
-              leading: Icon(Icons.folder_open_outlined),
-              title: Text('Browse workspace'),
-            ),
           ),
         if (widget.profile.capabilities.supports(BackendFeature.terminal))
-          const PopupMenuItem(
+          const AppMenuOption(
             value: _CatalogAction.terminal,
-            child: ListTile(
-              leading: Icon(Icons.terminal_outlined),
-              title: Text('Remote terminal'),
-            ),
+            label: 'Remote terminal',
+            icon: Icons.terminal_outlined,
           ),
         if (widget.profile.capabilities.supports(BackendFeature.configuration))
-          const PopupMenuItem(
+          const AppMenuOption(
             value: _CatalogAction.diagnostics,
-            child: ListTile(
-              leading: Icon(Icons.settings_outlined),
-              title: Text('Server settings'),
-            ),
+            label: 'Server settings',
+            icon: Icons.settings_outlined,
           ),
-        const PopupMenuItem(
+        const AppMenuOption(
           value: _CatalogAction.voiceSettings,
-          child: ListTile(
-            leading: Icon(Icons.mic_none_outlined),
-            title: Text('Voice settings'),
-          ),
+          label: 'Voice settings',
+          icon: Icons.mic_none_outlined,
         ),
-        const PopupMenuDivider(),
-        const PopupMenuItem(
+        const AppMenuOption(
           value: _CatalogAction.disconnect,
-          child: ListTile(
-            leading: Icon(Icons.power_settings_new_rounded),
-            title: Text('Disconnect'),
-          ),
+          label: 'Disconnect',
+          icon: Icons.power_settings_new_rounded,
+          dividerBefore: true,
         ),
       ],
     );

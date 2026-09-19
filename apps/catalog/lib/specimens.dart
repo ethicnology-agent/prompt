@@ -27,6 +27,31 @@ final specimens = <Specimen>[
   Specimen('Compact choice button', (_) => const _CompactChoiceSpecimen()),
   Specimen('Segmented control', (_) => const _SegmentedControlSpecimen()),
   Specimen(
+    'Menu button',
+    (_) => AppMenuButton<String>(
+      tooltip: 'More actions',
+      optionsBuilder: (_) => const [
+        AppMenuOption(
+          value: 'filter',
+          label: 'Filter sessions',
+          selected: true,
+        ),
+        AppMenuOption(
+          value: 'workspace',
+          label: 'Browse workspace',
+          icon: Icons.folder_open_outlined,
+        ),
+        AppMenuOption(
+          value: 'disconnect',
+          label: 'Disconnect',
+          icon: Icons.power_settings_new_rounded,
+          dividerBefore: true,
+        ),
+      ],
+      onSelected: (_) {},
+    ),
+  ),
+  Specimen(
     'Choice chips',
     (_) => Wrap(
       spacing: 8,
