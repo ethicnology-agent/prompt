@@ -15,7 +15,6 @@ class Transcript extends StatelessWidget {
     required this.onRevert,
     this.canRevert = true,
     this.onOpenFile,
-    this.assistantLabel = 'OpenCode',
     required this.onLoadOlder,
     required this.hasMore,
     required this.loadingOlder,
@@ -30,7 +29,6 @@ class Transcript extends StatelessWidget {
   final ValueChanged<ChatMessage> onRevert;
   final bool canRevert;
   final ValueChanged<String>? onOpenFile;
-  final String assistantLabel;
   final VoidCallback onLoadOlder;
   final bool hasMore;
   final bool loadingOlder;
@@ -71,7 +69,6 @@ class Transcript extends StatelessWidget {
                 key: ValueKey(message.id),
                 message: message,
                 showRevert: canRevert && index == 0,
-                assistantLabel: assistantLabel,
                 onRevert: () => onRevert(message),
                 onOpenFile: onOpenFile,
                 desktop: desktop,
@@ -228,7 +225,6 @@ class _MessageBubble extends StatelessWidget {
     required this.showRevert,
     required this.onRevert,
     required this.desktop,
-    required this.assistantLabel,
     this.onOpenFile,
     super.key,
   });
@@ -237,7 +233,6 @@ class _MessageBubble extends StatelessWidget {
   final bool showRevert;
   final VoidCallback onRevert;
   final bool desktop;
-  final String assistantLabel;
   final ValueChanged<String>? onOpenFile;
 
   @override
@@ -265,31 +260,12 @@ class _MessageBubble extends StatelessWidget {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (!userMessage)
-              Row(
-                children: [
-                  Icon(
-                    Icons.auto_awesome_outlined,
-                    size: 15,
-                    color: tokens.subtle,
-                  ),
-                  const SizedBox(width: 6),
-                  Text(
-                    assistantLabel,
-                    style: theme.textTheme.labelMedium?.copyWith(
-                      color: tokens.subtle,
-                    ),
-                  ),
-                ],
-              ),
             if (message.details.isNotEmpty) ...[
-              if (!userMessage) const SizedBox(height: 10),
               for (final detail in message.details)
                 _MessageDetailCard(detail: detail, onOpenFile: onOpenFile),
             ],
             if (message.text.trim().isNotEmpty) ...[
-              if (!userMessage || message.details.isNotEmpty)
-                const SizedBox(height: 10),
+              if (message.details.isNotEmpty) const SizedBox(height: 10),
               BasicMarkdownText(
                 text: message.text,
                 style: theme.textTheme.bodyLarge?.copyWith(color: foreground),

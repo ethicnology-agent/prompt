@@ -896,11 +896,6 @@ class _ConversationScreenState extends State<ConversationScreen>
                   canRevert: widget.profile.capabilities.supports(
                     BackendFeature.sessionRevert,
                   ),
-                  assistantLabel: switch (widget.profile.backend) {
-                    AgentBackend.gatewayClaude => 'Claude',
-                    AgentBackend.gatewayCodex => 'Codex',
-                    _ => 'OpenCode',
-                  },
                   onLoadOlder: () => widget.viewModel.loadOlderFromUserAction(),
                   hasMore: history.hasMore,
                   loadingOlder: history.loadingOlder,

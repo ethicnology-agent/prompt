@@ -3099,11 +3099,19 @@ void main() {
         createdAt: DateTime.fromMillisecondsSinceEpoch(0),
         text: 'Hi there',
       ),
+      ChatMessage(
+        id: 'm2',
+        role: ChatMessageRole.assistant,
+        createdAt: DateTime.fromMillisecondsSinceEpoch(1),
+        text: 'Hello back',
+      ),
     ]);
 
     await pumpScreen(tester);
 
     expect(find.text('Hi there'), findsOneWidget);
+    expect(find.text('Hello back'), findsOneWidget);
+    expect(find.byIcon(Icons.auto_awesome_outlined), findsNothing);
   });
 
   testWidgets('shows execution state as an AppBar icon', (tester) async {
