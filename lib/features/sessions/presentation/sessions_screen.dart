@@ -366,12 +366,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   AppMenuButton<_CatalogAction> _buildCatalogMenu({bool brand = false}) {
     return AppMenuButton<_CatalogAction>(
       tooltip: 'More actions',
-      icon: brand
-          ? Semantics(
-              label: 'Prompt',
-              child: const Icon(Icons.code_rounded, size: 22),
-            )
-          : null,
+      icon: brand ? const Icon(Icons.code_rounded, size: 22) : null,
       onSelected: _onCatalogAction,
       optionsBuilder: (_) => [
         AppMenuOption(
