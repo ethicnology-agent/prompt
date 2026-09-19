@@ -60,11 +60,22 @@ class OpenCodeProviderRecord {
     required this.id,
     required this.isConnected,
     required this.models,
+    this.permissionModes = const [],
+    this.defaultPermissionModeId,
   });
 
   final String id;
   final bool isConnected;
   final List<OpenCodeModelRecord> models;
+  final List<PermissionModeChoiceRecord> permissionModes;
+  final String? defaultPermissionModeId;
+}
+
+class PermissionModeChoiceRecord {
+  const PermissionModeChoiceRecord(this.id, this.label, this.description);
+  final String id;
+  final String label;
+  final String? description;
 }
 
 class OpenCodeModelRecord {
@@ -241,12 +252,56 @@ OpenCodeProviderRecord _parseProvider(
   }
   final id = value['id'] as String;
   final models = value['models'] as Map<String, dynamic>;
+  final permissionOptions = native
+      ? _parsePermissionOptions(value['executionOptions'])
+      : null;
   return OpenCodeProviderRecord(
     id: id,
     isConnected: connectedIds.contains(id),
     models: models.entries
         .map((entry) => _parseModel(entry.key, entry.value, native: native))
         .toList(growable: false),
+    permissionModes: permissionOptions?.$1 ?? const [],
+    defaultPermissionModeId: permissionOptions?.$2,
+  );
+}
+
+(List<PermissionModeChoiceRecord>, String?)? _parsePermissionOptions(
+  Object? value,
+) {
+  if (value is! Map<String, dynamic> ||
+      value['version'] != 1 ||
+      value['permissionModes'] is! List) {
+    return null;
+  }
+  final entries = value['permissionModes'] as List;
+  if (entries.isEmpty || entries.length > 16) return null;
+  bool valid(Object? candidate, int maximum) =>
+      candidate is String &&
+      candidate.isNotEmpty &&
+      candidate.length <= maximum &&
+      !RegExp(r'[\x00-\x1f\x7f]').hasMatch(candidate);
+  final choices = <String, PermissionModeChoiceRecord>{};
+  for (final entry in entries) {
+    if (entry is! Map<String, dynamic> ||
+        !valid(entry['id'], 128) ||
+        !valid(entry['label'], 128)) {
+      return null;
+    }
+    final description = entry['description'];
+    if (description != null && !valid(description, 512)) return null;
+    final id = entry['id'] as String;
+    if (choices.containsKey(id)) return null;
+    choices[id] = PermissionModeChoiceRecord(
+      id,
+      entry['label'] as String,
+      description as String?,
+    );
+  }
+  final defaultId = value['defaultPermissionModeId'];
+  return (
+    List.unmodifiable(choices.values),
+    defaultId is String && choices.containsKey(defaultId) ? defaultId : null,
   );
 }
 

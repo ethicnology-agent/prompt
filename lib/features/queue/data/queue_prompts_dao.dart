@@ -302,6 +302,7 @@ class DriftQueuePromptsDao implements QueuePromptsDao {
               modelId: Value(executionOptions.modelId),
               agentName: Value(executionOptions.agentName),
               reasoningEffort: Value(executionOptions.reasoningEffort),
+              permissionModeId: Value(executionOptions.permissionModeId),
               state: QueuedPromptState.queued.name,
               createdAtMillis: nowMillis,
               updatedAtMillis: nowMillis,

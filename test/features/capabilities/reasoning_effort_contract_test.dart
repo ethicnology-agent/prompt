@@ -205,6 +205,55 @@ void main() {
       );
     },
   );
+
+  test('native Codex prompt carries one explicit permission policy', () async {
+    final client = MockClient((request) async {
+      final body = jsonDecode(request.body) as Map<String, dynamic>;
+      expect(body['permissionMode'], 'auto');
+      expect(
+        body.keys,
+        unorderedEquals(['messageID', 'parts', 'permissionMode']),
+      );
+      return http.Response('', 204);
+    });
+    addTearDown(client.close);
+    await OpenCodeChatService(OpenCodeTransport(client)).sendPromptAsync(
+      profile,
+      'synthetic',
+      session,
+      'Fixture',
+      operationId: 'permission-operation',
+      executionOptions: const PromptExecutionOptions(permissionModeId: 'auto'),
+    );
+  });
+
+  test('permission policy fails closed outside native Codex', () async {
+    final client = MockClient((_) async => throw StateError('Must not send'));
+    addTearDown(client.close);
+    final service = OpenCodeChatService(OpenCodeTransport(client));
+    for (final backend in [
+      AgentBackend.directOpenCode,
+      AgentBackend.gatewayOpenCode,
+      AgentBackend.gatewayClaude,
+    ]) {
+      await expectLater(
+        service.sendPromptAsync(
+          ServerProfile(
+            origin: profile.origin,
+            username: profile.username,
+            backend: backend,
+          ),
+          'synthetic',
+          session,
+          'Fixture',
+          executionOptions: const PromptExecutionOptions(
+            permissionModeId: 'auto',
+          ),
+        ),
+        throwsFormatException,
+      );
+    }
+  });
 }
 
 class _Credentials implements CredentialsStore {

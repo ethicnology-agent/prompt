@@ -33,6 +33,7 @@ class QueuedPrompts extends Table {
   TextColumn get modelId => text().nullable()();
   TextColumn get agentName => text().nullable()();
   TextColumn get reasoningEffort => text().nullable()();
+  TextColumn get permissionModeId => text().nullable()();
   TextColumn get state => text()();
   TextColumn get pauseReason => text().nullable()();
   IntColumn get attemptCount => integer().withDefault(const Constant(0))();
@@ -225,7 +226,7 @@ class PromptDatabase extends _$PromptDatabase {
   PromptDatabase.forTesting(super.executor);
 
   @override
-  int get schemaVersion => 8;
+  int get schemaVersion => 9;
 
   @override
   MigrationStrategy get migration {
@@ -234,6 +235,12 @@ class PromptDatabase extends _$PromptDatabase {
         await migrator.createAll();
       },
       onUpgrade: (migrator, from, to) async {
+        if (from < 9) {
+          await migrator.addColumn(
+            queuedPrompts,
+            queuedPrompts.permissionModeId,
+          );
+        }
         if (from < 8) {
           await migrator.addColumn(
             queuedPrompts,

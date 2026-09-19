@@ -39,6 +39,7 @@ void main() {
         modelId: 'actual',
         agentName: 'codex',
         reasoningEffort: 'low',
+        permissionModeId: 'auto',
       );
       Future<void> insert(
         String id,
@@ -104,6 +105,7 @@ void main() {
       expect(restored.modelProviderId, 'codex');
       expect(restored.agentName, 'codex');
       expect(restored.reasoningEffort, 'low');
+      expect(restored.permissionModeId, 'auto');
       // Same timestamp uses ID, not mutable dispatch position or acknowledgment.
       await insert('a-option', DateTime(2026), chosen);
       await insert('z-reset', DateTime(2026), const PromptExecutionOptions());

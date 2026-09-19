@@ -33,6 +33,7 @@ import 'package:prompt/features/capabilities/domain/open_code_capabilities.dart'
 import 'package:prompt/features/capabilities/domain/open_code_agent.dart';
 import 'package:prompt/features/capabilities/domain/open_code_model.dart';
 import 'package:prompt/features/capabilities/domain/open_code_slash_command.dart';
+import 'package:prompt/features/capabilities/domain/permission_mode_choice.dart';
 import 'package:prompt/features/capabilities/presentation/capabilities_view_model.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
 import 'package:prompt/features/connection/domain/agent_backend.dart';
@@ -1161,6 +1162,92 @@ void main() {
         isNull,
       );
       expect(effortButton, findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'composer permission choice is inline and queued with the prompt',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(390, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final native = ServerProfile(
+        origin: profile.origin,
+        username: profile.username,
+        backend: AgentBackend.gatewayCodex,
+      );
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      const ready = CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [],
+          agents: [],
+          commands: [],
+          permissionModes: [
+            PermissionModeChoice(
+              id: 'ask',
+              label: 'Ask',
+              description: 'Confirm commands outside the trusted set',
+            ),
+            PermissionModeChoice(
+              id: 'auto',
+              label: 'Auto',
+              description: 'Let Codex decide inside the workspace sandbox',
+            ),
+            PermissionModeChoice(
+              id: 'read',
+              label: 'Read',
+              description: 'Read-only without approval escalation',
+            ),
+          ],
+          defaultPermissionModeId: 'ask',
+        ),
+      );
+      await pumpScreen(
+        tester,
+        activeProfile: native,
+        capabilitiesViewModel: capabilities,
+      );
+      capabilities.value = ready;
+      await tester.pumpAndSettle();
+      final picker = find.byKey(const ValueKey('composer-permission-picker'));
+      expect(picker, findsOneWidget);
+      expect(tester.widget<CompactChoiceButton>(picker).label, 'Ask');
+      await tester.enterText(find.byType(TextField), 'Use the safe policy');
+      final focus = tester
+          .widget<EditableText>(find.byType(EditableText))
+          .focusNode;
+      tester.widget<CompactChoiceButton>(picker).onPressed!();
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.text('PERMISSIONS'), findsOneWidget);
+      expect(
+        find.text('Let Codex decide inside the workspace sandbox'),
+        findsOneWidget,
+      );
+      expect(focus.hasFocus, isTrue);
+      await tester.tap(find.text('Auto'));
+      await tester.pumpAndSettle();
+      expect(tester.widget<CompactChoiceButton>(picker).label, 'Auto');
+      expect(
+        viewModel.executionOptionsFor(native, session).permissionModeId,
+        'auto',
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Use the safe policy',
+      );
+      await tester.tap(find.byTooltip('Queue this prompt'));
+      await tester.pumpAndSettle();
+      expect(viewModel.lastPromptOptions?.permissionModeId, 'auto');
+      expect(viewModel.enqueueCallCount, 1);
       expect(tester.takeException(), isNull);
     },
   );

@@ -3,6 +3,7 @@ import { EventEmitter } from 'node:events';
 import { Fault, allowedDirectory } from './security.js';
 import { approvalPresentation, approvalRestriction } from './approval-presentation.js';
 import { validatePromptParts } from './image-input.js';
+import { permissionOptions } from './model-catalog.js';
 
 export class Sessions extends EventEmitter {
   constructor(engine, adapter, roots, { maxSessions = 32, maxMessages = 1000, maxOutput = 2 * 1024 * 1024, turnTimeout = 30 * 60 * 1000, approvalTimeout = 5 * 60 * 1000 } = {}) {
@@ -57,19 +58,26 @@ export class Sessions extends EventEmitter {
       if (session.accepted.get(body.messageID) !== fingerprint) throw new Fault(409, 'message_id_conflict');
       return;
     }
+    const advertisedPermissions = permissionOptions(this.engine);
+    const permissionMode = body.permissionMode ?? advertisedPermissions?.defaultPermissionModeId;
+    if (body.permissionMode !== undefined &&
+        (typeof body.permissionMode !== 'string' ||
+          !advertisedPermissions?.permissionModes.some((choice) => choice.id === body.permissionMode))) {
+      throw new Fault(400, 'unsupported_permission_mode');
+    }
     if (body.reasoningEffort !== undefined) {
       if (typeof body.reasoningEffort !== 'string' || !body.reasoningEffort.length || body.reasoningEffort.length > 128 || /[\x00-\x1f\x7f]/.test(body.reasoningEffort)) throw new Fault(400, 'invalid_reasoning_effort');
       if (!catalog || !body.model || body.model.providerID !== this.engine || body.model.modelID === 'default') throw new Fault(400, 'effort_requires_available_model');
       return catalog.read().then((value) => {
         const model = value.models.find((entry) => entry.id === body.model.modelID);
         if (value.status !== 'ready' || !model?.executionOptions?.reasoningEfforts.some((choice) => choice.id === body.reasoningEffort) || (this.engine === 'codex' && !model.executionOptions.defaultReasoningEffortId)) throw new Fault(400, 'unsupported_reasoning_effort');
-        this._submit(session, body, { reasoningEffort: body.reasoningEffort });
+        this._submit(session, body, { reasoningEffort: body.reasoningEffort, permissionMode });
       });
     }
     const selectedModel = body.model?.modelID ?? session.selectedModel;
     const defaultEffort = catalog?.cached?.models.find((entry) => entry.id === selectedModel)?.executionOptions?.defaultReasoningEffortId;
     if (session.effortWasSet && this.engine === 'codex' && selectedModel && selectedModel !== 'default' && !defaultEffort) throw new Fault(400, 'effort_default_unavailable');
-    return this._submit(session, body, { resetEffort: session.effortWasSet === true, defaultEffort });
+    return this._submit(session, body, { resetEffort: session.effortWasSet === true, defaultEffort, permissionMode });
   }
   _submit(session, body, execution) {
     const fingerprint = createHash('sha256').update(JSON.stringify(body)).digest('hex');
@@ -81,7 +89,7 @@ export class Sessions extends EventEmitter {
     if (session.active) throw new Fault(409, 'session_busy');
     if (session.messages.length + 2 > this.maxMessages) throw new Fault(429, 'history_limit');
     const input = validatePromptParts(body.parts);
-    if (Object.keys(body).some((key) => !['parts', 'model', 'agent', 'messageID', 'reasoningEffort'].includes(key))) throw new Fault(400, 'unsupported_prompt_option');
+    if (Object.keys(body).some((key) => !['parts', 'model', 'agent', 'messageID', 'reasoningEffort', 'permissionMode'].includes(key))) throw new Fault(400, 'unsupported_prompt_option');
     if (body.agent && body.agent !== this.engine) throw new Fault(400, 'unsupported_agent');
     if (body.model && (body.model.providerID !== this.engine || typeof body.model.modelID !== 'string' || body.model.modelID.length > 128)) throw new Fault(400, 'invalid_model');
     if (body.messageID !== undefined && (typeof body.messageID !== 'string' || body.messageID.length > 128)) throw new Fault(400, 'invalid_message_id');

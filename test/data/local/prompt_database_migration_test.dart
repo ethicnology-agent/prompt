@@ -28,12 +28,13 @@ void main() {
   });
 
   test(
-    'v7 additive effort migration retains pending operation and profile',
+    'v7 additive execution migrations retain pending operation and profile',
     () async {
       _createFixture(databaseFile, version: 7);
       database = PromptDatabase.forTesting(NativeDatabase(databaseFile));
       final row = await _readPrompt(database!);
       expect(row.reasoningEffort, isNull);
+      expect(row.permissionModeId, isNull);
       expect(row.id, 'legacy-v7-prompt');
       expect(row.modelProviderId, 'anthropic');
       expect(row.modelId, 'claude-sonnet');
@@ -50,15 +51,16 @@ void main() {
       final version = await database!
           .customSelect('PRAGMA user_version')
           .getSingle();
-      expect(version.data['user_version'], 8);
+      expect(version.data['user_version'], 9);
       await database!.customStatement(
-        'UPDATE queued_prompts SET reasoning_effort = ? WHERE id = ?',
-        ['high', row.id],
+        'UPDATE queued_prompts SET reasoning_effort = ?, permission_mode_id = ? WHERE id = ?',
+        ['high', 'auto', row.id],
       );
       await database!.close();
       database = PromptDatabase.forTesting(NativeDatabase(databaseFile));
       final reopened = await _readPrompt(database!);
       expect(reopened.reasoningEffort, 'high');
+      expect(reopened.permissionModeId, 'auto');
       expect(reopened.attachmentsJson, row.attachmentsJson);
       expect(reopened.commandName, row.commandName);
     },
@@ -196,7 +198,7 @@ Future<void> _expectVersion6(PromptDatabase database) async {
   final version = await database
       .customSelect('PRAGMA user_version')
       .getSingle();
-  expect(version.data['user_version'], 8);
+  expect(version.data['user_version'], 9);
   final profiles = await database.select(database.serverProfiles).get();
   expect(profiles.single.backend, 'directOpenCode');
 }

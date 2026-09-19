@@ -437,6 +437,7 @@ void _runQueuePromptsRepositoryTests({
             modelId: 'claude-sonnet-4',
             agentName: 'build',
             reasoningEffort: 'high',
+            permissionModeId: 'auto',
           ),
         );
 
@@ -444,6 +445,7 @@ void _runQueuePromptsRepositoryTests({
         expect(prompt.executionOptions.modelId, 'claude-sonnet-4');
         expect(prompt.executionOptions.agentName, 'build');
         expect(prompt.executionOptions.reasoningEffort, 'high');
+        expect(prompt.executionOptions.permissionModeId, 'auto');
         final stored = await repository
             .watchQueue(profile: profile, session: session)
             .first;
@@ -451,11 +453,13 @@ void _runQueuePromptsRepositoryTests({
         expect(stored.single.executionOptions.modelId, 'claude-sonnet-4');
         expect(stored.single.executionOptions.agentName, 'build');
         expect(stored.single.executionOptions.reasoningEffort, 'high');
+        expect(stored.single.executionOptions.permissionModeId, 'auto');
         await repository.edit(promptId: prompt.id, promptText: 'edited');
         final edited = await repository
             .watchQueue(profile: profile, session: session)
             .first;
         expect(edited.single.executionOptions.reasoningEffort, 'high');
+        expect(edited.single.executionOptions.permissionModeId, 'auto');
         await repository.reorder(
           profile: profile,
           session: session,
@@ -467,6 +471,7 @@ void _runQueuePromptsRepositoryTests({
             .watchQueue(profile: profile, session: session)
             .first;
         expect(paused.single.executionOptions.reasoningEffort, 'high');
+        expect(paused.single.executionOptions.permissionModeId, 'auto');
         expect(paused.single.state, QueuedPromptState.paused);
       },
     );

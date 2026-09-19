@@ -84,7 +84,7 @@ class ConversationScreen extends StatefulWidget {
   State<ConversationScreen> createState() => _ConversationScreenState();
 }
 
-enum _ComposerChoice { model, agent, effort, command }
+enum _ComposerChoice { permission, model, agent, effort, command }
 
 class _ConversationScreenState extends State<ConversationScreen>
     with WidgetsBindingObserver {
@@ -341,6 +341,7 @@ class _ConversationScreenState extends State<ConversationScreen>
           command.model?.providerId ?? _executionOptions.value.modelProviderId,
       modelId: command.model?.modelId ?? _executionOptions.value.modelId,
       agentName: command.agentName ?? _executionOptions.value.agentName,
+      permissionModeId: _executionOptions.value.permissionModeId,
     );
   }
 
@@ -356,11 +357,37 @@ class _ConversationScreenState extends State<ConversationScreen>
         var model = _selectedModel(capabilities.models);
         var agent = _selectedAgent(capabilities.agents);
         var effort = _executionOptions.value.reasoningEffort;
+        var permissionModeId = _executionOptions.value.permissionModeId;
         return StatefulBuilder(
           builder: (context, setDialogState) => ListView(
             controller: controller,
             shrinkWrap: true,
             children: [
+              if (capabilities.permissionModes.isNotEmpty)
+                _ExecutionChoice(
+                  label: 'Permissions',
+                  value: _permissionLabel(capabilities, permissionModeId),
+                  onTap: () async {
+                    final selected = capabilities.permissionModes
+                        .where((mode) => mode.id == permissionModeId)
+                        .firstOrNull;
+                    final choice = await _showSelectionPicker(
+                      title: 'Permissions',
+                      selected: selected,
+                      options: [
+                        for (final mode in capabilities.permissionModes)
+                          SelectionOption(
+                            value: mode,
+                            label: mode.label,
+                            description: mode.description,
+                          ),
+                      ],
+                    );
+                    if (choice != null && context.mounted) {
+                      setDialogState(() => permissionModeId = choice.value?.id);
+                    }
+                  },
+                ),
               _ExecutionChoice(
                 label: 'Model',
                 value: model?.name ?? 'Default',
@@ -405,6 +432,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                           modelId: model?.id,
                           agentName: agent?.name,
                           reasoningEffort: effort,
+                          permissionModeId: permissionModeId,
                         ),
                       ),
                     ),
@@ -585,6 +613,7 @@ class _ConversationScreenState extends State<ConversationScreen>
       modelProviderId: choice?.$1,
       modelId: choice?.$2,
       agentName: current.agentName,
+      permissionModeId: current.permissionModeId,
       reasoningEffort:
           choice?.$1 == current.modelProviderId && choice?.$2 == current.modelId
           ? current.reasoningEffort
@@ -595,6 +624,40 @@ class _ConversationScreenState extends State<ConversationScreen>
 
   void _selectComposerAgent(OpenCodeCapabilities capabilities) =>
       _toggleComposerChoice(_ComposerChoice.agent);
+
+  String _permissionLabel(
+    OpenCodeCapabilities capabilities,
+    String? permissionModeId,
+  ) {
+    final effective = permissionModeId ?? capabilities.defaultPermissionModeId;
+    return capabilities.permissionModes
+            .where((mode) => mode.id == effective)
+            .firstOrNull
+            ?.label ??
+        (permissionModeId == null ? 'Default' : 'Unavailable');
+  }
+
+  void _selectComposerPermission() =>
+      _toggleComposerChoice(_ComposerChoice.permission);
+
+  void _applyComposerPermission(String? choice) {
+    final capabilities = _currentCapabilities;
+    if (capabilities == null ||
+        (choice != null &&
+            !capabilities.permissionModes.any((mode) => mode.id == choice))) {
+      return;
+    }
+    final current = _executionOptions.value;
+    _commitComposerOptions(
+      PromptExecutionOptions(
+        modelProviderId: current.modelProviderId,
+        modelId: current.modelId,
+        agentName: current.agentName,
+        reasoningEffort: current.reasoningEffort,
+        permissionModeId: choice,
+      ),
+    );
+  }
 
   void _applyComposerAgent(String? choice) {
     final capabilities = _currentCapabilities;
@@ -609,6 +672,7 @@ class _ConversationScreenState extends State<ConversationScreen>
       modelId: current.modelId,
       agentName: choice,
       reasoningEffort: current.reasoningEffort,
+      permissionModeId: current.permissionModeId,
     );
     _commitComposerOptions(options);
   }
@@ -683,6 +747,7 @@ class _ConversationScreenState extends State<ConversationScreen>
       modelId: current.modelId,
       agentName: current.agentName,
       reasoningEffort: effort,
+      permissionModeId: current.permissionModeId,
     );
     _commitComposerOptions(options);
   }
@@ -926,7 +991,8 @@ class _ConversationScreenState extends State<ConversationScreen>
       controls:
           capabilities == null ||
               (!capabilities.models.any((model) => model.isProviderConnected) &&
-                  !hasAgentChoices(capabilities.agents))
+                  !hasAgentChoices(capabilities.agents) &&
+                  capabilities.permissionModes.isEmpty)
           ? null
           : ValueListenableBuilder<PromptExecutionOptions>(
               valueListenable: _executionOptions,
@@ -934,6 +1000,17 @@ class _ConversationScreenState extends State<ConversationScreen>
                 spacing: 4,
                 runSpacing: 4,
                 children: [
+                  if (capabilities.permissionModes.isNotEmpty)
+                    CompactChoiceButton(
+                      key: const ValueKey('composer-permission-picker'),
+                      label: _permissionLabel(
+                        capabilities,
+                        options.permissionModeId,
+                      ),
+                      semanticLabel:
+                          'Permissions: ${_permissionLabel(capabilities, options.permissionModeId)}',
+                      onPressed: _selectComposerPermission,
+                    ),
                   if (hasAgentChoices(capabilities.agents))
                     CompactChoiceButton(
                       key: const ValueKey('composer-agent-picker'),
@@ -1501,6 +1578,38 @@ class _ConversationScreenState extends State<ConversationScreen>
                       if (name != null && command == null) return;
                       setState(() => _selectedCommand = command);
                       _closeComposerChoice();
+                    },
+              onClose: _closeComposerChoice,
+            );
+          case _ComposerChoice.permission:
+            final defaultLabel = capabilities == null
+                ? 'Default'
+                : _permissionLabel(capabilities, null);
+            return InlineSelectionPanel<String?>(
+              key: key,
+              title: 'Permissions',
+              radioIndicator: true,
+              listHeight: height,
+              selected: options.permissionModeId,
+              options: [
+                InlineSelectionOption(
+                  value: null,
+                  label: 'Default ($defaultLabel)',
+                ),
+                for (final mode
+                    in capabilities?.permissionModes ??
+                        <PermissionModeChoice>[])
+                  InlineSelectionOption(
+                    value: mode.id,
+                    label: mode.label,
+                    description: mode.description,
+                  ),
+              ],
+              onSelected:
+                  capabilities == null || capabilities.permissionModes.isEmpty
+                  ? null
+                  : (choice) {
+                      if (current()) _applyComposerPermission(choice);
                     },
               onClose: _closeComposerChoice,
             );

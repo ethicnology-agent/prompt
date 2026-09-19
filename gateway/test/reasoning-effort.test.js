@@ -31,9 +31,12 @@ test('HTTP effort selection authenticates and validates before returning accepte
   assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify(body('invented')) })).status, 400);
   assert.equal(item.messages.length, 0);
   assert.equal(runs.length, 0);
-  assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify(body('fixture-deep')) })).status, 204);
+  assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify({ ...body('fixture-deep'), permissionMode: 'invented' }) })).status, 400);
+  assert.equal(item.messages.length, 0);
+  assert.equal((await fetch(url, { method: 'POST', headers, body: JSON.stringify({ ...body('fixture-deep'), permissionMode: 'auto' }) })).status, 204);
   await item.task;
   assert.equal(runs[0][3].reasoningEffort, 'fixture-deep');
+  assert.equal(runs[0][3].permissionMode, 'auto');
   assert.equal(discovers, 1);
 });
 
@@ -57,6 +60,16 @@ test('catalog publishes bounded versioned advertised efforts, not fixed guessed 
   assert.deepEqual(value.models[0].executionOptions, options);
   assert.deepEqual(providerCatalog('codex', value).all[0].models.model.executionOptions, options);
   assert.equal(providerCatalog('codex', value).all[0].models.default.executionOptions, undefined);
+  assert.deepEqual(providerCatalog('codex', value).all[0].executionOptions, {
+    version: 1,
+    permissionModes: [
+      { id: 'ask', label: 'Ask', description: 'Ask before commands Codex does not consider trusted; writes stay inside the workspace.' },
+      { id: 'auto', label: 'Auto', description: 'Let Codex decide when approval is needed; writes stay inside the workspace.' },
+      { id: 'read', label: 'Read', description: 'Do not allow filesystem writes or approval escalation.' },
+    ],
+    defaultPermissionModeId: 'ask',
+  });
+  assert.equal(providerCatalog('claude', value).all[0].executionOptions, undefined);
   catalog.close();
 });
 
@@ -79,7 +92,7 @@ test('unknown effort rejected before history/acceptance; absent resets using act
   await item.task;
   assert.equal(calls.length, 3);
   assert.equal(calls[0][3].reasoningEffort, 'fixture-deep');
-  for (const call of calls.slice(1)) assert.deepEqual(call[3], { resetEffort: true, defaultEffort: 'fixture-light' });
+  for (const call of calls.slice(1)) assert.deepEqual(call[3], { resetEffort: true, defaultEffort: 'fixture-light', permissionMode: 'ask' });
   store.close();
 });
 
@@ -94,7 +107,7 @@ test('unavailable or missing model effort rejects without acceptance', async () 
   store.close();
 });
 
-test('Codex applies and resets effort while preserving approval and sandbox policies', async () => {
+test('Codex applies effort and each advertised safe execution policy per turn', async () => {
   const rpc = new EventEmitter();
   const turns = [];
   rpc.write = () => {};
@@ -112,15 +125,17 @@ test('Codex applies and resets effort while preserving approval and sandbox poli
     return { turn: { id: 'turn' } };
   };
   const runner = await new CodexAdapter('fixture', () => rpc).open(session(), { delta() {}, permission: async () => false });
-  await runner.run('first', 'model', [], { reasoningEffort: 'fixture-deep' });
-  await runner.run('second', 'model', [], { resetEffort: true, defaultEffort: 'fixture-light' });
-  await runner.run('third', 'default', [], { resetEffort: true });
+  await runner.run('first', 'model', [], { reasoningEffort: 'fixture-deep', permissionMode: 'auto' });
+  await runner.run('second', 'model', [], { resetEffort: true, defaultEffort: 'fixture-light', permissionMode: 'read' });
+  await runner.run('third', 'default', [], { resetEffort: true, permissionMode: 'ask' });
   assert.deepEqual(turns.map((turn) => turn.effort), ['fixture-deep', 'fixture-light', 'baseline']);
   assert.equal(turns[2].model, 'cli-default');
-  for (const turn of turns) {
-    assert.equal(turn.approvalPolicy, undefined);
-    assert.equal(turn.sandboxPolicy, undefined);
-  }
+  assert.deepEqual(turns.map((turn) => turn.approvalPolicy), ['on-request', 'never', 'untrusted']);
+  assert.deepEqual(turns.map((turn) => turn.sandboxPolicy), [
+    { type: 'workspaceWrite' },
+    { type: 'readOnly' },
+    { type: 'workspaceWrite' },
+  ]);
   runner.close();
 });
 

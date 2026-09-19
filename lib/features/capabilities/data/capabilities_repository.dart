@@ -10,6 +10,7 @@ import '../domain/open_code_agent.dart';
 import '../domain/open_code_capabilities.dart';
 import '../domain/open_code_model.dart';
 import '../domain/open_code_slash_command.dart';
+import '../domain/permission_mode_choice.dart';
 import 'opencode_capabilities_service.dart';
 
 class CapabilitiesRepository {
@@ -22,6 +23,7 @@ class CapabilitiesRepository {
     try {
       final password = await _credentialsStore.readPassword(profile.id);
       final record = await _service.fetch(profile, password);
+      final permissionProvider = _permissionProvider(record.providers, profile);
       return CapabilitiesLoaded(
         OpenCodeCapabilities(
           models: [
@@ -80,6 +82,17 @@ class CapabilitiesRepository {
           ],
           agents: record.agents.map(_toAgent).toList(growable: false),
           commands: record.commands.map(_toCommand).toList(growable: false),
+          permissionModes: [
+            for (final choice
+                in permissionProvider?.permissionModes ??
+                    const <PermissionModeChoiceRecord>[])
+              PermissionModeChoice(
+                id: choice.id,
+                label: choice.label,
+                description: choice.description,
+              ),
+          ],
+          defaultPermissionModeId: permissionProvider?.defaultPermissionModeId,
         ),
       );
     } on OpenCodeHttpFailure catch (failure) {
@@ -101,6 +114,21 @@ class CapabilitiesRepository {
         CapabilitiesFailure.unexpectedResponse,
       );
     }
+  }
+
+  OpenCodeProviderRecord? _permissionProvider(
+    List<OpenCodeProviderRecord> providers,
+    ServerProfile profile,
+  ) {
+    if (profile.backend != AgentBackend.gatewayCodex) return null;
+    final matches = providers
+        .where(
+          (provider) =>
+              provider.isConnected &&
+              provider.id == AgentBackend.gatewayCodex.engine,
+        )
+        .toList(growable: false);
+    return matches.length == 1 ? matches.single : null;
   }
 
   OpenCodeAgent _toAgent(OpenCodeAgentRecord record) {

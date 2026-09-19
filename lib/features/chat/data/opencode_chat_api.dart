@@ -134,6 +134,16 @@ class OpenCodeChatApi {
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
   }) async {
     final effort = executionOptions.reasoningEffort;
+    final permissionMode = executionOptions.permissionModeId;
+    if (permissionMode != null &&
+        (profile.backend != AgentBackend.gatewayCodex ||
+            permissionMode.isEmpty ||
+            permissionMode.length > 128 ||
+            RegExp(r'[\x00-\x1f\x7f]').hasMatch(permissionMode))) {
+      throw const FormatException(
+        'Permission mode requires the native Codex gateway.',
+      );
+    }
     if (effort != null &&
         (!profile.backend.isGateway ||
             profile.backend.engine == 'opencode' ||
@@ -180,6 +190,7 @@ class OpenCodeChatApi {
         if (executionOptions.agentName != null)
           'agent': executionOptions.agentName,
         'reasoningEffort': ?effort,
+        'permissionMode': ?permissionMode,
       }),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
@@ -196,9 +207,10 @@ class OpenCodeChatApi {
     String arguments, {
     PromptExecutionOptions executionOptions = const PromptExecutionOptions(),
   }) async {
-    if (executionOptions.reasoningEffort != null) {
+    if (executionOptions.reasoningEffort != null ||
+        executionOptions.permissionModeId != null) {
       throw const FormatException(
-        'Native reasoning effort is not an OpenCode command variant.',
+        'Native execution policy is not an OpenCode command variant.',
       );
     }
     final query = Uri(queryParameters: {'directory': session.directory}).query;

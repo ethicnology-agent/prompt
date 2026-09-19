@@ -1,6 +1,6 @@
 import { JsonProcess, childEnvironment } from './process.js';
 import { Fault } from './security.js';
-import { abortable } from './model-catalog.js';
+import { abortable, codexExecutionPolicy } from './model-catalog.js';
 import { InputStream } from './input-stream.js';
 import { randomUUID } from 'node:crypto';
 import { approvalRestriction, denialDecision } from './approval-presentation.js';
@@ -111,6 +111,7 @@ export class CodexAdapter {
           const completion = new Promise((resolve, reject) => { completed = resolve; rejectCompletion = reject; });
           // Attach immediately: the process can close while turn/start is pending.
           completion.catch(() => {});
+          const policy = codexExecutionPolicy(execution.permissionMode);
           startPending = rpc.request('turn/start', {
             threadId, input: [
               ...(text ? [{ type: 'text', text, text_elements: [] }] : []),
@@ -119,6 +120,7 @@ export class CodexAdapter {
             ...(model && model !== 'default' ? { model } : model === 'default' && typeof result.model === 'string' ? { model: result.model } : {}),
             ...(execution.reasoningEffort !== undefined ? { effort: execution.reasoningEffort }
               : execution.resetEffort ? { effort: execution.defaultEffort ?? result.reasoningEffort } : {}),
+            ...policy,
           }).then((result) => {
             turnId = result.turn?.id ?? turnId;
             if (typeof turnId !== 'string') throw new Fault(502, 'agent_protocol_error');

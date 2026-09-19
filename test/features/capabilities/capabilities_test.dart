@@ -11,6 +11,7 @@ import 'package:prompt/features/capabilities/domain/capabilities_load_result.dar
 import 'package:prompt/features/capabilities/domain/open_code_agent.dart';
 import 'package:prompt/features/capabilities/presentation/capabilities_view_model.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 
 void main() {
   final profile = ServerProfile(
@@ -107,6 +108,88 @@ void main() {
       (result as CapabilitiesLoadFailed).failure,
       CapabilitiesFailure.unexpectedResponse,
     );
+  });
+
+  test('accepts bounded native permission modes only from a gateway', () async {
+    final client = MockClient(
+      (request) async => http.Response(
+        request.url.path.endsWith('/provider')
+            ? jsonEncode({
+                'all': [
+                  {
+                    'id': 'codex',
+                    'models': {
+                      'default': {'name': 'CLI default'},
+                    },
+                    'executionOptions': {
+                      'version': 1,
+                      'permissionModes': [
+                        {
+                          'id': 'ask',
+                          'label': 'Ask',
+                          'description': 'Request approval',
+                        },
+                        {'id': 'auto', 'label': 'Auto'},
+                      ],
+                      'defaultPermissionModeId': 'ask',
+                    },
+                  },
+                  {
+                    'id': 'other',
+                    'models': <String, Object>{},
+                    'executionOptions': {
+                      'version': 1,
+                      'permissionModes': [
+                        {'id': 'unsafe', 'label': 'Unsafe'},
+                      ],
+                      'defaultPermissionModeId': 'unsafe',
+                    },
+                  },
+                ],
+                'connected': ['codex', 'other'],
+              })
+            : '[]',
+        200,
+      ),
+    );
+    addTearDown(client.close);
+    final native = await repositoryFor(client).load(
+      ServerProfile(
+        origin: profile.origin,
+        username: profile.username,
+        backend: AgentBackend.gatewayCodex,
+      ),
+    );
+    final nativeCapabilities = (native as CapabilitiesLoaded).capabilities;
+    expect(nativeCapabilities.permissionModes.map((mode) => mode.id), [
+      'ask',
+      'auto',
+    ]);
+    expect(
+      nativeCapabilities.permissionModes.first.description,
+      'Request approval',
+    );
+    expect(nativeCapabilities.defaultPermissionModeId, 'ask');
+
+    final claude = await repositoryFor(client).load(
+      ServerProfile(
+        origin: profile.origin,
+        username: profile.username,
+        backend: AgentBackend.gatewayClaude,
+      ),
+    );
+    expect(
+      (claude as CapabilitiesLoaded).capabilities.permissionModes,
+      isEmpty,
+    );
+    expect(claude.capabilities.defaultPermissionModeId, isNull);
+
+    final direct = await repositoryFor(client).load(profile);
+    expect(
+      (direct as CapabilitiesLoaded).capabilities.permissionModes,
+      isEmpty,
+    );
+    expect(direct.capabilities.defaultPermissionModeId, isNull);
   });
 
   test('accepts agents without the legacy builtIn field', () async {

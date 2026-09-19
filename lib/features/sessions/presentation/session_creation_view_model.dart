@@ -90,6 +90,12 @@ class SessionCreationState {
         )) {
       return false;
     }
+    if (options.permissionModeId != null &&
+        !choices.permissionModes.any(
+          (mode) => mode.id == options.permissionModeId,
+        )) {
+      return false;
+    }
     return (!options.hasModel ||
             choices.models.any(
               (model) =>

@@ -267,7 +267,7 @@ void main() {
     expect(
       (await database.customSelect('PRAGMA user_version').getSingle())
           .data['user_version'],
-      8,
+      9,
     );
     final queued = await database.select(database.queuedPrompts).getSingle();
     expect(queued.promptText, 'Retained prompt');

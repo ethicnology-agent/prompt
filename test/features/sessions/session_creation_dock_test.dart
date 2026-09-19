@@ -445,6 +445,63 @@ void main() {
   }
 
   testWidgets(
+    'creation permission choice stays inline and becomes part of launch options',
+    (tester) async {
+      final fixture = _Fixture(permissions: true);
+      addTearDown(fixture.dispose);
+      final controller = TextEditingController(text: 'Create safely');
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          theme: promptTheme(),
+          home: Scaffold(
+            body: Align(
+              alignment: Alignment.bottomCenter,
+              child: SizedBox(
+                width: 393,
+                height: 700,
+                child: SessionCreationDock(
+                  profile: fixture.profile,
+                  viewModel: fixture.model,
+                  controller: controller,
+                  focusNode: focus,
+                  onLaunch: (_) {},
+                  onExpandedChanged: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byType(TextField));
+      await tester.pumpAndSettle();
+      final picker = find.byKey(const ValueKey('creation-permission-picker'));
+      expect(picker, findsOneWidget);
+      expect(tester.widget<CompactChoiceButton>(picker).label, 'Ask');
+      tester.widget<CompactChoiceButton>(picker).onPressed!();
+      await tester.pumpAndSettle();
+      expect(find.byType(BottomSheet), findsNothing);
+      expect(find.text('PERMISSIONS'), findsOneWidget);
+      expect(
+        find.text('Read-only without approval escalation'),
+        findsOneWidget,
+      );
+      expect(focus.hasFocus, isTrue);
+      await tester.tap(find.text('Read'));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.permissionModeId, 'read');
+      expect(tester.widget<CompactChoiceButton>(picker).label, 'Read');
+      expect(controller.text, 'Create safely');
+      expect(focus.hasFocus, isTrue);
+      expect(fixture.created, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
     'obsolete inline model and effort callbacks cannot change another scope',
     (tester) async {
       final fixture = _Fixture();
@@ -916,7 +973,11 @@ class _Picker implements AttachmentPicker {
 }
 
 class _Fixture {
-  _Fixture({AttachmentPicker? picker, bool worktrees = false}) {
+  _Fixture({
+    AttachmentPicker? picker,
+    bool worktrees = false,
+    bool permissions = false,
+  }) {
     client = MockClient((request) async {
       final path = request.url.path;
       Object data = [];
@@ -991,6 +1052,29 @@ class _Fixture {
           'all': [
             {
               'id': engine,
+              if (permissions && engine == 'codex')
+                'executionOptions': {
+                  'version': 1,
+                  'permissionModes': [
+                    {
+                      'id': 'ask',
+                      'label': 'Ask',
+                      'description': 'Confirm commands outside the trusted set',
+                    },
+                    {
+                      'id': 'auto',
+                      'label': 'Auto',
+                      'description':
+                          'Let Codex decide inside the workspace sandbox',
+                    },
+                    {
+                      'id': 'read',
+                      'label': 'Read',
+                      'description': 'Read-only without approval escalation',
+                    },
+                  ],
+                  'defaultPermissionModeId': 'ask',
+                },
               'models': {
                 'default': {'name': 'CLI default'},
                 'actual': {

@@ -61,6 +61,7 @@ class QueuePromptsRepository {
       modelId: latest.modelId,
       agentName: latest.agentName,
       reasoningEffort: latest.reasoningEffort,
+      permissionModeId: latest.permissionModeId,
     );
   });
 
@@ -309,6 +310,7 @@ class QueuePromptsRepository {
         modelId: row.modelId,
         agentName: row.agentName,
         reasoningEffort: row.reasoningEffort,
+        permissionModeId: row.permissionModeId,
       ),
       state: QueuedPromptState.values.byName(row.state),
       pauseReason: row.pauseReason == null

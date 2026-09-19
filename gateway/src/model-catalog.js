@@ -1,5 +1,31 @@
 const identifier = (value) => typeof value === 'string' && value.length > 0 && value.length <= 128 && !/[\x00-\x1f\x7f]/.test(value);
 
+const codexPermissionChoices = Object.freeze([
+  Object.freeze({ id: 'ask', label: 'Ask', description: 'Ask before commands Codex does not consider trusted; writes stay inside the workspace.' }),
+  Object.freeze({ id: 'auto', label: 'Auto', description: 'Let Codex decide when approval is needed; writes stay inside the workspace.' }),
+  Object.freeze({ id: 'read', label: 'Read', description: 'Do not allow filesystem writes or approval escalation.' }),
+]);
+
+/// Returns only policies the private gateway can enforce end to end.
+export function permissionOptions(engine) {
+  if (engine !== 'codex') return undefined;
+  return {
+    version: 1,
+    permissionModes: codexPermissionChoices,
+    defaultPermissionModeId: 'ask',
+  };
+}
+
+export function codexExecutionPolicy(mode) {
+  if (mode === 'auto') {
+    return { approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite' } };
+  }
+  if (mode === 'read') {
+    return { approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly' } };
+  }
+  return { approvalPolicy: 'untrusted', sandboxPolicy: { type: 'workspaceWrite' } };
+}
+
 export function executionOptions(value) {
   if (!value || value.version !== 1 || !Array.isArray(value.reasoningEfforts) || value.reasoningEfforts.length > 32) return undefined;
   const choices = new Map();
@@ -71,5 +97,6 @@ export function providerCatalog(engine, catalog) {
     ['default', { id: 'default', name: catalog.status === 'ready' ? 'CLI default' : 'CLI default (catalog unavailable)' }],
     ...catalog.models.map((model) => [model.id, model]),
   ]);
-  return { all: [{ id: engine, name: engine, models }], connected: [engine], default: { [engine]: 'default' }, catalog: { status: catalog.status } };
+  const options = permissionOptions(engine);
+  return { all: [{ id: engine, name: engine, models, ...(options ? { executionOptions: options } : {}) }], connected: [engine], default: { [engine]: 'default' }, catalog: { status: catalog.status } };
 }

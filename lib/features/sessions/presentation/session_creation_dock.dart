@@ -13,7 +13,15 @@ import 'new_session_dock.dart';
 import 'session_creation_view_model.dart';
 import 'worktree_picker.dart';
 
-enum _InlineChoice { machine, project, worktree, engine, model, effort }
+enum _InlineChoice {
+  machine,
+  project,
+  worktree,
+  engine,
+  permission,
+  model,
+  effort,
+}
 
 enum _WorktreeAction { create, refresh }
 
@@ -421,6 +429,51 @@ class _SessionCreationDockState extends State<SessionCreationDock>
               },
       );
     }
+    if (_choice == _InlineChoice.permission) {
+      final modes = state.capabilities?.permissionModes ?? const [];
+      return InlineSelectionPanel<String?>(
+        listHeight: listHeight,
+        title: 'Permissions',
+        options: [
+          InlineSelectionOption(
+            value: null,
+            label:
+                'Default (${modes.where((mode) => mode.id == state.capabilities?.defaultPermissionModeId).firstOrNull?.label ?? 'engine policy'})',
+          ),
+          for (final mode in modes)
+            InlineSelectionOption(
+              value: mode.id,
+              label: mode.label,
+              description: mode.description,
+            ),
+        ],
+        selected: state.options.permissionModeId,
+        onClose: _closeChoice,
+        onSelected: !enabled || modes.isEmpty
+            ? null
+            : (permissionModeId) {
+                final current = widget.viewModel.value;
+                final freshModes = current.capabilities?.permissionModes ?? [];
+                if (!canApply(current) ||
+                    (permissionModeId != null &&
+                        !freshModes.any(
+                          (mode) => mode.id == permissionModeId,
+                        ))) {
+                  return;
+                }
+                widget.viewModel.updateOptions(
+                  PromptExecutionOptions(
+                    modelProviderId: current.options.modelProviderId,
+                    modelId: current.options.modelId,
+                    agentName: current.options.agentName,
+                    reasoningEffort: current.options.reasoningEffort,
+                    permissionModeId: permissionModeId,
+                  ),
+                );
+                _closeChoice();
+              },
+      );
+    }
     final models = _models(state);
     if (_choice == _InlineChoice.model) {
       final selected = models
@@ -467,6 +520,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                     modelProviderId: identity?.providerId,
                     modelId: identity?.modelId,
                     agentName: current.options.agentName,
+                    permissionModeId: current.options.permissionModeId,
                     reasoningEffort:
                         identity?.providerId ==
                                 current.options.modelProviderId &&
@@ -533,6 +587,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                   modelId: current.options.modelId,
                   agentName: current.options.agentName,
                   reasoningEffort: effort,
+                  permissionModeId: current.options.permissionModeId,
                 ),
               );
               _closeChoice();
@@ -559,6 +614,9 @@ class _SessionCreationDockState extends State<SessionCreationDock>
 
   void _model(SessionCreationState state) =>
       _openChoice(_InlineChoice.model, state);
+
+  void _permission(SessionCreationState state) =>
+      _openChoice(_InlineChoice.permission, state);
 
   void _effort(SessionCreationState state, OpenCodeModel model) {
     final choices = model.executionOptions?.reasoningEfforts;
@@ -655,6 +713,13 @@ class _SessionCreationDockState extends State<SessionCreationDock>
       final selectedEffort = effortChoices
           ?.where((choice) => choice.id == state.options.reasoningEffort)
           .firstOrNull;
+      final permissionModes = state.capabilities?.permissionModes ?? const [];
+      final effectivePermissionId =
+          state.options.permissionModeId ??
+          state.capabilities?.defaultPermissionModeId;
+      final selectedPermission = permissionModes
+          .where((mode) => mode.id == effectivePermissionId)
+          .firstOrNull;
       final controlsEnabled =
           state.phase == SessionCreationPhase.ready &&
           !state.queuePending &&
@@ -723,6 +788,16 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                           },
                   ),
                 ],
+                if (permissionModes.isNotEmpty)
+                  CompactChoiceButton(
+                    key: const ValueKey('creation-permission-picker'),
+                    label: selectedPermission?.label ?? 'Permissions',
+                    semanticLabel:
+                        'Permissions: ${selectedPermission?.label ?? 'Unavailable policy'}',
+                    onPressed: controlsEnabled
+                        ? () => _permission(state)
+                        : null,
+                  ),
                 CompactChoiceButton(
                   label: selectedModel?.name ?? 'Model default',
                   semanticLabel:
