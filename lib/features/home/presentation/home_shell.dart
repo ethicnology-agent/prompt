@@ -340,9 +340,8 @@ class _HomeShellState extends State<HomeShell> {
         MaterialPageRoute<ServerProfile>(
           builder: (pairingContext) => ConnectionScreen(
             viewModel: viewModel,
-            profileLoader: () async => widget.profile,
+            profileLoader: () async => null,
             restoreAutomatically: false,
-            scanAutomatically: true,
             onConnected: (profile) => Navigator.of(pairingContext).pop(profile),
           ),
         ),

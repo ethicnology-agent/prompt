@@ -17,6 +17,145 @@ import 'package:prompt/features/connection/presentation/connection_screen.dart';
 import 'package:prompt/features/connection/presentation/connection_view_model.dart';
 
 void main() {
+  testWidgets('connection opened from settings has an explicit back action', (
+    tester,
+  ) async {
+    final health = _RecordingHealthService();
+    final viewModel = _viewModel(health: health);
+    addTearDown(viewModel.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (context) => Scaffold(
+            body: AppButton(
+              label: 'Open connection',
+              onPressed: () {
+                Navigator.of(context).push<void>(
+                  MaterialPageRoute(
+                    builder: (_) => ConnectionScreen(
+                      viewModel: viewModel,
+                      profileLoader: () async => null,
+                      onConnected: (_) {},
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('Open connection'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.byTooltip('Back'));
+    await tester.pumpAndSettle();
+    expect(find.text('Open connection'), findsOneWidget);
+    expect(find.text('Connect a machine'), findsNothing);
+    expect(health.calls, 0);
+  });
+
+  testWidgets(
+    'first connection is QR-first without fields or automatic camera',
+    (tester) async {
+      final health = _RecordingHealthService();
+      final viewModel = _viewModel(health: health);
+      addTearDown(viewModel.dispose);
+      final scanner = _PairingCodeScanner(const PairingScanCancelled());
+      await _pumpScreen(
+        tester,
+        viewModel,
+        pairingCodeScanner: scanner,
+        manual: false,
+      );
+      expect(find.text('Connect a machine'), findsOneWidget);
+      expect(find.byType(TextFormField), findsNothing);
+      expect(find.byType(ChoiceField<AgentBackend>), findsNothing);
+      expect(scanner.calls, 0);
+      expect(health.calls, 0);
+      await tester.tap(find.text('How do I connect?'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('It does not set up your VPN.'),
+        findsOneWidget,
+      );
+      await tester.ensureVisible(find.text('Enter details manually'));
+      await tester.tap(find.text('Enter details manually'));
+      await tester.pumpAndSettle();
+      expect(find.byType(TextFormField), findsNWidgets(3));
+      expect(health.calls, 0);
+    },
+  );
+
+  testWidgets(
+    'QR-first flow reviews the machine without exposing credentials',
+    (tester) async {
+      final health = _RecordingHealthService();
+      final viewModel = _viewModel(health: health);
+      addTearDown(viewModel.dispose);
+      const ticket = 'abcdefghijklmnopqrstuvwxyzABCDEFGH123456789';
+      final scanner = _PairingCodeScanner(
+        PairingScanCompleted(
+          Uri(
+            scheme: 'prompt',
+            host: 'connect',
+            queryParameters: const {
+              'v': '1',
+              'origin': 'http://100.64.0.8:4097',
+              'backend': 'claude',
+              'username': 'prompt',
+              'ticket': ticket,
+            },
+          ).toString(),
+        ),
+      );
+      await _pumpScreen(
+        tester,
+        viewModel,
+        pairingCodeScanner: scanner,
+        manual: false,
+      );
+      await tester.tap(find.text('Scan pairing QR'));
+      await tester.pumpAndSettle();
+      expect(find.text('Machine found'), findsOneWidget);
+      expect(find.text('http://100.64.0.8:4097'), findsOneWidget);
+      expect(find.byType(TextFormField), findsNothing);
+      expect(find.textContaining(ticket), findsNothing);
+      expect(health.calls, 0);
+      await tester.ensureVisible(find.text('Connect'));
+      await tester.tap(find.text('Connect'));
+      await tester.pumpAndSettle();
+      expect(health.calls, 1);
+      expect(health.pairingTicket, ticket);
+    },
+  );
+
+  testWidgets('starting a scan prevents a late saved-profile connection', (
+    tester,
+  ) async {
+    final saved = Completer<ServerProfile?>();
+    final scanner = _PendingPairingCodeScanner();
+    final health = _RecordingHealthService();
+    final viewModel = _viewModel(health: health);
+    addTearDown(viewModel.dispose);
+    await _pumpScreen(
+      tester,
+      viewModel,
+      manual: false,
+      profileLoader: () => saved.future,
+      pairingCodeScanner: scanner,
+    );
+    await tester.tap(find.text('Scan pairing QR'));
+    await tester.pump();
+    saved.complete(_profile());
+    await tester.pump();
+    expect(health.calls, 0);
+    scanner.complete(const PairingScanCancelled());
+    await tester.pumpAndSettle();
+    expect(find.byType(TextFormField), findsNothing);
+    expect(find.text('Enter details manually'), findsOneWidget);
+    expect(health.calls, 0);
+  });
+
   testWidgets('pairing scan fills the form without connecting automatically', (
     tester,
   ) async {
@@ -277,6 +416,9 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
+      await tester.ensureVisible(find.text('Enter details manually'));
+      await tester.tap(find.text('Enter details manually'));
+      await tester.pumpAndSettle();
       final picker = find.byType(ChoiceField<AgentBackend>);
       await tester.ensureVisible(picker);
       await tester.tap(picker);
@@ -453,6 +595,7 @@ Future<void> _pumpScreen(
   ValueChanged<ServerProfile>? onConnected,
   PairingCodeScanner? pairingCodeScanner,
   bool scanAutomatically = false,
+  bool manual = true,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -466,6 +609,13 @@ Future<void> _pumpScreen(
     ),
   );
   await tester.pump();
+  if (manual && find.text('Enter details manually').evaluate().isNotEmpty) {
+    await tester.ensureVisible(find.text('Enter details manually'));
+    await tester.tap(find.text('Enter details manually'));
+    await tester.pump();
+    await tester.ensureVisible(find.text('Scan pairing QR'));
+    await tester.pump();
+  }
 }
 
 class _PairingCodeScanner implements PairingCodeScanner {

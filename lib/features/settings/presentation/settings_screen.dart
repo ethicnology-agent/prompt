@@ -45,8 +45,8 @@ class SettingsScreen extends StatelessWidget {
               if (onScanPairing != null)
                 ListTile(
                   leading: const Icon(Icons.qr_code_scanner_rounded),
-                  title: const Text('Scan pairing QR'),
-                  subtitle: const Text('On-device · camera only when needed'),
+                  title: const Text('Connect a machine'),
+                  subtitle: const Text('Scan a QR code from your computer'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: onScanPairing,
                 ),

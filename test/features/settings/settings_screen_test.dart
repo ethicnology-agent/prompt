@@ -25,10 +25,10 @@ void main() {
       ),
     );
 
-    expect(find.text('Scan pairing QR'), findsOneWidget);
-    expect(find.text('On-device · camera only when needed'), findsOneWidget);
+    expect(find.text('Connect a machine'), findsOneWidget);
+    expect(find.text('Scan a QR code from your computer'), findsOneWidget);
     expect(scans, 0);
-    await tester.tap(find.text('Scan pairing QR'));
+    await tester.tap(find.text('Connect a machine'));
     expect(scans, 1);
   });
 
