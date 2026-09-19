@@ -1721,7 +1721,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                         alignment: Alignment.centerLeft,
                         child: AppStatusIndicator(
                           key: ValueKey('conversation-online-status'),
-                          label: 'Online',
+                          label: 'online',
                           semanticLabel: 'Connection status: Online',
                           liveRegion: true,
                         ),
@@ -1729,59 +1729,57 @@ class _ConversationScreenState extends State<ConversationScreen>
                     );
                   },
                 ),
-                Container(
-                  margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).colorScheme.surfaceContainerLow,
-                    borderRadius: BorderRadius.circular(24),
-                    border: Border.all(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                    ),
-                  ),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      if (!_composerOptionsReady)
-                        Padding(
-                          padding: const EdgeInsets.all(8),
-                          child:
-                              widget.viewModel.executionOptionsLoad.value ==
-                                  ExecutionOptionsLoadState.failed
-                              ? Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text(
-                                      'Could not restore saved model options. Sending is paused.',
-                                    ),
-                                    AppButton(
-                                      label: 'Retry saved options',
-                                      onPressed: () =>
-                                          unawaited(_openSession()),
-                                    ),
-                                  ],
-                                )
-                              : const Text('Restoring saved model options…'),
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 4, 8, 6),
+                  child: ComposerSurface(
+                    key: const ValueKey('conversation-composer-surface'),
+                    contentPadding: EdgeInsets.zero,
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        if (!_composerOptionsReady)
+                          Padding(
+                            padding: const EdgeInsets.all(8),
+                            child:
+                                widget.viewModel.executionOptionsLoad.value ==
+                                    ExecutionOptionsLoadState.failed
+                                ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Text(
+                                        'Could not restore saved model options. Sending is paused.',
+                                      ),
+                                      AppButton(
+                                        label: 'Retry saved options',
+                                        onPressed: () =>
+                                            unawaited(_openSession()),
+                                      ),
+                                    ],
+                                  )
+                                : const Text('Restoring saved model options…'),
+                          ),
+                        Composer(
+                          controller: _composerController,
+                          command: _selectedCommand,
+                          attachments: widget.viewModel.attachments,
+                          onRemoveAttachment: widget.viewModel.removeAttachment,
+                          onSubmit: _submitComposer,
+                          voiceState: widget.voiceViewModel?.state,
+                          onVoiceHoldStart: widget.voiceViewModel == null
+                              ? null
+                              : _startVoiceCapture,
+                          onVoiceHoldEnd: widget
+                              .voiceViewModel
+                              ?.finishSegmentFromUserAction,
+                          onVoiceStop:
+                              widget.voiceViewModel?.stopModeFromUserAction,
                         ),
-                      Composer(
-                        controller: _composerController,
-                        command: _selectedCommand,
-                        attachments: widget.viewModel.attachments,
-                        onRemoveAttachment: widget.viewModel.removeAttachment,
-                        onSubmit: _submitComposer,
-                        voiceState: widget.voiceViewModel?.state,
-                        onVoiceHoldStart: widget.voiceViewModel == null
-                            ? null
-                            : _startVoiceCapture,
-                        onVoiceHoldEnd:
-                            widget.voiceViewModel?.finishSegmentFromUserAction,
-                        onVoiceStop:
-                            widget.voiceViewModel?.stopModeFromUserAction,
-                      ),
-                      Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
-                        child: _composerActionColumn(),
-                      ),
-                    ],
+                        Padding(
+                          padding: const EdgeInsets.only(right: 8),
+                          child: _composerActionColumn(),
+                        ),
+                      ],
+                    ),
                   ),
                 ),
               ],

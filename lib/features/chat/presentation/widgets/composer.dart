@@ -88,7 +88,7 @@ class Composer extends StatelessWidget {
         : 'Enter inserts a newline; use the queue button to submit';
     return PromptAdaptiveBuilder(
       builder: (context, _) => Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 12),
+        padding: EdgeInsets.zero,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [

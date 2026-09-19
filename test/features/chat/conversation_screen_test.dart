@@ -615,6 +615,7 @@ void main() {
 
       final status = find.byKey(const ValueKey('conversation-online-status'));
       expect(status, findsOneWidget);
+      expect(find.text('online'), findsOneWidget);
       expect(
         tester.getSemantics(status).getSemanticsData().label,
         'Connection status: Online',
@@ -2047,6 +2048,28 @@ void main() {
       tester.getBottomRight(composerPanel).dy,
       closeTo(surfaceSize.height - keyboardHeight, 1),
     );
+  });
+
+  testWidgets('keeps the phone composer compact without shrinking actions', (
+    tester,
+  ) async {
+    const surfaceSize = Size(393, 851);
+    await tester.binding.setSurfaceSize(surfaceSize);
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+
+    await pumpScreen(tester);
+
+    final surface = tester.getRect(
+      find.byKey(const ValueKey('conversation-composer-surface')),
+    );
+    final attachment = tester.getRect(find.byTooltip('Add attachment'));
+    final queue = tester.getRect(find.byTooltip('Queue this prompt'));
+    expect(surface.left, 8);
+    expect(surface.right, surfaceSize.width - 8);
+    expect(surface.height, lessThanOrEqualTo(100));
+    expect(attachment.left, closeTo(surface.left, 1));
+    expect(attachment.size, const Size.square(48));
+    expect(queue.size, const Size.square(48));
   });
 
   for (final keyboard in [0.0, 320.0]) {

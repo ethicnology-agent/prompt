@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'app_button.dart';
 import 'app_text_field.dart';
 import 'composer_action_bar.dart';
+import 'composer_surface.dart';
 
 /// A real creation setting. A missing callback makes the row read-only.
 class CreationConfigurationRow extends StatelessWidget {
@@ -103,71 +104,63 @@ class DraftComposerPanel extends StatelessWidget {
               ),
             ),
           _wrapComposer(
-            Material(
+            ComposerSurface(
               key: const ValueKey('draft-composer-card'),
-              color: scheme.surfaceContainerLow,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(28),
-                side: BorderSide(color: scheme.outlineVariant),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(8),
-                child: Column(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    ?attachments,
-                    Row(
-                      children: [
-                        if (!expanded && onTerminal != null)
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ?attachments,
+                  Row(
+                    children: [
+                      if (!expanded && onTerminal != null)
+                        AppIconButton(
+                          icon: Icons.terminal_rounded,
+                          tooltip: 'Remote terminal',
+                          onPressed: onTerminal,
+                        ),
+                      Expanded(
+                        child: AppTextField(
+                          controller: controller,
+                          focusNode: focusNode,
+                          enabled: enabled,
+                          readOnly: readOnly,
+                          minLines: 1,
+                          maxLines: 4,
+                          onChanged: onChanged,
+                          textInputAction: TextInputAction.newline,
+                          hint: hint,
+                          variant: AppTextFieldVariant.borderless,
+                        ),
+                      ),
+                      if (!expanded) _submit(),
+                    ],
+                  ),
+                  if (expanded)
+                    ComposerActionBar(
+                      leading: [
+                        if (onAttach != null)
+                          AppIconButton(
+                            icon: Icons.add_rounded,
+                            tooltip: 'Attach files',
+                            onPressed: onAttach,
+                          ),
+                        if (onTerminal != null)
                           AppIconButton(
                             icon: Icons.terminal_rounded,
                             tooltip: 'Remote terminal',
                             onPressed: onTerminal,
                           ),
-                        Expanded(
-                          child: AppTextField(
-                            controller: controller,
-                            focusNode: focusNode,
-                            enabled: enabled,
-                            readOnly: readOnly,
-                            minLines: 1,
-                            maxLines: 4,
-                            onChanged: onChanged,
-                            textInputAction: TextInputAction.newline,
-                            hint: hint,
-                            variant: AppTextFieldVariant.borderless,
+                        if (onClose != null)
+                          AppIconButton(
+                            icon: Icons.keyboard_hide_outlined,
+                            tooltip: 'Close new session options',
+                            onPressed: onClose,
                           ),
-                        ),
-                        if (!expanded) _submit(),
                       ],
+                      controls: actions,
+                      trailing: _submit(),
                     ),
-                    if (expanded)
-                      ComposerActionBar(
-                        leading: [
-                          if (onAttach != null)
-                            AppIconButton(
-                              icon: Icons.add_rounded,
-                              tooltip: 'Attach files',
-                              onPressed: onAttach,
-                            ),
-                          if (onTerminal != null)
-                            AppIconButton(
-                              icon: Icons.terminal_rounded,
-                              tooltip: 'Remote terminal',
-                              onPressed: onTerminal,
-                            ),
-                          if (onClose != null)
-                            AppIconButton(
-                              icon: Icons.keyboard_hide_outlined,
-                              tooltip: 'Close new session options',
-                              onPressed: onClose,
-                            ),
-                        ],
-                        controls: actions,
-                        trailing: _submit(),
-                      ),
-                  ],
-                ),
+                ],
               ),
             ),
           ),

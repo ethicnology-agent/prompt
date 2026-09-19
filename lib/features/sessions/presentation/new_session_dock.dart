@@ -150,40 +150,31 @@ class _NewSessionDockState extends State<NewSessionDock> {
         ),
       );
     }
-    final theme = Theme.of(context);
-    return Material(
-      color: theme.colorScheme.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
-        side: BorderSide(color: theme.colorScheme.outlineVariant),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(8),
-        child: Row(
-          children: [
-            if (widget.onTerminal != null)
-              AppIconButton(
-                icon: Icons.terminal_rounded,
-                tooltip: 'Remote terminal',
-                onPressed: widget.onTerminal,
-              ),
-            Expanded(
-              child: AppButton(
-                variant: AppButtonVariant.tertiary,
-                tone: AppButtonTone.subtle,
-                leftAligned: true,
-                onPressed: widget.onCreate,
-                label: widget.hint,
-              ),
-            ),
+    return ComposerSurface(
+      child: Row(
+        children: [
+          if (widget.onTerminal != null)
             AppIconButton(
-              variant: AppIconButtonVariant.filled,
-              tooltip: 'New session from draft',
-              onPressed: widget.onCreate,
-              icon: Icons.add_rounded,
+              icon: Icons.terminal_rounded,
+              tooltip: 'Remote terminal',
+              onPressed: widget.onTerminal,
             ),
-          ],
-        ),
+          Expanded(
+            child: AppButton(
+              variant: AppButtonVariant.tertiary,
+              tone: AppButtonTone.subtle,
+              leftAligned: true,
+              onPressed: widget.onCreate,
+              label: widget.hint,
+            ),
+          ),
+          AppIconButton(
+            variant: AppIconButtonVariant.filled,
+            tooltip: 'New session from draft',
+            onPressed: widget.onCreate,
+            icon: Icons.add_rounded,
+          ),
+        ],
       ),
     );
   }

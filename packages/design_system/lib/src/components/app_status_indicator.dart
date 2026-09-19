@@ -40,7 +40,7 @@ class AppStatusIndicator extends StatelessWidget {
               label,
               style: theme.textTheme.bodySmall?.copyWith(
                 color: color,
-                fontWeight: FontWeight.w600,
+                fontWeight: FontWeight.w500,
               ),
             ),
           ],

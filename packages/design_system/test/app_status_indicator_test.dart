@@ -31,6 +31,7 @@ void main() {
         text.style?.color,
         promptTheme().extension<PromptTokens>()!.success,
       );
+      expect(text.style?.fontWeight, FontWeight.w500);
     } finally {
       semantics.dispose();
     }
