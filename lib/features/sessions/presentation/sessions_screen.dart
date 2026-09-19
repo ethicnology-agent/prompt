@@ -1300,21 +1300,18 @@ class _CatalogControls extends StatelessWidget {
               child: ListView(
                 scrollDirection: Axis.horizontal,
                 children: [
-                  ChoiceChip(
-                    label: const Text('All'),
+                  AppChoiceChip(
+                    label: 'All',
                     selected: selectedProjectId == null,
                     onSelected: (_) => onSelectProject(null),
-                    materialTapTargetSize: MaterialTapTargetSize.padded,
                   ),
                   for (final project in projects) ...[
                     const SizedBox(width: 8),
-                    ChoiceChip(
-                      label: Text(
-                        projectLabels[project.id] ?? _projectLabel(project),
-                      ),
+                    AppChoiceChip(
+                      label:
+                          projectLabels[project.id] ?? _projectLabel(project),
                       selected: selectedProjectId == project.id,
                       onSelected: (_) => onSelectProject(project.id),
-                      materialTapTargetSize: MaterialTapTargetSize.padded,
                     ),
                   ],
                 ],

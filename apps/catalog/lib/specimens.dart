@@ -25,6 +25,30 @@ final specimens = <Specimen>[
   Specimen('Image viewer', (_) => const _ImageViewerSpecimen()),
   Specimen('Inline selection panel', (_) => const _InlineSelectionSpecimen()),
   Specimen('Compact choice button', (_) => const _CompactChoiceSpecimen()),
+  Specimen(
+    'Choice chips',
+    (_) => Wrap(
+      spacing: 8,
+      runSpacing: 8,
+      children: [
+        AppChoiceChip(
+          label: 'Selected filter',
+          selected: true,
+          onSelected: (_) {},
+        ),
+        AppChoiceChip(
+          label: 'Available filter',
+          selected: false,
+          onSelected: (_) {},
+        ),
+        const AppChoiceChip(
+          label: 'Unavailable filter',
+          selected: false,
+          onSelected: null,
+        ),
+      ],
+    ),
+  ),
   Specimen('Choice option tile', (_) => const _ChoiceOptionSpecimen()),
   Specimen('Choice field', (_) => const _ChoiceFieldSpecimen()),
   Specimen('Navigation title', (_) => const _NavigationTitleSpecimen()),

@@ -184,12 +184,12 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
           spacing: 8,
           children: [
             for (final kind in WorkspaceSearchKind.values)
-              ChoiceChip(
-                label: Text(switch (kind) {
+              AppChoiceChip(
+                label: switch (kind) {
                   WorkspaceSearchKind.file => 'Files',
                   WorkspaceSearchKind.text => 'Text',
                   WorkspaceSearchKind.symbol => 'Symbols',
-                }),
+                },
                 selected: _kind == kind,
                 onSelected: (_) {
                   setState(() => _kind = kind);
