@@ -1053,6 +1053,7 @@ void main() {
                     label: 'Careful reasoning',
                     description: 'Real model choice',
                   ),
+                  ReasoningEffortChoice(id: 'low', label: 'low'),
                 ],
               ),
             ),
@@ -1118,6 +1119,8 @@ void main() {
       );
       expect(find.text('Default'), findsNothing);
       expect(find.text('Engine default'), findsOneWidget);
+      expect(find.text('Low'), findsOneWidget);
+      expect(find.text('Real model choice'), findsNothing);
       await tester.tap(find.byTooltip('Close Reasoning effort choices'));
       await tester.pumpAndSettle();
       expect(

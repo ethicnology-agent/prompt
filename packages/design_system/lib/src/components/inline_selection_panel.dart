@@ -173,8 +173,6 @@ class _InlineSelectionPanelState<T> extends State<InlineSelectionPanel<T>> {
                                       shape: RoundedRectangleBorder(
                                         borderRadius: BorderRadius.circular(14),
                                       ),
-                                      selectedTileColor: colors.primary
-                                          .withValues(alpha: 0.08),
                                       selectedColor: colors.primary,
                                       textColor: colors.onSurface,
                                       titleTextStyle: TextStyle(

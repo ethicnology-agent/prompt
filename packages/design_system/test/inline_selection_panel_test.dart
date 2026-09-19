@@ -194,6 +194,8 @@ void main() {
         find.byIcon(Icons.radio_button_unchecked),
         radio ? findsOneWidget : findsNothing,
       );
+      final selectedTile = tester.widget<ListTile>(find.byType(ListTile).first);
+      expect(selectedTile.selectedTileColor, isNull);
     });
   }
   testWidgets(

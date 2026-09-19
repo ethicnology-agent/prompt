@@ -695,6 +695,17 @@ class _ConversationScreenState extends State<ConversationScreen>
     return null;
   }
 
+  String _effortLabel(ReasoningEffortChoice choice) =>
+      switch (choice.label.toLowerCase()) {
+        'low' => 'Low',
+        'medium' => 'Medium',
+        'high' => 'High',
+        'xhigh' => 'xHigh',
+        'max' => 'Max',
+        'ultra' => 'Ultra',
+        _ => choice.label,
+      };
+
   Widget _effortControl(
     OpenCodeCapabilities capabilities,
     PromptExecutionOptions options,
@@ -715,7 +726,7 @@ class _ConversationScreenState extends State<ConversationScreen>
         .where((choice) => choice.id == options.reasoningEffort)
         .firstOrNull;
     final label =
-        selected?.label ??
+        (selected == null ? null : _effortLabel(selected)) ??
         (options.reasoningEffort == null
             ? 'Effort default'
             : 'Unavailable effort');
@@ -1679,8 +1690,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                 for (final choice in choices)
                   InlineSelectionOption(
                     value: choice.id,
-                    label: choice.label,
-                    description: choice.description,
+                    label: _effortLabel(choice),
                   ),
               ],
               onSelected: model == null || choices.isEmpty
