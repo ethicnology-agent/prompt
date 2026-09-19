@@ -606,7 +606,7 @@ class ConversationViewModel {
     if (profile == null || session == null) {
       return;
     }
-    if (!profile.capabilities.supports(BackendFeature.workspace)) {
+    if (!profile.capabilities.supports(BackendFeature.sessionArtifacts)) {
       artifacts.value = const SessionArtifactsReady(todos: [], diffs: []);
       return;
     }

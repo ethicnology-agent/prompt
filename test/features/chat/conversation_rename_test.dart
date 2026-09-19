@@ -45,6 +45,7 @@ void main() {
     createdAt: DateTime(2026),
     updatedAt: DateTime(2026),
     parentId: 'parent',
+    branch: 'refs/heads/main',
     changedFiles: 2,
     additions: 3,
     deletions: 1,
@@ -271,6 +272,7 @@ void main() {
       final updated = model.sessionMetadata.value!;
       expect(updated.title, 'Renamed');
       expect(updated.parentId, session.parentId);
+      expect(updated.branch, session.branch);
       expect(updated.modelId, session.modelId);
       expect(updated.changedFiles, session.changedFiles);
       expect(model.renamingSession.value, isFalse);

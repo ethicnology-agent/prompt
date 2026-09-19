@@ -19,11 +19,12 @@ async function fixture() {
   const rpc = new EventEmitter();
   const replies = [];
   const requests = [];
+  const completedChanges = [];
   rpc.write = (value) => replies.push(value);
   rpc.close = () => {};
   rpc.request = async (method) => method === 'thread/start' ? { thread: { id: 'thread' } } : {};
-  const runner = await new CodexAdapter('fixture', () => rpc).open({ directory: '/fixture' }, { delta() {}, permission: async (method, params) => { requests.push(params); return true; } });
-  return { rpc, replies, requests, runner };
+  const runner = await new CodexAdapter('fixture', () => rpc).open({ directory: '/fixture' }, { delta() {}, changes: (value) => completedChanges.push(value), permission: async (method, params) => { requests.push(params); return true; } });
+  return { rpc, replies, requests, completedChanges, runner };
 }
 
 test('session-scoped grantRoot never becomes accept even when generic sink says allow', async () => {
@@ -75,6 +76,18 @@ test('file scope is correlated from actual item started contract by thread turn 
   f.rpc.emit('message', { id: 7, method: 'item/fileChange/requestApproval', params: { threadId: 'thread', turnId: 'turn', itemId: 'file' } });
   await new Promise(setImmediate);
   assert.equal(f.requests.at(-1).changes, undefined);
+  f.runner.close();
+});
+
+test('only successfully completed file changes reach session artifacts', async () => {
+  const f = await fixture();
+  const changes = [{ path: '/fixture/a.txt', kind: { type: 'update', move_path: null }, diff: '@@ -1 +1 @@\n-old\n+new' }];
+  for (const status of ['failed', 'declined', 'inProgress']) {
+    f.rpc.emit('message', { method: 'item/completed', params: { threadId: 'thread', turnId: 'turn', item: { id: status, type: 'fileChange', status, changes } } });
+  }
+  assert.deepEqual(f.completedChanges, []);
+  f.rpc.emit('message', { method: 'item/completed', params: { threadId: 'thread', turnId: 'turn', item: { id: 'done', type: 'fileChange', status: 'completed', changes } } });
+  assert.deepEqual(f.completedChanges, [changes]);
   f.runner.close();
 });
 

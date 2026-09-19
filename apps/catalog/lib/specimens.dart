@@ -389,7 +389,17 @@ class _NavigationTitleSpecimenState extends State<_NavigationTitleSpecimen> {
         child: NavigationTitleButton(
           label: 'A synthetic session with a long descriptive title',
           semanticLabel: 'Open synthetic session details',
-          subtitle: '/workspace/synthetic-project',
+          subtitleSegments: const [
+            NavigationTitleSegment('main'),
+            NavigationTitleSegment(
+              '+4',
+              tone: NavigationTitleSegmentTone.positive,
+            ),
+            NavigationTitleSegment(
+              '-2',
+              tone: NavigationTitleSegmentTone.negative,
+            ),
+          ],
           onPressed: () => setState(() => _detailsVisible = !_detailsVisible),
         ),
       ),

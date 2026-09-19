@@ -63,7 +63,7 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
       if (url.pathname === '/prompt/capabilities' && request.method === 'GET') {
         json(response, { protocolVersion: 1, machine: { worktrees: Boolean(worktrees) }, engines: Object.fromEntries(['claude', 'codex', 'opencode'].map((name) => [name, {
           available: name === 'opencode' ? Boolean(openCode) : Boolean(engines[name]),
-          features: name === 'opencode' ? (openCode ? ['sessions', 'text', 'abort', 'permissions', 'permissionAlways', 'questions', 'commands', 'attachments', 'sessionDelete', 'sessionRename', 'sessionFork', 'sessionRevert'] : []) : (engines[name] ? ['sessions', 'text', 'abort', 'permissions', 'attachments', 'imageAttachments', 'sessionDelete', 'sessionRename'] : []),
+          features: name === 'opencode' ? (openCode ? ['sessions', 'text', 'abort', 'permissions', 'permissionAlways', 'questions', 'commands', 'attachments', 'sessionArtifacts', 'review', 'sessionDelete', 'sessionRename', 'sessionFork', 'sessionRevert'] : []) : (engines[name] ? ['sessions', 'text', 'abort', 'permissions', 'attachments', 'imageAttachments', ...(name === 'codex' ? ['sessionArtifacts'] : []), 'sessionDelete', 'sessionRename'] : []),
           ...(name !== 'opencode' && engines[name] ? { attachmentConstraints: imageConstraints } : {}),
           persistence: name === 'opencode' ? 'upstream' : 'gateway-lifetime',
         }])) }); return;
@@ -134,7 +134,9 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
         if (start) response.setHeader('x-next-cursor', session.messages[start].info.id);
         json(response, session.messages.slice(start, end)); return;
       }
-      if (['todo', 'diff', 'children'].includes(action) && request.method === 'GET') { json(response, []); return; }
+      if (action === 'todo' && request.method === 'GET') { json(response, []); return; }
+      if (action === 'diff' && request.method === 'GET') { json(response, [...session.diffs.values()]); return; }
+      if (action === 'children' && request.method === 'GET') { json(response, []); return; }
       if (action === 'prompt_async' && request.method === 'POST') { await store.submit(session, await bodyJson(request, imageRequestBytes), catalogs.get(engine)); response.writeHead(204); response.end(); return; }
       if (action === 'abort' && request.method === 'POST') { json(response, await store.abort(session)); return; }
       if (action?.startsWith('permissions/') && request.method === 'POST') {

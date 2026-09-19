@@ -3,6 +3,20 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
+TextSpan _spanWithText(InlineSpan span, String text) {
+  if (span case final TextSpan value) {
+    if (value.text == text) return value;
+    for (final child in value.children ?? const <InlineSpan>[]) {
+      try {
+        return _spanWithText(child, text);
+      } on StateError {
+        // Continue through sibling spans.
+      }
+    }
+  }
+  throw StateError('Text span not found.');
+}
+
 void main() {
   const title = 'A long session title that must remain fully accessible';
   const description = 'Open session details: $title';
@@ -103,5 +117,70 @@ void main() {
     expect(taps, 1);
     expect(find.byTooltip(title), findsOneWidget);
     expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('segmented subtitle keeps colors and one semantic value', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: promptTheme(),
+        home: Scaffold(
+          appBar: AppBar(
+            title: NavigationTitleButton(
+              label: 'Session',
+              semanticLabel: 'Open session details: Session',
+              subtitleSegments: const [
+                NavigationTitleSegment('main'),
+                NavigationTitleSegment(
+                  '+4',
+                  tone: NavigationTitleSegmentTone.positive,
+                ),
+                NavigationTitleSegment(
+                  '-2',
+                  tone: NavigationTitleSegmentTone.negative,
+                ),
+              ],
+              onPressed: () {},
+            ),
+          ),
+        ),
+      ),
+    );
+    expect(find.byTooltip('Session\nmain +4 -2'), findsOneWidget);
+    expect(
+      tester.getSemantics(
+        find.bySemanticsLabel('Open session details: Session'),
+      ),
+      matchesSemantics(
+        label: 'Open session details: Session',
+        value: 'main +4 -2',
+        isButton: true,
+        hasEnabledState: true,
+        isEnabled: true,
+        isFocusable: true,
+        hasFocusAction: true,
+        hasTapAction: true,
+      ),
+    );
+    final richText = tester
+        .widgetList<RichText>(
+          find.descendant(
+            of: find.byType(TextButton),
+            matching: find.byType(RichText),
+          ),
+        )
+        .firstWhere((widget) => widget.text.toPlainText() == 'main +4 -2');
+    expect(richText.text.toPlainText(), 'main +4 -2');
+    expect(
+      _spanWithText(richText.text, '+4').style!.color,
+      promptTheme().colorScheme.primary,
+    );
+    expect(
+      _spanWithText(richText.text, '-2').style!.color,
+      promptTheme().colorScheme.error,
+    );
+    semantics.dispose();
   });
 }

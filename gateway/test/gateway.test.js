@@ -45,6 +45,9 @@ test('capabilities and all native routes require authentication', async (t) => {
   assert.equal(capabilities.engines.claude.available, false);
   assert.equal(capabilities.engines.codex.available, true);
   assert.equal(capabilities.engines.codex.features.includes('terminal'), false);
+  assert.equal(capabilities.engines.codex.features.includes('sessionArtifacts'), true);
+  assert.equal(capabilities.engines.codex.features.includes('review'), false);
+  assert.equal(capabilities.engines.claude.features.includes('sessionArtifacts'), false);
   assert.equal((await f.request('/prompt/codex/session', 'GET', null, '')).status, 401);
   assert.equal((await f.request('/prompt/codex/pty')).status, 404);
 });
@@ -108,6 +111,26 @@ test('project catalogs include active nested workspaces with matching stable IDs
   assert.ok((await (await f.request('/prompt/codex/project')).json()).some((entry) => entry.id === project.id));
   await f.request(`/prompt/codex/session/${second.id}`, 'DELETE');
   assert.equal((await (await f.request('/prompt/codex/project')).json()).some((entry) => entry.id === project.id), false);
+});
+
+test('native session records expose bounded branch and completed in-workspace diffs', async (t) => {
+  const directory = await mkdtemp(join(tmpdir(), 'prompt-gateway-artifacts-'));
+  const roots = await resolveRoots([directory]);
+  const store = new Sessions('codex', {}, roots, {
+    workspaceMetadata: async () => ({ branch: 'refs/heads/main' }),
+  });
+  t.after(async () => { store.close(); await rm(directory, { recursive: true }); });
+  const created = await store.create(directory);
+  const session = store.get(created.id);
+  session.active = true;
+  store.changes(session, [
+    { path: join(session.directory, 'lib/a.dart'), kind: { type: 'update' }, diff: '@@ -1 +1 @@\n-old\n+new' },
+    { path: join(session.directory, '..', 'outside.txt'), kind: { type: 'add' }, diff: '+secret' },
+  ]);
+  const record = store.record(session);
+  assert.equal(record.branch, 'refs/heads/main');
+  assert.deepEqual(record.summary, { files: 1, additions: 1, deletions: 1 });
+  assert.deepEqual([...session.diffs.values()], [{ file: 'lib/a.dart', patch: '@@ -1 +1 @@\n-old\n+new', additions: 1, deletions: 1, status: 'modified' }]);
 });
 
 test('session queue does not interrupt and duplicate acceptance never executes twice', async (t) => {

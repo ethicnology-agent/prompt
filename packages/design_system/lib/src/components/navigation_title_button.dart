@@ -8,12 +8,14 @@ class NavigationTitleButton extends StatelessWidget {
     required this.semanticLabel,
     required this.onPressed,
     this.subtitle,
+    this.subtitleSegments = const [],
   });
 
   final String label;
   final String semanticLabel;
   final VoidCallback onPressed;
   final String? subtitle;
+  final List<NavigationTitleSegment> subtitleSegments;
 
   @override
   Widget build(BuildContext context) {
@@ -31,7 +33,9 @@ class NavigationTitleButton extends StatelessWidget {
         (scaler.scale(titleStyle.fontSize!) +
             scaler.scale(subtitleStyle.fontSize!)) *
         1.2;
-    final details = subtitle;
+    final details = subtitleSegments.isEmpty
+        ? subtitle
+        : subtitleSegments.map((segment) => segment.text).join(' ');
     final fullLabel = details == null || details.isEmpty
         ? label
         : '$label\n$details';
@@ -66,12 +70,39 @@ class NavigationTitleButton extends StatelessWidget {
                 if (details != null &&
                     details.isNotEmpty &&
                     constraints.maxHeight >= twoLineHeight)
-                  Text(
-                    details,
-                    style: subtitleStyle,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
+                  if (subtitleSegments.isEmpty)
+                    Text(
+                      details,
+                      style: subtitleStyle,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    )
+                  else
+                    Text.rich(
+                      TextSpan(
+                        children: [
+                          for (final (index, segment)
+                              in subtitleSegments.indexed) ...[
+                            if (index > 0) const TextSpan(text: ' '),
+                            TextSpan(
+                              text: segment.text,
+                              style: subtitleStyle.copyWith(
+                                color: switch (segment.tone) {
+                                  NavigationTitleSegmentTone.neutral =>
+                                    subtitleStyle.color,
+                                  NavigationTitleSegmentTone.positive =>
+                                    theme.colorScheme.primary,
+                                  NavigationTitleSegmentTone.negative =>
+                                    theme.colorScheme.error,
+                                },
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
               ],
             ),
           ),
@@ -79,4 +110,16 @@ class NavigationTitleButton extends StatelessWidget {
       ),
     );
   }
+}
+
+enum NavigationTitleSegmentTone { neutral, positive, negative }
+
+class NavigationTitleSegment {
+  const NavigationTitleSegment(
+    this.text, {
+    this.tone = NavigationTitleSegmentTone.neutral,
+  });
+
+  final String text;
+  final NavigationTitleSegmentTone tone;
 }

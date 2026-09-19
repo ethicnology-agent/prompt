@@ -27,6 +27,7 @@ enum BackendFeature {
   attachments,
   imageAttachments,
   terminal,
+  sessionArtifacts,
   review,
   workspace,
   configuration,

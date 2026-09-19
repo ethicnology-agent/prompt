@@ -76,6 +76,7 @@ void main() {
       'projectID': 'project-1',
       'directory': '/workspace/project',
       'title': 'Configured session',
+      'branch': 'refs/heads/main',
       'agent': 'build',
       'model': {'providerID': 'anthropic', 'id': 'claude-sonnet-4-6'},
       'time': {'created': 1000, 'updated': 2000},
@@ -84,6 +85,7 @@ void main() {
     expect(record.modelProviderId, 'anthropic');
     expect(record.modelId, 'claude-sonnet-4-6');
     expect(record.agentName, 'build');
+    expect(record.branch, 'refs/heads/main');
   });
 
   test(

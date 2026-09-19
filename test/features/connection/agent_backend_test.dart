@@ -164,6 +164,7 @@ void main() {
                     'text',
                     'abort',
                     'permissions',
+                    'sessionArtifacts',
                     'futureFeature',
                   ],
                 },
@@ -181,6 +182,7 @@ void main() {
     expect(capabilities?.supports(BackendFeature.text), isTrue);
     expect(capabilities?.supports(BackendFeature.attachments), isFalse);
     expect(capabilities?.supports(BackendFeature.terminal), isFalse);
+    expect(capabilities?.supports(BackendFeature.sessionArtifacts), isTrue);
   });
 
   test(

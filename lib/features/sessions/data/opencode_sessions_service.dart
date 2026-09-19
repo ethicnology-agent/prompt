@@ -332,6 +332,7 @@ class OpenCodeSessionRecord {
     required this.createdAtMillis,
     required this.updatedAtMillis,
     this.parentId,
+    this.branch,
     this.changedFiles,
     this.additions,
     this.deletions,
@@ -372,6 +373,7 @@ class OpenCodeSessionRecord {
       createdAtMillis: createdAt.toInt(),
       updatedAtMillis: updatedAt.toInt(),
       parentId: _optionalString(json, 'parentID'),
+      branch: _optionalString(json, 'branch'),
       changedFiles: _optionalInt(summaryMap, 'files'),
       additions: _optionalInt(summaryMap, 'additions'),
       deletions: _optionalInt(summaryMap, 'deletions'),
@@ -389,6 +391,7 @@ class OpenCodeSessionRecord {
   final int createdAtMillis;
   final int updatedAtMillis;
   final String? parentId;
+  final String? branch;
   final int? changedFiles;
   final int? additions;
   final int? deletions;

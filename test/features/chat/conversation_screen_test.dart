@@ -1583,8 +1583,9 @@ void main() {
       expect(
         tester
             .widget<NavigationTitleButton>(find.byType(NavigationTitleButton))
-            .subtitle,
-        'project',
+            .subtitleSegments
+            .map((segment) => segment.text),
+        ['project'],
       );
       expect(find.text('project'), findsOneWidget);
       await tester.tap(find.byType(NavigationTitleButton));
@@ -1619,6 +1620,38 @@ void main() {
       expect(viewModel.enqueueCallCount, 0);
     },
   );
+
+  testWidgets('phone header shows branch and colored change counters', (
+    tester,
+  ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final summarized = OpenCodeSession(
+      id: session.id,
+      projectId: session.projectId,
+      directory: session.directory,
+      title: session.title,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+      branch: 'refs/heads/main',
+      changedFiles: 2,
+      additions: 4,
+      deletions: 2,
+    );
+    await pumpScreen(tester, activeSession: summarized);
+    final title = tester.widget<NavigationTitleButton>(
+      find.byType(NavigationTitleButton),
+    );
+    expect(title.subtitleSegments.map((segment) => segment.text), [
+      'main',
+      '+4',
+      '-2',
+    ]);
+    expect(title.subtitleSegments[1].tone, NavigationTitleSegmentTone.positive);
+    expect(title.subtitleSegments[2].tone, NavigationTitleSegmentTone.negative);
+    expect(find.byTooltip('A session\nmain +4 -2'), findsOneWidget);
+    expect(viewModel.enqueueCallCount, 0);
+  });
 
   testWidgets('details forks once and opens the actual returned session', (
     tester,

@@ -144,6 +144,19 @@ class SessionDetailsScreen extends StatelessWidget {
                   title: 'Directory',
                   value: session.directory,
                 ),
+                if (session.branch case final String branch)
+                  _Detail(
+                    icon: Icons.account_tree_outlined,
+                    title: 'Branch',
+                    value: branch.replaceFirst('refs/heads/', ''),
+                  ),
+                if (session.changedFiles case final int changedFiles)
+                  _Detail(
+                    icon: Icons.difference_outlined,
+                    title: 'Changes',
+                    value:
+                        '$changedFiles files · +${session.additions ?? 0} · -${session.deletions ?? 0}',
+                  ),
                 _Detail(
                   icon: Icons.workspaces_outline,
                   title: 'Project ID',

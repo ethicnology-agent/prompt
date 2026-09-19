@@ -292,6 +292,7 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
           createdAt: session.createdAt,
           updatedAt: DateTime.now(),
           parentId: session.parentId,
+          branch: session.branch,
           changedFiles: session.changedFiles,
           additions: session.additions,
           deletions: session.deletions,

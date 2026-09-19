@@ -7,6 +7,7 @@ class OpenCodeSession {
     required this.createdAt,
     required this.updatedAt,
     this.parentId,
+    this.branch,
     this.changedFiles,
     this.additions,
     this.deletions,
@@ -23,6 +24,7 @@ class OpenCodeSession {
   final DateTime createdAt;
   final DateTime updatedAt;
   final String? parentId;
+  final String? branch;
   final int? changedFiles;
   final int? additions;
   final int? deletions;
@@ -39,6 +41,7 @@ class OpenCodeSession {
     createdAt: createdAt,
     updatedAt: updatedAt,
     parentId: parentId,
+    branch: branch,
     changedFiles: changedFiles,
     additions: additions,
     deletions: deletions,

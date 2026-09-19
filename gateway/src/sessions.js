@@ -1,14 +1,15 @@
 import { randomUUID, createHash } from 'node:crypto';
 import { EventEmitter } from 'node:events';
+import { isAbsolute, relative, resolve } from 'node:path';
 import { Fault, allowedDirectory } from './security.js';
 import { approvalPresentation, approvalRestriction } from './approval-presentation.js';
 import { validatePromptParts } from './image-input.js';
 import { permissionOptions } from './model-catalog.js';
 
 export class Sessions extends EventEmitter {
-  constructor(engine, adapter, roots, { maxSessions = 32, maxMessages = 1000, maxOutput = 2 * 1024 * 1024, turnTimeout = 30 * 60 * 1000, approvalTimeout = 5 * 60 * 1000 } = {}) {
+  constructor(engine, adapter, roots, { maxSessions = 32, maxMessages = 1000, maxOutput = 2 * 1024 * 1024, turnTimeout = 30 * 60 * 1000, approvalTimeout = 5 * 60 * 1000, workspaceMetadata } = {}) {
     super();
-    Object.assign(this, { engine, adapter, roots, maxSessions, maxMessages, maxOutput, turnTimeout, approvalTimeout });
+    Object.assign(this, { engine, adapter, roots, maxSessions, maxMessages, maxOutput, turnTimeout, approvalTimeout, workspaceMetadata });
     this.sessions = new Map();
     this.permissions = new Map();
   }
@@ -26,7 +27,10 @@ export class Sessions extends EventEmitter {
     return session;
   }
   record(session) {
-    return { id: session.id, projectID: session.projectID, directory: session.directory, title: session.title, time: session.time };
+    const diffs = [...session.diffs.values()];
+    return { id: session.id, projectID: session.projectID, directory: session.directory, title: session.title, time: session.time,
+      ...(session.branch ? { branch: session.branch } : {}),
+      ...(diffs.length ? { summary: { files: diffs.length, additions: diffs.reduce((sum, diff) => sum + diff.additions, 0), deletions: diffs.reduce((sum, diff) => sum + diff.deletions, 0) } } : {}) };
   }
   projectId(directory) {
     const rootIndex = this.roots.indexOf(directory);
@@ -40,8 +44,11 @@ export class Sessions extends EventEmitter {
     if (this.sessions.size >= this.maxSessions) throw new Fault(429, 'session_limit');
     directory = await allowedDirectory(directory, this.roots);
     if (title !== undefined && (typeof title !== 'string' || title.length > 256)) throw new Fault(400, 'invalid_title');
+    let metadata;
+    try { metadata = await this.workspaceMetadata?.(directory); } catch { /* Non-Git workspaces remain valid sessions. */ }
+    const branch = typeof metadata?.branch === 'string' && metadata.branch.length <= 512 && !/[\x00-\x1f\x7f]/.test(metadata.branch) ? metadata.branch : undefined;
     const now = Date.now();
-    const session = { id: `${this.engine}_${randomUUID()}`, projectID: this.projectId(directory), directory, title: title || 'New session', time: { created: now, updated: now }, messages: [], accepted: new Map(), status: 'idle', runner: null, active: false, outputBytes: 0, imageBytes: 0 };
+    const session = { id: `${this.engine}_${randomUUID()}`, projectID: this.projectId(directory), directory, title: title || 'New session', time: { created: now, updated: now }, messages: [], accepted: new Map(), diffs: new Map(), diffBytes: 0, branch, status: 'idle', runner: null, active: false, outputBytes: 0, imageBytes: 0 };
     this.sessions.set(session.id, session);
     return this.record(session);
   }
@@ -115,6 +122,7 @@ export class Sessions extends EventEmitter {
         session.runner ??= await this.adapter.open(session, {
           delta: (text) => this.delta(session, text),
           permission: (tool, input) => this.permission(session, tool, input),
+          changes: (changes) => this.changes(session, changes),
         });
         if (!session.active) { session.runner.close(); return; }
         await session.runner.run(text, model, images, execution);
@@ -146,6 +154,26 @@ export class Sessions extends EventEmitter {
     const part = session.assistant.parts[0];
     part.text += text;
     this.emitEvent(session, 'message.part.updated', { part });
+  }
+  changes(session, changes) {
+    if (this.engine !== 'codex' || !session.active || !Array.isArray(changes) || changes.length > 128) return;
+    for (const change of changes) {
+      if (!change || typeof change.path !== 'string' || typeof change.diff !== 'string' || !['add', 'delete', 'update'].includes(change.kind?.type)) continue;
+      const path = change.kind.type === 'update' && typeof change.kind.move_path === 'string' ? change.kind.move_path : change.path;
+      const absolute = resolve(session.directory, path);
+      const file = relative(session.directory, absolute);
+      if (!file || isAbsolute(file) || file === '..' || file.startsWith(`..${process.platform === 'win32' ? '\\' : '/'}`) || /[\x00-\x1f\x7f]/.test(file)) continue;
+      const additions = change.diff.split('\n').filter((line) => line.startsWith('+') && !line.startsWith('+++')).length;
+      const deletions = change.diff.split('\n').filter((line) => line.startsWith('-') && !line.startsWith('---')).length;
+      const status = change.kind.type === 'add' ? 'added' : change.kind.type === 'delete' ? 'deleted' : 'modified';
+      const previous = session.diffs.get(file);
+      const patch = previous?.patch ? `${previous.patch}\n${change.diff}` : change.diff;
+      const size = Buffer.byteLength(patch);
+      const previousSize = previous ? Buffer.byteLength(previous.patch) : 0;
+      if (size > 128 * 1024 || session.diffBytes - previousSize + size > 256 * 1024) continue;
+      session.diffBytes += size - previousSize;
+      session.diffs.set(file, { file, patch, additions: (previous?.additions ?? 0) + additions, deletions: (previous?.deletions ?? 0) + deletions, status: previous?.status === 'added' && status === 'modified' ? 'added' : status });
+    }
   }
   permission(session, tool, input) {
     if (!session.active || this.permissions.size >= 32) return Promise.resolve(false);

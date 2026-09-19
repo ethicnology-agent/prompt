@@ -84,6 +84,13 @@ export class CodexAdapter {
             fileScopes.set(key, { changes, size }); fileScopeBytes += size;
           }
         }
+      } else if (message.method === 'item/completed' && p.item?.type === 'fileChange') {
+        const key = scopeKey(p, p.item.id);
+        const changes = p.item.changes;
+        if (p.item.status === 'completed' && Array.isArray(changes) && changes.length <= 128 &&
+            changes.every((change) => typeof change?.path === 'string' && typeof change.diff === 'string' && ['add', 'delete', 'update'].includes(change.kind?.type)) &&
+            Buffer.byteLength(JSON.stringify(changes)) <= 48 * 1024) sink.changes?.(changes);
+        if (key && fileScopes.has(key)) { fileScopeBytes -= fileScopes.get(key).size; fileScopes.delete(key); }
       } else if (message.method === 'item/agentMessage/delta') sink.delta(p.delta ?? '');
       else if (message.method === 'turn/started') turnId = p.turn?.id;
       else if (message.method === 'turn/completed') {

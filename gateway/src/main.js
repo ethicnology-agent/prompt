@@ -13,17 +13,25 @@ export async function configuredGateway(config, env = process.env) {
   const worktrees = config.worktreeRoot || config.gitExecutable
     ? await Worktrees.configured({ gitExecutable: config.gitExecutable, worktreeRoot: config.worktreeRoot, roots })
     : undefined;
+  const workspaceMetadata = worktrees ? async (directory) => {
+    const catalog = await worktrees.list(directory);
+    return catalog.worktrees.find((entry) => entry.directory === directory);
+  } : undefined;
   const engines = {};
   if (config.codexExecutable) {
     if (!isAbsolute(config.codexExecutable)) throw new Fault(400, 'absolute_executable_required');
     await access(config.codexExecutable, constants.X_OK);
-    engines.codex = new Sessions('codex', new CodexAdapter(config.codexExecutable), roots);
+    engines.codex = new Sessions('codex', new CodexAdapter(config.codexExecutable), roots, {
+      workspaceMetadata,
+    });
   }
   if (config.claudeSdkModule) {
     if (!isAbsolute(config.claudeSdkModule)) throw new Fault(400, 'absolute_sdk_module_required');
     const module = await import(pathToFileURL(config.claudeSdkModule).href);
     if (typeof module.query !== 'function') throw new Fault(400, 'invalid_sdk_module');
-    engines.claude = new Sessions('claude', new ClaudeAdapter(module.query), roots);
+    engines.claude = new Sessions('claude', new ClaudeAdapter(module.query), roots, {
+      workspaceMetadata,
+    });
   }
   return createGateway({ ...config, roots, engines, worktrees, token: env.PROMPT_GATEWAY_TOKEN,
     openCode: config.openCode ? { ...config.openCode, password: env.PROMPT_OPENCODE_PASSWORD } : undefined });

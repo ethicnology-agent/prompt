@@ -1387,7 +1387,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                         : null,
                     onOpenArtifacts:
                         widget.profile.capabilities.supports(
-                          BackendFeature.workspace,
+                          BackendFeature.sessionArtifacts,
                         )
                         ? () {
                             Navigator.of(detailsContext).pop();
@@ -1843,7 +1843,9 @@ class _ConversationScreenState extends State<ConversationScreen>
         final isPhone = constraints.maxWidth < PromptBreakpoints.tablet;
         final isDesktop = constraints.maxWidth >= PromptBreakpoints.desktop;
         final showArtifactsPanel =
-            widget.profile.capabilities.supports(BackendFeature.workspace) &&
+            widget.profile.capabilities.supports(
+              BackendFeature.sessionArtifacts,
+            ) &&
             (_artifactsPanelOverride ?? isDesktop);
         return PopScope(
           canPop: _composerChoice == null,
@@ -1861,10 +1863,34 @@ class _ConversationScreenState extends State<ConversationScreen>
                   final title = session.title.isEmpty
                       ? 'Untitled session'
                       : session.title;
+                  final additions = session.additions;
+                  final deletions = session.deletions;
+                  final branch = session.branch?.replaceFirst(
+                    'refs/heads/',
+                    '',
+                  );
                   final control = NavigationTitleButton(
                     label: title,
                     semanticLabel: 'Open session details: $title',
-                    subtitle: directoryName(session.directory),
+                    subtitleSegments: [
+                      NavigationTitleSegment(
+                        branch == null || branch.isEmpty
+                            ? directoryName(session.directory)
+                            : branch,
+                      ),
+                      if (additions != null &&
+                          deletions != null &&
+                          (additions > 0 || deletions > 0)) ...[
+                        NavigationTitleSegment(
+                          '+$additions',
+                          tone: NavigationTitleSegmentTone.positive,
+                        ),
+                        NavigationTitleSegment(
+                          '-$deletions',
+                          tone: NavigationTitleSegmentTone.negative,
+                        ),
+                      ],
+                    ],
                     onPressed: _openSessionDetails,
                   );
                   return SizedBox(
@@ -1911,7 +1937,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                         Center(child: _ExecutionIndicator(state: state)),
                   ),
                   if (widget.profile.capabilities.supports(
-                    BackendFeature.workspace,
+                    BackendFeature.sessionArtifacts,
                   ))
                     AppIconButton(
                       icon: Icons.assignment_outlined,

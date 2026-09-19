@@ -465,6 +465,7 @@ class SessionsRepository {
       createdAt: DateTime.fromMillisecondsSinceEpoch(record.createdAtMillis),
       updatedAt: DateTime.fromMillisecondsSinceEpoch(record.updatedAtMillis),
       parentId: record.parentId,
+      branch: record.branch,
       changedFiles: record.changedFiles,
       additions: record.additions,
       deletions: record.deletions,

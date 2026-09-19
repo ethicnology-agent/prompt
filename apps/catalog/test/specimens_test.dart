@@ -22,6 +22,12 @@ void main() {
     );
     const details = 'Synthetic session details are open';
     expect(find.text(details), findsNothing);
+    expect(
+      find.byTooltip(
+        'A synthetic session with a long descriptive title\nmain +4 -2',
+      ),
+      findsOneWidget,
+    );
     await tester.tap(find.byType(NavigationTitleButton));
     await tester.pump();
     expect(find.text(details), findsOneWidget);
