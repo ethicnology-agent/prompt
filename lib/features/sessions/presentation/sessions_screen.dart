@@ -1378,42 +1378,38 @@ class _SessionCard extends StatelessWidget {
     final action = await showModalBottomSheet<_SessionAction>(
       context: context,
       showDragHandle: true,
-      builder: (context) => SafeArea(
-        top: false,
-        child: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (canRename)
-                ListTile(
-                  leading: const Icon(Icons.edit_outlined),
-                  title: const Text('Rename'),
-                  onTap: () => Navigator.pop(context, _SessionAction.rename),
-                ),
-              if (canFork)
-                ListTile(
-                  leading: const Icon(Icons.fork_right_rounded),
-                  title: Text(
-                    forkInProgress ? 'Forking session…' : 'Fork session',
-                  ),
-                  onTap: forkInProgress
-                      ? null
-                      : () => Navigator.pop(context, _SessionAction.fork),
-                ),
-              ListTile(
-                leading: const Icon(Icons.content_copy_outlined),
-                title: const Text('Copy session ID'),
-                onTap: () => Navigator.pop(context, _SessionAction.copyId),
-              ),
-              if (canDelete)
-                ListTile(
-                  leading: const Icon(Icons.delete_outline),
-                  title: const Text('Delete'),
-                  onTap: () => Navigator.pop(context, _SessionAction.delete),
-                ),
-            ],
+      builder: (context) => AppActionSheet<_SessionAction>(
+        title: 'Session actions',
+        options: [
+          if (canRename)
+            const AppActionSheetOption(
+              value: _SessionAction.rename,
+              label: 'Rename',
+              icon: Icons.edit_outlined,
+            ),
+          if (canFork)
+            AppActionSheetOption(
+              value: _SessionAction.fork,
+              label: forkInProgress ? 'Forking session…' : 'Fork session',
+              icon: Icons.fork_right_rounded,
+              enabled: !forkInProgress,
+            ),
+          const AppActionSheetOption(
+            value: _SessionAction.copyId,
+            label: 'Copy session ID',
+            icon: Icons.content_copy_outlined,
           ),
-        ),
+          if (canDelete)
+            const AppActionSheetOption(
+              value: _SessionAction.delete,
+              label: 'Delete',
+              icon: Icons.delete_outline,
+              destructive: true,
+              dividerBefore: true,
+            ),
+        ],
+        onSelected: (action) => Navigator.pop(context, action),
+        onClose: () => Navigator.pop(context),
       ),
     );
     switch (action) {

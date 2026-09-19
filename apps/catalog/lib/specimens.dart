@@ -52,6 +52,37 @@ final specimens = <Specimen>[
     ),
   ),
   Specimen(
+    'Action sheet',
+    (_) => SizedBox(
+      height: 320,
+      child: AppActionSheet<String>(
+        title: 'Session actions',
+        options: const [
+          AppActionSheetOption(
+            value: 'rename',
+            label: 'Rename',
+            icon: Icons.edit_outlined,
+          ),
+          AppActionSheetOption(
+            value: 'fork',
+            label: 'Forking session…',
+            icon: Icons.fork_right_rounded,
+            enabled: false,
+          ),
+          AppActionSheetOption(
+            value: 'delete',
+            label: 'Delete',
+            icon: Icons.delete_outline,
+            destructive: true,
+            dividerBefore: true,
+          ),
+        ],
+        onSelected: (_) {},
+        onClose: () {},
+      ),
+    ),
+  ),
+  Specimen(
     'Choice chips',
     (_) => Wrap(
       spacing: 8,
