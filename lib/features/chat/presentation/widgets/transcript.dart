@@ -328,7 +328,16 @@ class _MessageBubble extends StatelessWidget {
       child: !userMessage && desktop
           ? SizedBox(width: double.infinity, child: content)
           : ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 760),
+              key: userMessage
+                  ? ValueKey('user-message-bubble-${message.id}')
+                  : null,
+              constraints: BoxConstraints(
+                maxWidth: userMessage && !desktop
+                    ? (MediaQuery.sizeOf(context).width * 0.78)
+                          .clamp(240.0, 760.0)
+                          .toDouble()
+                    : 760,
+              ),
               child: content,
             ),
     );

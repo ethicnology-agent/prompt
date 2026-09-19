@@ -3189,6 +3189,8 @@ void main() {
   testWidgets('keeps a compact selectable user message legible in dark theme', (
     tester,
   ) async {
+    await tester.binding.setSurfaceSize(const Size(390, 844));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
     viewModel.messages.value = ConversationReady([
       ChatMessage(
         id: 'm1',
@@ -3222,6 +3224,12 @@ void main() {
     expect(messageText.textSpan?.style?.color, tokens.userMessageForeground);
     expect(messageText.onTap, isNull);
     expect(find.byTooltip('Copy response'), findsNothing);
+    expect(
+      tester
+          .getSize(find.byKey(const ValueKey('user-message-bubble-m1')))
+          .width,
+      lessThanOrEqualTo(390 * 0.78 + 0.01),
+    );
     final revertButton = tester.widget<TextButton>(
       find.ancestor(
         of: find.byIcon(Icons.undo_rounded),
