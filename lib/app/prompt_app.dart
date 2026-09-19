@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../features/connection/connection.dart';
-import '../features/connection/presentation/connection_screen.dart';
 import '../features/home/presentation/home_shell.dart';
 import '../features/settings/settings.dart';
 import '../features/sessions/sessions.dart';
@@ -159,6 +158,24 @@ class _PromptAppState extends State<PromptApp> {
         _dependencies.connectionViewModel.value is ConnectionReady;
   }
 
+  Future<void> _replaceConnectedProfile(ServerProfile profile) async {
+    if (_connectedProfile?.id == profile.id) return;
+    final revision = ++_launchRevision;
+    _dependencies.queueCoordinator?.notifyAppInactive();
+    setState(() => _openingLaunch = true);
+    await Future.wait([
+      _dependencies.conversationViewModel.leave(),
+      _dependencies.voiceViewModel.notifyAppInactive(),
+    ]);
+    if (!mounted || revision != _launchRevision) return;
+    _dependencies.queueCoordinator?.notifyAppForeground();
+    setState(() {
+      _connectedProfile = profile;
+      _initialLaunch = null;
+      _openingLaunch = false;
+    });
+  }
+
   Future<ServerProfile?> _loadLastProfile() async {
     return (await _dependencies.ensureStorage()).serverProfiles.loadLast();
   }
@@ -212,6 +229,10 @@ class _PromptAppState extends State<PromptApp> {
                 themeViewModel: _dependencies.themeViewModel,
                 onReconnect: _reconnect,
                 onDisconnect: _disconnect,
+                connectionViewModelFactory:
+                    _dependencies.createConnectionViewModel,
+                onProfileConnected: (profile) =>
+                    unawaited(_replaceConnectedProfile(profile)),
                 reviewViewModelFactory: _dependencies.createReviewViewModel,
               ),
       ),

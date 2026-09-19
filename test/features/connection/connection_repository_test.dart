@@ -10,11 +10,82 @@ import 'package:prompt/features/connection/data/opencode_health_service.dart';
 import 'package:prompt/features/connection/data/server_profile_store.dart';
 import 'package:prompt/features/connection/domain/connection_result.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 
 void main() {
   final profile = ServerProfile(
     origin: Uri(scheme: 'http', host: '10.80.0.1', port: 4096),
     username: 'prompt',
+  );
+
+  test(
+    'redeems a pairing ticket before authenticating and saving device credential',
+    () async {
+      const deviceCredential =
+          'p1.abcdefghijklmnopqrstuvwx.abcdefghijklmnopqrstuvwxyzABCDEFGH123456789';
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        if (request.url.path == '/prompt/pairings/exchange') {
+          expect(request.headers['authorization'], isNull);
+          expect(jsonDecode(request.body), {
+            'ticket': 'abcdefghijklmnopqrstuvwxyzABCDEFGH123456789',
+            'backend': 'codex',
+          });
+          return http.Response(
+            jsonEncode({
+              'username': 'prompt',
+              'token': deviceCredential,
+              'backend': 'codex',
+            }),
+            200,
+          );
+        }
+        expect(
+          request.headers['authorization'],
+          'Basic ${base64Encode(utf8.encode('prompt:$deviceCredential'))}',
+        );
+        if (request.url.path == '/prompt/capabilities') {
+          return http.Response(
+            jsonEncode({
+              'protocolVersion': 1,
+              'engines': {
+                'codex': {
+                  'available': true,
+                  'features': ['sessions', 'text', 'abort'],
+                },
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('{}', 200);
+      });
+      final credentials = _FakeCredentialsStore();
+      final repository = ConnectionRepository(
+        OpenCodeHealthService(OpenCodeTransport(client)),
+        credentials,
+        _FakeServerProfileStore(),
+      );
+      final pairedProfile = ServerProfile(
+        origin: Uri.parse('http://10.80.0.1:4097'),
+        username: 'prompt',
+        backend: AgentBackend.gatewayCodex,
+      );
+
+      final result = await repository.pair(
+        pairedProfile,
+        'abcdefghijklmnopqrstuvwxyzABCDEFGH123456789',
+      );
+
+      expect(result, isA<ConnectionSucceeded>());
+      expect(requests.map((request) => request.url.path), [
+        '/prompt/pairings/exchange',
+        '/prompt/capabilities',
+        '/prompt/codex/global/health',
+      ]);
+      expect(credentials.password, deviceCredential);
+    },
   );
 
   test(

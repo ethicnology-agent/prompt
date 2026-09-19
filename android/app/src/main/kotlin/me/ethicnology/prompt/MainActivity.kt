@@ -6,14 +6,18 @@ import android.content.Intent
 
 class MainActivity : FlutterActivity() {
     private var attachmentPicker: MemoryAttachmentPicker? = null
+    private var pairingCodeScanner: PairingCodeScanner? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
         attachmentPicker = MemoryAttachmentPicker(this, flutterEngine.dartExecutor.binaryMessenger)
+        pairingCodeScanner = PairingCodeScanner(this, flutterEngine.dartExecutor.binaryMessenger)
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
-        if (attachmentPicker?.onActivityResult(requestCode, resultCode, data) != true) {
+        if (pairingCodeScanner?.onActivityResult(requestCode, resultCode, data) != true &&
+            attachmentPicker?.onActivityResult(requestCode, resultCode, data) != true
+        ) {
             super.onActivityResult(requestCode, resultCode, data)
         }
     }
@@ -21,6 +25,8 @@ class MainActivity : FlutterActivity() {
     override fun onDestroy() {
         attachmentPicker?.dispose()
         attachmentPicker = null
+        pairingCodeScanner?.dispose()
+        pairingCodeScanner = null
         super.onDestroy()
     }
 }

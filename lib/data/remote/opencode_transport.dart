@@ -112,7 +112,9 @@ class OpenCodeTransport {
     }
     final machineRoute =
         relative.path == '/prompt/capabilities' ||
-        relative.path == '/prompt/worktrees';
+        relative.path == '/prompt/worktrees' ||
+        relative.path == '/prompt/pairings' ||
+        relative.path == '/prompt/pairings/exchange';
     final routed = profile.backend.isGateway && !machineRoute
         ? '/prompt/${profile.backend.engine}$path'
         : path;

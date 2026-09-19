@@ -38,6 +38,41 @@ class OpenCodeHealthService {
 
   final OpenCodeTransport _transport;
 
+  Future<String?> redeemPairing(ServerProfile profile, String ticket) async {
+    if (!profile.backend.isGateway) return null;
+    final response = await _transport.post(
+      profile,
+      null,
+      '/prompt/pairings/exchange',
+      headers: const {'content-type': 'application/json'},
+      body: jsonEncode({'ticket': ticket, 'backend': profile.backend.engine}),
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw OpenCodeHttpFailure(response.statusCode);
+    }
+    if (response.statusCode != 200) return null;
+    try {
+      final body = jsonDecode(response.body);
+      if (body is! Map<String, dynamic> ||
+          body.keys.toSet().difference({
+            'username',
+            'token',
+            'backend',
+          }).isNotEmpty ||
+          body['username'] != profile.username ||
+          body['backend'] != profile.backend.engine ||
+          body['token'] is! String ||
+          !RegExp(
+            r'^p1\.[A-Za-z0-9_-]{24}\.[A-Za-z0-9_-]{43}$',
+          ).hasMatch(body['token'] as String)) {
+        return null;
+      }
+      return body['token'] as String;
+    } on FormatException {
+      return null;
+    }
+  }
+
   Future<int> checkHealth(ServerProfile profile, String? password) async {
     final response = await _transport.get(profile, password, '/global/health');
     return response.statusCode;

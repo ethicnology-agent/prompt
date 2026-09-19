@@ -9,7 +9,6 @@ import 'package:prompt/app/prompt_app.dart';
 import 'package:prompt/core/security/credentials_store.dart';
 import 'package:prompt/data/local/prompt_local_storage_handle.dart';
 import 'package:prompt/features/connection/connection.dart';
-import 'package:prompt/features/connection/presentation/connection_screen.dart';
 import 'package:prompt/features/home/presentation/home_shell.dart';
 import 'package:prompt/features/queue/queue.dart';
 import 'package:prompt/features/review/review.dart';

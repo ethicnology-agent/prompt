@@ -14,6 +14,7 @@ class SettingsScreen extends StatelessWidget {
     required this.onOpenVoice,
     required this.onOpenNotifications,
     required this.onDisconnect,
+    this.onScanPairing,
     this.onOpenWorkspace,
     this.onOpenTerminal,
     super.key,
@@ -25,6 +26,7 @@ class SettingsScreen extends StatelessWidget {
   final VoidCallback onOpenVoice;
   final VoidCallback onOpenNotifications;
   final VoidCallback onDisconnect;
+  final VoidCallback? onScanPairing;
   final VoidCallback? onOpenWorkspace;
   final VoidCallback? onOpenTerminal;
 
@@ -40,6 +42,14 @@ class SettingsScreen extends StatelessWidget {
           SettingsGroup(
             title: 'CONNECTION',
             children: [
+              if (onScanPairing != null)
+                ListTile(
+                  leading: const Icon(Icons.qr_code_scanner_rounded),
+                  title: const Text('Scan pairing QR'),
+                  subtitle: const Text('On-device · camera only when needed'),
+                  trailing: const Icon(Icons.chevron_right),
+                  onTap: onScanPairing,
+                ),
               ListTile(
                 leading: const Icon(Icons.dns_outlined),
                 title: const Text('Your server'),

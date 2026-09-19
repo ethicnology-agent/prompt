@@ -3,6 +3,15 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=22.0.0" },
-  "scripts": { "start": "node src/main.js", "test": "node --test test/*.test.js" }
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "start": "node src/main.js",
+    "pair": "node src/pair-cli.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "qrcode-terminal": "^0.12.0"
+  }
 }

@@ -7,3 +7,4 @@ export 'data/connection_repository.dart';
 export 'domain/connection_result.dart';
 export 'domain/connection_origin_policy.dart';
 export 'presentation/connection_view_model.dart';
+export 'presentation/connection_screen.dart';

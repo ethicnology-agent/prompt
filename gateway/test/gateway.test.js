@@ -49,6 +49,31 @@ test('capabilities and all native routes require authentication', async (t) => {
   assert.equal((await f.request('/prompt/codex/pty')).status, 404);
 });
 
+test('short-lived pairing yields a scoped device credential exactly once', async (t) => {
+  const f = await fixture(t);
+  assert.equal((await f.request('/prompt/pairings', 'POST', { backend: 'codex' }, '')).status, 401);
+  const created = await (await f.request('/prompt/pairings', 'POST', { backend: 'codex' })).json();
+  assert.match(created.ticket, /^[A-Za-z0-9_-]{43}$/);
+  assert.equal(typeof created.expiresAt, 'number');
+
+  const exchange = await f.request('/prompt/pairings/exchange', 'POST', {
+    ticket: created.ticket,
+    backend: 'codex',
+  }, '');
+  assert.equal(exchange.status, 200);
+  const paired = await exchange.json();
+  assert.equal(paired.username, 'prompt');
+  assert.equal(paired.backend, 'codex');
+  assert.match(paired.token, /^p1\./);
+  assert.equal(paired.token.includes(token), false);
+  const deviceAuth = `Basic ${Buffer.from(`prompt:${paired.token}`).toString('base64')}`;
+  assert.equal((await f.request('/prompt/capabilities', 'GET', null, deviceAuth)).status, 200);
+  assert.equal((await f.request('/prompt/pairings/exchange', 'POST', {
+    ticket: created.ticket,
+    backend: 'codex',
+  }, '')).status, 401);
+});
+
 test('roots reject traversal, symlink escape and public prefix confusion', async (t) => {
   const f = await fixture(t);
   const inside = join(f.directory, 'inside');

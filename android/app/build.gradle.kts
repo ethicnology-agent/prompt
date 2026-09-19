@@ -67,6 +67,14 @@ android {
 dependencies {
     // Required by flutter_local_notifications for its Android scheduling APIs.
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
+    // Prefer the permissionless system QR surface when Play services exists.
+    // GrapheneOS and other Google-free devices fall back to a local decoder,
+    // with camera access requested only after the user's explicit scan action.
+    implementation("com.google.android.gms:play-services-code-scanner:16.1.0")
+    implementation("com.journeyapps:zxing-android-embedded:4.3.0") {
+        isTransitive = false
+    }
+    implementation("com.google.zxing:core:3.5.4")
 }
 
 kotlin {

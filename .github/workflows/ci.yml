@@ -21,7 +21,9 @@ jobs:
         with:
           node-version: '22'
           package-manager-cache: false
-      # Built-in Node tests only: never install a CLI or use provider credentials.
+      - run: npm ci
+        working-directory: gateway
+      # Contract tests never install an agent CLI or use provider credentials.
       - run: npm test
         working-directory: gateway
 

@@ -4,6 +4,34 @@ import 'package:prompt/core/ui/ui.dart';
 import 'package:prompt/features/settings/settings.dart';
 
 void main() {
+  testWidgets('pairing QR is a visible explicit connection action', (
+    tester,
+  ) async {
+    final model = ThemeViewModel(InMemoryThemePreferenceStore());
+    addTearDown(model.dispose);
+    var scans = 0;
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: promptTheme(),
+        home: SettingsScreen(
+          serverLabel: 'Private fixture',
+          themeViewModel: model,
+          onOpenServer: null,
+          onScanPairing: () => scans++,
+          onOpenVoice: () {},
+          onOpenNotifications: () {},
+          onDisconnect: () {},
+        ),
+      ),
+    );
+
+    expect(find.text('Scan pairing QR'), findsOneWidget);
+    expect(find.text('On-device · camera only when needed'), findsOneWidget);
+    expect(scans, 0);
+    await tester.tap(find.text('Scan pairing QR'));
+    expect(scans, 1);
+  });
+
   for (final dark in [false, true]) {
     testWidgets(
       'disconnect explains continuing server tasks without changing action dark=$dark',

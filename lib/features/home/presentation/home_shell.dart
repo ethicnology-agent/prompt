@@ -30,6 +30,8 @@ class HomeShell extends StatefulWidget {
     required this.themeViewModel,
     required this.onReconnect,
     required this.onDisconnect,
+    this.connectionViewModelFactory,
+    this.onProfileConnected,
     this.reviewViewModelFactory,
     this.sessionCreationViewModel,
     this.onSessionLaunched,
@@ -49,6 +51,8 @@ class HomeShell extends StatefulWidget {
   final ThemeViewModel themeViewModel;
   final Future<bool> Function() onReconnect;
   final VoidCallback onDisconnect;
+  final ConnectionViewModel Function()? connectionViewModelFactory;
+  final ValueChanged<ServerProfile>? onProfileConnected;
   final ReviewViewModel Function()? reviewViewModelFactory;
   final SessionCreationViewModel? sessionCreationViewModel;
   final ValueChanged<SessionLaunch>? onSessionLaunched;
@@ -306,6 +310,11 @@ class _HomeShellState extends State<HomeShell> {
               widget.profile.capabilities.supports(BackendFeature.configuration)
               ? () => _openDiagnostics(settingsContext)
               : null,
+          onScanPairing:
+              widget.connectionViewModelFactory != null &&
+                  widget.onProfileConnected != null
+              ? () => _openPairing(settingsContext)
+              : null,
           onOpenVoice: () => _openVoiceSettings(settingsContext),
           onOpenNotifications: () => Navigator.of(settingsContext).push(
             MaterialPageRoute<void>(
@@ -321,6 +330,30 @@ class _HomeShellState extends State<HomeShell> {
         ),
       ),
     );
+  }
+
+  Future<void> _openPairing(BuildContext context) async {
+    final viewModel = widget.connectionViewModelFactory?.call();
+    if (viewModel == null) return;
+    try {
+      final profile = await Navigator.of(context).push<ServerProfile>(
+        MaterialPageRoute<ServerProfile>(
+          builder: (pairingContext) => ConnectionScreen(
+            viewModel: viewModel,
+            profileLoader: () async => widget.profile,
+            restoreAutomatically: false,
+            scanAutomatically: true,
+            onConnected: (profile) => Navigator.of(pairingContext).pop(profile),
+          ),
+        ),
+      );
+      if (profile != null) {
+        if (context.mounted) Navigator.of(context).pop();
+        widget.onProfileConnected?.call(profile);
+      }
+    } finally {
+      viewModel.dispose();
+    }
   }
 
   void _openVoiceSettings(BuildContext context) {

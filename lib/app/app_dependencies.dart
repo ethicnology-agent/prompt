@@ -40,6 +40,7 @@ import '../features/review/review.dart';
 class AppDependencies {
   AppDependencies._({
     required this.connectionViewModel,
+    required this.connectionRepository,
     required this.sessionsViewModel,
     required this.sessionCreationViewModel,
     required this.conversationViewModel,
@@ -110,6 +111,7 @@ class AppDependencies {
     );
     dependencies = AppDependencies._(
       connectionViewModel: ConnectionViewModel(connectionRepository),
+      connectionRepository: connectionRepository,
       sessionCreationViewModel: SessionCreationViewModel(
         connections: connectionRepository,
         sessions: sessionsRepository,
@@ -177,6 +179,7 @@ class AppDependencies {
   }
 
   final ConnectionViewModel connectionViewModel;
+  final ConnectionRepository connectionRepository;
   final SessionsViewModel sessionsViewModel;
   final SessionCreationViewModel sessionCreationViewModel;
   final ConversationViewModel conversationViewModel;
@@ -192,6 +195,11 @@ class AppDependencies {
   final http.Client httpClient;
   final Future<PromptLocalStorageHandle> Function() openStorage;
   final ChatRepository chatRepository;
+
+  /// Creates route-local connection state without disturbing the active
+  /// server until a replacement has passed capability and health checks.
+  ConnectionViewModel createConnectionViewModel() =>
+      ConnectionViewModel(connectionRepository);
 
   /// Creates isolated state for one review route.
   ReviewViewModel createReviewViewModel() => ReviewViewModel(

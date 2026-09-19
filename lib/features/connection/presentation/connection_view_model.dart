@@ -53,6 +53,20 @@ class ConnectionViewModel extends ValueNotifier<ConnectionUiState> {
     }
   }
 
+  Future<void> pair(ServerProfile profile, String ticket) async {
+    if (_disposed || value is ConnectionChecking) return;
+    final generation = ++_operationGeneration;
+    value = const ConnectionChecking();
+    final result = await _repository.pair(profile, ticket);
+    if (_disposed || generation != _operationGeneration) return;
+    switch (result) {
+      case ConnectionSucceeded(profile: final verified):
+        value = ConnectionReady(verified ?? profile);
+      case ConnectionFailed(:final failure):
+        value = ConnectionError(failure);
+    }
+  }
+
   Future<void> restore(ServerProfile profile) async {
     if (_disposed || value is ConnectionChecking) return;
     final generation = ++_operationGeneration;

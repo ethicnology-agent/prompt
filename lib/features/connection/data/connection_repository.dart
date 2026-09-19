@@ -148,6 +148,30 @@ class ConnectionRepository {
     }
   }
 
+  Future<ConnectionResult> pair(ServerProfile profile, String ticket) async {
+    if (!profile.backend.isGateway ||
+        !ConnectionOriginPolicy.supports(profile.origin)) {
+      return const ConnectionFailed(ConnectionFailure.invalidAddress);
+    }
+    try {
+      final credential = await _healthService.redeemPairing(profile, ticket);
+      if (credential == null) {
+        return const ConnectionFailed(ConnectionFailure.pairingRejected);
+      }
+      return test(profile, credential);
+    } on TimeoutException {
+      return const ConnectionFailed(ConnectionFailure.unavailable);
+    } on OpenCodeHttpFailure {
+      return const ConnectionFailed(ConnectionFailure.pairingRejected);
+    } on InvalidOpenCodeOrigin {
+      return const ConnectionFailed(ConnectionFailure.invalidAddress);
+    } on http.ClientException {
+      return const ConnectionFailed(ConnectionFailure.unavailable);
+    } on Exception {
+      return const ConnectionFailed(ConnectionFailure.unexpectedResponse);
+    }
+  }
+
   Future<ConnectionResult> restore(ServerProfile profile) async {
     try {
       final password = await _credentialsStore.readPassword(profile.id);

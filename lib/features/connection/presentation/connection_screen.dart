@@ -3,8 +3,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
 import '../../../core/ui/ui.dart';
+import '../data/pairing_code_scanner.dart';
 import '../domain/connection_result.dart';
 import '../domain/connection_origin_policy.dart';
+import '../domain/pairing_configuration.dart';
 import '../domain/server_profile.dart';
 import '../domain/agent_backend.dart';
 import 'connection_view_model.dart';
@@ -14,6 +16,8 @@ class ConnectionScreen extends StatefulWidget {
     required this.viewModel,
     required this.profileLoader,
     required this.onConnected,
+    this.pairingCodeScanner,
+    this.scanAutomatically = false,
     this.restoreAutomatically = true,
     super.key,
   });
@@ -21,6 +25,8 @@ class ConnectionScreen extends StatefulWidget {
   final ConnectionViewModel viewModel;
   final Future<ServerProfile?> Function() profileLoader;
   final ValueChanged<ServerProfile> onConnected;
+  final PairingCodeScanner? pairingCodeScanner;
+  final bool scanAutomatically;
   final bool restoreAutomatically;
 
   @override
@@ -34,14 +40,25 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   final _passwordController = TextEditingController();
   bool _editedAddress = false;
   bool _profileLoadFailed = false;
+  bool _scanningPairingCode = false;
+  String? _pairingMessage;
+  String? _pairingTicket;
   ServerProfile? _prefilledProfile;
   ConnectionReady? _notifiedReady;
   AgentBackend _backend = AgentBackend.directOpenCode;
+
+  PairingCodeScanner get _pairingCodeScanner =>
+      widget.pairingCodeScanner ?? createPairingCodeScanner();
 
   @override
   void initState() {
     super.initState();
     _restoreLastProfile();
+    if (widget.scanAutomatically) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _scanPairingCode();
+      });
+    }
   }
 
   Future<void> _restoreLastProfile() async {
@@ -97,11 +114,70 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     final password = _passwordController.text.isEmpty
         ? null
         : _passwordController.text;
-    if (password == null && _prefilledProfile?.id == profile.id) {
+    final ticket = _pairingTicket;
+    if (ticket != null) {
+      await widget.viewModel.pair(profile, ticket);
+      if (widget.viewModel.value is ConnectionReady) _pairingTicket = null;
+    } else if (password == null && _prefilledProfile?.id == profile.id) {
       await widget.viewModel.restore(profile);
     } else {
       await widget.viewModel.connect(profile, password);
     }
+  }
+
+  Future<void> _scanPairingCode() async {
+    if (_scanningPairingCode || widget.viewModel.value is ConnectionChecking) {
+      return;
+    }
+    FocusManager.instance.primaryFocus?.unfocus();
+    setState(() {
+      _scanningPairingCode = true;
+      _pairingMessage = null;
+    });
+    final result = await _pairingCodeScanner.scan();
+    if (!mounted) return;
+
+    switch (result) {
+      case PairingScanCompleted(:final value):
+        switch (PairingConfiguration.parse(value)) {
+          case PairingCodeAccepted(:final configuration):
+            _originController.text = configuration.profile.displayOrigin;
+            _usernameController.text = configuration.profile.username ?? '';
+            _passwordController.clear();
+            _pairingTicket = configuration.ticket;
+            _prefilledProfile = null;
+            setState(() {
+              _backend = configuration.profile.backend;
+              _editedAddress = true;
+              _profileLoadFailed = false;
+              _pairingMessage =
+                  'Pairing code loaded. Review the private server, then connect.';
+            });
+          case PairingCodeRejected():
+            setState(() {
+              _pairingMessage =
+                  'This pairing code is invalid or does not use a private server.';
+            });
+        }
+      case PairingScanCancelled():
+        break;
+      case PairingScanUnavailable():
+        setState(() {
+          _pairingMessage =
+              'QR scanning is unavailable. Enter the private server manually.';
+        });
+      case PairingScanPermissionDenied():
+        setState(() {
+          _pairingMessage =
+              'Camera access was not granted. Allow it in system settings or enter the private server manually.';
+        });
+    }
+    if (mounted) setState(() => _scanningPairingCode = false);
+  }
+
+  void _markManualEdit() {
+    _editedAddress = true;
+    _pairingTicket = null;
   }
 
   String? _validateOrigin(String? input) {
@@ -143,6 +219,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                         }
                         _notifiedReady = state;
                         TextInput.finishAutofillContext(shouldSave: true);
+                        _passwordController.clear();
                         widget.onConnected(profile);
                       });
                     }
@@ -176,6 +253,33 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               style: theme.textTheme.bodyLarge,
                               textAlign: TextAlign.center,
                             ),
+                            const SizedBox(height: 24),
+                            AppButton(
+                              label: 'Scan pairing QR',
+                              icon: Icons.qr_code_scanner,
+                              variant: AppButtonVariant.secondary,
+                              busy: _scanningPairingCode,
+                              onPressed: checking || _scanningPairingCode
+                                  ? null
+                                  : _scanPairingCode,
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Uses the system scanner when available; otherwise asks for camera access for local QR decoding.',
+                              style: theme.textTheme.bodySmall,
+                              textAlign: TextAlign.center,
+                            ),
+                            if (_pairingMessage != null)
+                              Padding(
+                                padding: const EdgeInsets.only(top: 12),
+                                child: Semantics(
+                                  liveRegion: true,
+                                  child: Text(
+                                    _pairingMessage!,
+                                    textAlign: TextAlign.center,
+                                  ),
+                                ),
+                              ),
                             const SizedBox(height: 32),
                             ChoiceField<AgentBackend>(
                               label: 'Agent connection',
@@ -194,7 +298,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                   : (backend) {
                                       setState(() {
                                         _backend = backend;
-                                        _editedAddress = true;
+                                        _markManualEdit();
                                         if (backend.isGateway &&
                                             _usernameController.text.isEmpty) {
                                           _usernameController.text = 'prompt';
@@ -208,12 +312,12 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               hint: 'http://10.0.0.1:4096',
                               controller: _originController,
                               enabled: !checking,
-                              autofocus: true,
+                              autofocus: !widget.scanAutomatically,
                               autocorrect: false,
                               keyboardType: TextInputType.url,
                               textInputAction: TextInputAction.next,
                               autofillHints: const [AutofillHints.url],
-                              onChanged: (_) => _editedAddress = true,
+                              onChanged: (_) => _markManualEdit(),
                               validator: _validateOrigin,
                             ),
                             const SizedBox(height: 16),
@@ -224,7 +328,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               autocorrect: false,
                               textInputAction: TextInputAction.next,
                               autofillHints: const [AutofillHints.username],
-                              onChanged: (_) => _editedAddress = true,
+                              onChanged: (_) => _markManualEdit(),
                             ),
                             const SizedBox(height: 16),
                             AppTextFormField(
@@ -235,7 +339,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               enableSuggestions: false,
                               autocorrect: false,
                               autofillHints: const [AutofillHints.password],
-                              onChanged: (_) => _editedAddress = true,
+                              onChanged: (_) => _markManualEdit(),
                               onSubmitted: (_) => _connect(),
                             ),
                             if (_prefilledProfile != null)

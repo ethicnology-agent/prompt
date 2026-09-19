@@ -9,6 +9,7 @@ import 'package:prompt/core/security/credentials_store.dart';
 import 'package:prompt/data/remote/opencode_transport.dart';
 import 'package:prompt/features/connection/data/connection_repository.dart';
 import 'package:prompt/features/connection/data/opencode_health_service.dart';
+import 'package:prompt/features/connection/data/pairing_code_scanner.dart';
 import 'package:prompt/features/connection/data/server_profile_store.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
 import 'package:prompt/features/connection/domain/agent_backend.dart';
@@ -16,6 +17,137 @@ import 'package:prompt/features/connection/presentation/connection_screen.dart';
 import 'package:prompt/features/connection/presentation/connection_view_model.dart';
 
 void main() {
+  testWidgets('pairing scan fills the form without connecting automatically', (
+    tester,
+  ) async {
+    final health = _RecordingHealthService();
+    final viewModel = _viewModel(health: health);
+    addTearDown(viewModel.dispose);
+    final scanner = _PairingCodeScanner(
+      PairingScanCompleted(
+        Uri(
+          scheme: 'prompt',
+          host: 'connect',
+          queryParameters: const {
+            'v': '1',
+            'origin': 'http://100.64.0.8:4097',
+            'backend': 'claude',
+            'username': 'prompt',
+            'ticket': 'abcdefghijklmnopqrstuvwxyzABCDEFGH123456789',
+          },
+        ).toString(),
+      ),
+    );
+    await _pumpScreen(tester, viewModel, pairingCodeScanner: scanner);
+
+    await tester.tap(find.text('Scan pairing QR'));
+    await tester.pumpAndSettle();
+
+    expect(scanner.calls, 1);
+    expect(health.calls, 0);
+    expect(find.text('http://100.64.0.8:4097'), findsOneWidget);
+    expect(find.text('prompt'), findsOneWidget);
+    expect(
+      tester
+          .widget<ChoiceField<AgentBackend>>(
+            find.byType(ChoiceField<AgentBackend>),
+          )
+          .selected,
+      AgentBackend.gatewayClaude,
+    );
+    expect(
+      find.text(
+        'Pairing code loaded. Review the private server, then connect.',
+      ),
+      findsOneWidget,
+    );
+
+    await tester.ensureVisible(find.text('Test private connection'));
+    await tester.tap(find.text('Test private connection'));
+    await tester.pumpAndSettle();
+    expect(health.calls, 1);
+    expect(health.pairingTicket, 'abcdefghijklmnopqrstuvwxyzABCDEFGH123456789');
+    expect(
+      health.password,
+      'p1.abcdefghijklmnopqrstuvwx.abcdefghijklmnopqrstuvwxyzABCDEFGH123456789',
+    );
+  });
+
+  testWidgets('invalid pairing scan neither edits nor connects', (
+    tester,
+  ) async {
+    final health = _RecordingHealthService();
+    final viewModel = _viewModel(health: health);
+    addTearDown(viewModel.dispose);
+    await _pumpScreen(
+      tester,
+      viewModel,
+      pairingCodeScanner: _PairingCodeScanner(
+        const PairingScanCompleted('https://public.example/pair'),
+      ),
+    );
+
+    await tester.tap(find.text('Scan pairing QR'));
+    await tester.pumpAndSettle();
+
+    expect(health.calls, 0);
+    expect(
+      find.text(
+        'This pairing code is invalid or does not use a private server.',
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester
+          .widget<TextField>(
+            find.descendant(
+              of: find.byType(TextFormField).first,
+              matching: find.byType(TextField),
+            ),
+          )
+          .controller!
+          .text,
+      isEmpty,
+    );
+  });
+
+  testWidgets('pairing scanner prevents duplicate pending launches', (
+    tester,
+  ) async {
+    final scanner = _PendingPairingCodeScanner();
+    final viewModel = _viewModel();
+    addTearDown(viewModel.dispose);
+    await _pumpScreen(tester, viewModel, pairingCodeScanner: scanner);
+
+    await tester.tap(find.text('Scan pairing QR'));
+    await tester.pump();
+    await tester.tap(find.text('Scan pairing QR'), warnIfMissed: false);
+    await tester.pump();
+    expect(scanner.calls, 1);
+
+    scanner.complete(const PairingScanCancelled());
+    await tester.pumpAndSettle();
+    expect(find.byType(CircularProgressIndicator), findsNothing);
+  });
+
+  testWidgets('explicit pairing route can launch the scanner after opening', (
+    tester,
+  ) async {
+    final scanner = _PairingCodeScanner(const PairingScanCancelled());
+    final viewModel = _viewModel();
+    addTearDown(viewModel.dispose);
+
+    await _pumpScreen(
+      tester,
+      viewModel,
+      pairingCodeScanner: scanner,
+      scanAutomatically: true,
+    );
+    await tester.pumpAndSettle();
+
+    expect(scanner.calls, 1);
+  });
+
   testWidgets('saved profile load failure leaves manual connection available', (
     tester,
   ) async {
@@ -319,6 +451,8 @@ Future<void> _pumpScreen(
   ConnectionViewModel viewModel, {
   Future<ServerProfile?> Function()? profileLoader,
   ValueChanged<ServerProfile>? onConnected,
+  PairingCodeScanner? pairingCodeScanner,
+  bool scanAutomatically = false,
 }) async {
   await tester.pumpWidget(
     MaterialApp(
@@ -326,10 +460,38 @@ Future<void> _pumpScreen(
         viewModel: viewModel,
         profileLoader: profileLoader ?? () async => null,
         onConnected: onConnected ?? (_) {},
+        pairingCodeScanner: pairingCodeScanner,
+        scanAutomatically: scanAutomatically,
       ),
     ),
   );
   await tester.pump();
+}
+
+class _PairingCodeScanner implements PairingCodeScanner {
+  _PairingCodeScanner(this.result);
+
+  final PairingScanResult result;
+  int calls = 0;
+
+  @override
+  Future<PairingScanResult> scan() async {
+    calls++;
+    return result;
+  }
+}
+
+class _PendingPairingCodeScanner implements PairingCodeScanner {
+  final _result = Completer<PairingScanResult>();
+  int calls = 0;
+
+  @override
+  Future<PairingScanResult> scan() {
+    calls++;
+    return _result.future;
+  }
+
+  void complete(PairingScanResult result) => _result.complete(result);
 }
 
 ConnectionViewModel _viewModel({_RecordingHealthService? health}) {
@@ -360,8 +522,27 @@ class _RecordingHealthService extends OpenCodeHealthService {
   int calls = 0;
   ServerProfile? profile;
   String? password;
+  String? pairingTicket;
 
   factory _RecordingHealthService.pending() => _RecordingHealthService._(true);
+
+  @override
+  Future<String?> redeemPairing(ServerProfile profile, String ticket) async {
+    pairingTicket = ticket;
+    return 'p1.abcdefghijklmnopqrstuvwx.abcdefghijklmnopqrstuvwxyzABCDEFGH123456789';
+  }
+
+  @override
+  Future<BackendCapabilities?> checkCapabilities(
+    ServerProfile profile,
+    String? password,
+  ) async => profile.backend.isGateway
+      ? BackendCapabilities([
+          BackendFeature.sessions,
+          BackendFeature.text,
+          BackendFeature.abort,
+        ])
+      : BackendCapabilities.directOpenCode;
 
   @override
   Future<int> checkHealth(ServerProfile profile, String? password) async {

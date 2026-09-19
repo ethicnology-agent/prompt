@@ -1,6 +1,7 @@
 import { createServer } from 'node:http';
 import { Readable } from 'node:stream';
-import { Fault, authenticate, privateAddress, bodyJson, allowedDirectory } from './security.js';
+import { Fault, privateAddress, bodyJson, allowedDirectory } from './security.js';
+import { PairingAuthority } from './pairing.js';
 import { NativeModelCatalog, providerCatalog } from './model-catalog.js';
 import { imageConstraints, imageRequestBytes } from './image-input.js';
 
@@ -17,6 +18,7 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
     if (!['http:', 'https:'].includes(url.protocol) || !privateAddress(url.hostname.replace(/^\[|\]$/g, '')) || url.username || url.password || url.search || url.hash || url.pathname !== '/') throw new Fault(400, 'private_opencode_origin_required');
   }
   const subscribers = new Set();
+  const pairing = new PairingAuthority(username, token);
   const catalogs = new Map(Object.entries(engines).map(([engine, store]) => [engine, new NativeModelCatalog(store.adapter, roots[0])]));
   const server = createServer({ requestTimeout: 30000, headersTimeout: 10000, maxHeaderSize: 8192 }, async (request, response) => {
     try {
@@ -31,8 +33,23 @@ export function createGateway({ token, username = 'prompt', host = '127.0.0.1', 
           response.end(); return;
         }
       }
-      if (!authenticate(request.headers.authorization, username, token)) throw new Fault(401, 'unauthorized');
       const url = new URL(request.url, 'http://gateway.invalid');
+      if (url.pathname === '/prompt/pairings/exchange' && request.method === 'POST') {
+        const body = await bodyJson(request, 1024);
+        if (Object.keys(body).some((key) => !['ticket', 'backend'].includes(key))) throw new Fault(400, 'invalid_pairing');
+        const credential = pairing.exchange(body.ticket, body.backend);
+        if (!credential) throw new Fault(401, 'invalid_pairing');
+        json(response, { username, token: credential, backend: body.backend }); return;
+      }
+      if (!pairing.authenticate(request.headers.authorization)) throw new Fault(401, 'unauthorized');
+      if (url.pathname === '/prompt/pairings' && request.method === 'POST') {
+        const body = await bodyJson(request, 1024);
+        if (Object.keys(body).some((key) => key !== 'backend') || typeof body.backend !== 'string') throw new Fault(400, 'invalid_pairing');
+        const available = body.backend === 'opencode' ? Boolean(openCode) : Boolean(engines[body.backend]);
+        if (!available) throw new Fault(503, 'engine_unavailable');
+        try { json(response, pairing.create(body.backend), 201); } catch { throw new Fault(429, 'pairing_limit'); }
+        return;
+      }
       if (url.pathname === '/prompt/worktrees') {
         if (!worktrees) throw new Fault(503, 'worktrees_unavailable');
         if (request.method === 'GET') { json(response, await worktrees.list(url.searchParams.get('directory'))); return; }

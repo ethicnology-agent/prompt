@@ -22,6 +22,7 @@ enum ConnectionFailure {
   unexpectedResponse,
   secureStorageUnavailable,
   unsupportedBackend,
+  pairingRejected,
 }
 
 extension ConnectionFailureMessage on ConnectionFailure {
@@ -39,6 +40,8 @@ extension ConnectionFailureMessage on ConnectionFailure {
         'Prompt cannot store the server credential securely on this device.',
       ConnectionFailure.unsupportedBackend =>
         'This gateway has not verified support for the selected agent. Check its configuration.',
+      ConnectionFailure.pairingRejected =>
+        'This pairing code expired or was already used. Create a new code on your machine.',
     };
   }
 }
