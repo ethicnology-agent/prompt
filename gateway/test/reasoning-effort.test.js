@@ -63,9 +63,9 @@ test('catalog publishes bounded versioned advertised efforts, not fixed guessed 
   assert.deepEqual(providerCatalog('codex', value).all[0].executionOptions, {
     version: 1,
     permissionModes: [
-      { id: 'ask', label: 'Ask', description: 'Ask before commands Codex does not consider trusted; writes stay inside the workspace.' },
-      { id: 'auto', label: 'Auto', description: 'Let Codex decide when approval is needed; writes stay inside the workspace.' },
-      { id: 'read', label: 'Read', description: 'Do not allow filesystem writes or approval escalation.' },
+      { id: 'ask', label: 'Auto', description: 'Ask when unsure; writes stay inside the workspace.' },
+      { id: 'auto', label: 'Workspace', description: 'Sandboxed workspace access that can request escalation.' },
+      { id: 'read', label: 'Read', description: 'No filesystem writes or approval escalation.' },
     ],
     defaultPermissionModeId: 'ask',
   });

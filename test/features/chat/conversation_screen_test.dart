@@ -1197,13 +1197,13 @@ void main() {
           permissionModes: [
             PermissionModeChoice(
               id: 'ask',
-              label: 'Ask',
-              description: 'Confirm commands outside the trusted set',
+              label: 'Auto',
+              description: 'Ask when unsure; writes stay inside the workspace',
             ),
             PermissionModeChoice(
               id: 'auto',
-              label: 'Auto',
-              description: 'Let Codex decide inside the workspace sandbox',
+              label: 'Workspace',
+              description: 'Sandboxed workspace access that can escalate',
             ),
             PermissionModeChoice(
               id: 'read',
@@ -1223,7 +1223,7 @@ void main() {
       await tester.pumpAndSettle();
       final picker = find.byKey(const ValueKey('composer-permission-picker'));
       expect(picker, findsOneWidget);
-      expect(tester.widget<CompactChoiceButton>(picker).label, 'Ask');
+      expect(tester.widget<CompactChoiceButton>(picker).label, 'Auto');
       await tester.enterText(find.byType(TextField), 'Use the safe policy');
       final focus = tester
           .widget<EditableText>(find.byType(EditableText))
@@ -1233,13 +1233,13 @@ void main() {
       expect(find.byType(BottomSheet), findsNothing);
       expect(find.text('PERMISSIONS'), findsOneWidget);
       expect(
-        find.text('Let Codex decide inside the workspace sandbox'),
+        find.text('Sandboxed workspace access that can escalate'),
         findsOneWidget,
       );
       expect(focus.hasFocus, isTrue);
-      await tester.tap(find.text('Auto'));
+      await tester.tap(find.text('Workspace'));
       await tester.pumpAndSettle();
-      expect(tester.widget<CompactChoiceButton>(picker).label, 'Auto');
+      expect(tester.widget<CompactChoiceButton>(picker).label, 'Workspace');
       expect(
         viewModel.executionOptionsFor(native, session).permissionModeId,
         'auto',

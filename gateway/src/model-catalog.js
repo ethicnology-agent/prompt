@@ -1,9 +1,9 @@
 const identifier = (value) => typeof value === 'string' && value.length > 0 && value.length <= 128 && !/[\x00-\x1f\x7f]/.test(value);
 
 const codexPermissionChoices = Object.freeze([
-  Object.freeze({ id: 'ask', label: 'Ask', description: 'Ask before commands Codex does not consider trusted; writes stay inside the workspace.' }),
-  Object.freeze({ id: 'auto', label: 'Auto', description: 'Let Codex decide when approval is needed; writes stay inside the workspace.' }),
-  Object.freeze({ id: 'read', label: 'Read', description: 'Do not allow filesystem writes or approval escalation.' }),
+  Object.freeze({ id: 'ask', label: 'Auto', description: 'Ask when unsure; writes stay inside the workspace.' }),
+  Object.freeze({ id: 'auto', label: 'Workspace', description: 'Sandboxed workspace access that can request escalation.' }),
+  Object.freeze({ id: 'read', label: 'Read', description: 'No filesystem writes or approval escalation.' }),
 ]);
 
 /// Returns only policies the private gateway can enforce end to end.
