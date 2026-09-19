@@ -38,6 +38,7 @@ import 'package:prompt/features/connection/domain/server_profile.dart';
 import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/queue/domain/queued_prompt.dart';
 import 'package:prompt/features/queue/domain/prompt_execution_options.dart';
+import 'package:prompt/features/queue/domain/sse_connection_state.dart';
 import 'package:prompt/features/review/review.dart';
 import 'package:prompt/features/sessions/domain/open_code_session.dart';
 import 'package:prompt/features/sessions/domain/session_load_result.dart';
@@ -594,6 +595,44 @@ void main() {
     await pumpScreen(tester);
 
     expect(viewModel.openCalled, isTrue);
+  });
+
+  testWidgets('shows online status only for a healthy live connection', (
+    tester,
+  ) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await pumpScreen(tester);
+
+      expect(
+        find.byKey(const ValueKey('conversation-online-status')),
+        findsNothing,
+      );
+
+      viewModel.connectionState.value = const SseConnected();
+      await tester.pump();
+
+      final status = find.byKey(const ValueKey('conversation-online-status'));
+      expect(status, findsOneWidget);
+      expect(
+        tester.getSemantics(status).getSemanticsData().label,
+        'Connection status: Online',
+      );
+
+      viewModel.connectionState.value = SseReconnecting(
+        attempt: 1,
+        retryAt: DateTime(2026),
+      );
+      await tester.pump();
+
+      expect(status, findsNothing);
+      expect(
+        find.text('Connection lost. Reconnecting (attempt 1)…'),
+        findsOneWidget,
+      );
+    } finally {
+      semantics.dispose();
+    }
   });
 
   testWidgets(

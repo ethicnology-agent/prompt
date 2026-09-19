@@ -1602,58 +1602,85 @@ class _ConversationScreenState extends State<ConversationScreen>
             open: _composerChoice != null,
             onDismiss: _closeComposerChoice,
             popupBuilder: (_, height) => _inlineComposerChoices(height),
-            child: Container(
-              margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
-              decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(24),
-                border: Border.all(
-                  color: Theme.of(context).colorScheme.outlineVariant,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ValueListenableBuilder<SseConnectionState>(
+                  valueListenable: widget.viewModel.connectionState,
+                  builder: (context, state, _) {
+                    if (state is! SseConnected) {
+                      return const SizedBox.shrink();
+                    }
+                    return const Padding(
+                      padding: EdgeInsets.fromLTRB(22, 0, 22, 1),
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: AppStatusIndicator(
+                          key: ValueKey('conversation-online-status'),
+                          label: 'Online',
+                          semanticLabel: 'Connection status: Online',
+                          liveRegion: true,
+                        ),
+                      ),
+                    );
+                  },
                 ),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (!_composerOptionsReady)
-                    Padding(
-                      padding: const EdgeInsets.all(8),
-                      child:
-                          widget.viewModel.executionOptionsLoad.value ==
-                              ExecutionOptionsLoadState.failed
-                          ? Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Text(
-                                  'Could not restore saved model options. Sending is paused.',
-                                ),
-                                AppButton(
-                                  label: 'Retry saved options',
-                                  onPressed: () => unawaited(_openSession()),
-                                ),
-                              ],
-                            )
-                          : const Text('Restoring saved model options…'),
+                Container(
+                  margin: const EdgeInsets.fromLTRB(12, 4, 12, 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).colorScheme.surfaceContainerLow,
+                    borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: Theme.of(context).colorScheme.outlineVariant,
                     ),
-                  Composer(
-                    controller: _composerController,
-                    command: _selectedCommand,
-                    attachments: widget.viewModel.attachments,
-                    onRemoveAttachment: widget.viewModel.removeAttachment,
-                    onSubmit: _submitComposer,
-                    voiceState: widget.voiceViewModel?.state,
-                    onVoiceHoldStart: widget.voiceViewModel == null
-                        ? null
-                        : _startVoiceCapture,
-                    onVoiceHoldEnd:
-                        widget.voiceViewModel?.finishSegmentFromUserAction,
-                    onVoiceStop: widget.voiceViewModel?.stopModeFromUserAction,
                   ),
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
-                    child: _composerActionColumn(),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (!_composerOptionsReady)
+                        Padding(
+                          padding: const EdgeInsets.all(8),
+                          child:
+                              widget.viewModel.executionOptionsLoad.value ==
+                                  ExecutionOptionsLoadState.failed
+                              ? Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Text(
+                                      'Could not restore saved model options. Sending is paused.',
+                                    ),
+                                    AppButton(
+                                      label: 'Retry saved options',
+                                      onPressed: () =>
+                                          unawaited(_openSession()),
+                                    ),
+                                  ],
+                                )
+                              : const Text('Restoring saved model options…'),
+                        ),
+                      Composer(
+                        controller: _composerController,
+                        command: _selectedCommand,
+                        attachments: widget.viewModel.attachments,
+                        onRemoveAttachment: widget.viewModel.removeAttachment,
+                        onSubmit: _submitComposer,
+                        voiceState: widget.voiceViewModel?.state,
+                        onVoiceHoldStart: widget.voiceViewModel == null
+                            ? null
+                            : _startVoiceCapture,
+                        onVoiceHoldEnd:
+                            widget.voiceViewModel?.finishSegmentFromUserAction,
+                        onVoiceStop:
+                            widget.voiceViewModel?.stopModeFromUserAction,
+                      ),
+                      Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 0, 8, 8),
+                        child: _composerActionColumn(),
+                      ),
+                    ],
                   ),
-                ],
-              ),
+                ),
+              ],
             ),
           ),
         ),
