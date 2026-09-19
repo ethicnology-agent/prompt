@@ -145,8 +145,28 @@ void main() {
                       'defaultPermissionModeId': 'unsafe',
                     },
                   },
+                  {
+                    'id': 'claude',
+                    'models': <String, Object>{},
+                    'executionOptions': {
+                      'version': 1,
+                      'permissionModes': [
+                        {
+                          'id': 'ask',
+                          'label': 'Auto',
+                          'description': 'Request approval when needed',
+                        },
+                        {
+                          'id': 'plan',
+                          'label': 'Plan',
+                          'description': 'Do not execute tools',
+                        },
+                      ],
+                      'defaultPermissionModeId': 'ask',
+                    },
+                  },
                 ],
-                'connected': ['codex', 'other'],
+                'connected': ['codex', 'claude', 'other'],
               })
             : '[]',
         200,
@@ -178,11 +198,12 @@ void main() {
         backend: AgentBackend.gatewayClaude,
       ),
     );
-    expect(
-      (claude as CapabilitiesLoaded).capabilities.permissionModes,
-      isEmpty,
-    );
-    expect(claude.capabilities.defaultPermissionModeId, isNull);
+    final claudeCapabilities = (claude as CapabilitiesLoaded).capabilities;
+    expect(claudeCapabilities.permissionModes.map((mode) => mode.id), [
+      'ask',
+      'plan',
+    ]);
+    expect(claudeCapabilities.defaultPermissionModeId, 'ask');
 
     final direct = await repositoryFor(client).load(profile);
     expect(

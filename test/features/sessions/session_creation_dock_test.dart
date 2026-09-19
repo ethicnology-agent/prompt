@@ -540,6 +540,56 @@ void main() {
     },
   );
 
+  testWidgets('Claude creation exposes only approval and no-tool planning', (
+    tester,
+  ) async {
+    final fixture = _Fixture(permissions: true);
+    addTearDown(fixture.dispose);
+    final controller = TextEditingController();
+    final focus = FocusNode();
+    addTearDown(controller.dispose);
+    addTearDown(focus.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: promptTheme(),
+        home: Scaffold(
+          body: SizedBox(
+            width: 393,
+            child: SessionCreationDock(
+              profile: fixture.profile,
+              viewModel: fixture.model,
+              controller: controller,
+              focusNode: focus,
+              onLaunch: (_) {},
+              onExpandedChanged: (_) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(TextField));
+    await tester.pumpAndSettle();
+    await fixture.model.selectBackend(AgentBackend.gatewayClaude);
+    await tester.pumpAndSettle();
+    final picker = find.byKey(const ValueKey('creation-permission-picker'));
+    final button = tester.widget<CompactChoiceButton>(picker);
+    expect(button.label, 'Auto');
+    expect(button.onPressed, isNotNull);
+    button.onPressed!();
+    await tester.pumpAndSettle();
+    expect(find.text('Plan without executing tools'), findsOneWidget);
+    expect(find.text('Workspace'), findsNothing);
+    expect(find.text('Read'), findsNothing);
+    await tester.ensureVisible(find.text('Plan'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Plan'));
+    await tester.pumpAndSettle();
+    expect(fixture.model.value.options.permissionModeId, 'plan');
+    expect(tester.widget<CompactChoiceButton>(picker).label, 'Plan');
+    expect(fixture.created, isEmpty);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'obsolete inline model and effort callbacks cannot change another scope',
     (tester) async {
@@ -1091,26 +1141,35 @@ class _Fixture {
           'all': [
             {
               'id': engine,
-              if (permissions && engine == 'codex')
+              if (permissions && (engine == 'codex' || engine == 'claude'))
                 'executionOptions': {
                   'version': 1,
                   'permissionModes': [
                     {
                       'id': 'ask',
-                      'label': 'Ask',
-                      'description': 'Confirm commands outside the trusted set',
+                      'label': engine == 'codex' ? 'Ask' : 'Auto',
+                      'description': engine == 'codex'
+                          ? 'Confirm commands outside the trusted set'
+                          : 'Ask before uncertain tool use',
                     },
-                    {
-                      'id': 'auto',
-                      'label': 'Auto',
-                      'description':
-                          'Let Codex decide inside the workspace sandbox',
-                    },
-                    {
-                      'id': 'read',
-                      'label': 'Read',
-                      'description': 'Read-only without approval escalation',
-                    },
+                    if (engine == 'codex') ...[
+                      {
+                        'id': 'auto',
+                        'label': 'Auto',
+                        'description':
+                            'Let Codex decide inside the workspace sandbox',
+                      },
+                      {
+                        'id': 'read',
+                        'label': 'Read',
+                        'description': 'Read-only without approval escalation',
+                      },
+                    ] else
+                      {
+                        'id': 'plan',
+                        'label': 'Plan',
+                        'description': 'Plan without executing tools',
+                      },
                   ],
                   'defaultPermissionModeId': 'ask',
                 },

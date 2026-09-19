@@ -324,7 +324,8 @@ void main() {
       if (scenario == 'native pre-send defaults') {
         expect(find.text('CLI default'), findsNWidgets(2));
         expect(find.text('Effort'), findsNothing);
-        expect(find.text('Permissions'), findsNothing);
+        expect(find.text('Permissions'), findsOneWidget);
+        expect(find.text('Auto'), findsOneWidget);
         await tester.ensureVisible(find.text('Model'));
         await tester.tap(find.text('Model'));
         await tester.pumpAndSettle();

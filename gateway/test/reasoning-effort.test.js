@@ -40,6 +40,32 @@ test('HTTP effort selection authenticates and validates before returning accepte
   assert.equal(discovers, 1);
 });
 
+test('Claude rejects unadvertised permission modes before accepting a prompt', async () => {
+  const runs = [];
+  const store = new Sessions('claude', {
+    open: async () => ({ run: async (...args) => runs.push(args), close() {} }),
+  }, []);
+  const item = session();
+  const prompt = {
+    parts: [{ type: 'text', text: 'fixture' }],
+    model: { providerID: 'claude', modelID: 'default' },
+  };
+
+  assert.throws(
+    () => store.submit(item, { ...prompt, permissionMode: 'bypassPermissions' }),
+    /unsupported_permission_mode/,
+  );
+  assert.equal(item.messages.length, 0);
+  assert.equal(item.active, false);
+  assert.equal(runs.length, 0);
+
+  store.submit(item, { ...prompt, permissionMode: 'plan' });
+  await item.task;
+  assert.equal(runs.length, 1);
+  assert.equal(runs[0][3].permissionMode, 'plan');
+  store.close();
+});
+
 test('native discovery maps exact model-specific SDK effort contracts', async () => {
   const rpc = new EventEmitter();
   rpc.write = () => {};
@@ -69,7 +95,14 @@ test('catalog publishes bounded versioned advertised efforts, not fixed guessed 
     ],
     defaultPermissionModeId: 'ask',
   });
-  assert.equal(providerCatalog('claude', value).all[0].executionOptions, undefined);
+  assert.deepEqual(providerCatalog('claude', value).all[0].executionOptions, {
+    version: 1,
+    permissionModes: [
+      { id: 'ask', label: 'Auto', description: 'Ask before uncertain tool use.' },
+      { id: 'plan', label: 'Plan', description: 'Plan without executing tools or changing files.' },
+    ],
+    defaultPermissionModeId: 'ask',
+  });
   catalog.close();
 });
 
@@ -160,5 +193,40 @@ test('Claude reused query updates and resets session-scoped effort without permi
   assert.deepEqual(settings, [{ effortLevel: 'fixture-deep' }, { effortLevel: null }]);
   assert.equal((await initial.canUseTool()).behavior, 'deny');
   assert.ok(initial.hooks.PreToolUse.length);
+  runner.close();
+});
+
+test('Claude applies only advertised ask and no-tool plan policies', async () => {
+  const events = new InputStream();
+  const permissionModes = [];
+  const decisions = [];
+  let initial;
+  let permissionRequests = 0;
+  const adapter = new ClaudeAdapter(({ prompt, options }) => {
+    initial = options;
+    void (async () => {
+      for await (const _ of prompt) {
+        decisions.push(await options.hooks.PreToolUse[0].hooks[0]({
+          tool_name: 'Write', tool_input: { file_path: '/fixture/file' },
+        }));
+        events.push({ type: 'result', subtype: 'success' });
+      }
+    })();
+    return {
+      [Symbol.asyncIterator]: () => events,
+      setPermissionMode: async (value) => permissionModes.push(value),
+      close: () => events.close(),
+    };
+  });
+  const runner = await adapter.open(session(), {
+    delta() {},
+    permission: async () => { permissionRequests++; return true; },
+  });
+  await runner.run('plan first', 'default', [], { permissionMode: 'plan' });
+  await runner.run('ask next', 'default', [], { permissionMode: 'ask' });
+  assert.equal(initial.permissionMode, 'plan');
+  assert.deepEqual(permissionModes, ['default']);
+  assert.deepEqual(decisions.map((value) => value.hookSpecificOutput.permissionDecision), ['deny', 'allow']);
+  assert.equal(permissionRequests, 1);
   runner.close();
 });

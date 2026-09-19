@@ -194,6 +194,7 @@ export class ClaudeAdapter {
     let active = false;
     let closed = false;
     let selectedModel;
+    let selectedPermissionMode;
     let streamed = false;
     const close = () => {
       if (closed) return;
@@ -236,11 +237,13 @@ export class ClaudeAdapter {
         const completion = new Promise((resolve, reject) => { pending = { resolve, reject }; });
         completion.catch(() => {});
         const desiredModel = model && model !== 'default' ? model : undefined;
+        const desiredPermissionMode = execution.permissionMode === 'plan' ? 'plan' : 'default';
         try {
           if (!running) {
             selectedModel = desiredModel;
+            selectedPermissionMode = desiredPermissionMode;
             running = query({ prompt: input, options: {
-              cwd: session.directory, settingSources: [], permissionMode: 'default',
+              cwd: session.directory, settingSources: [], permissionMode: desiredPermissionMode,
               env: childEnvironment(), abortController: controller,
               persistSession: false, includePartialMessages: true,
               ...(desiredModel ? { model: desiredModel } : {}),
@@ -248,8 +251,12 @@ export class ClaudeAdapter {
               tools: ['Read', 'Glob', 'Grep', 'Bash', 'Edit', 'Write'],
               hooks: { PreToolUse: [{ hooks: [async (input) => ({ hookSpecificOutput: {
                 hookEventName: 'PreToolUse',
-                permissionDecision: await sink.permission(input.tool_name, input.tool_input) ? 'allow' : 'deny',
-                permissionDecisionReason: 'Explicit Prompt user decision',
+                permissionDecision: selectedPermissionMode === 'plan'
+                  ? 'deny'
+                  : await sink.permission(input.tool_name, input.tool_input) ? 'allow' : 'deny',
+                permissionDecisionReason: selectedPermissionMode === 'plan'
+                  ? 'Plan mode cannot execute tools'
+                  : 'Explicit Prompt user decision',
               } })] }] },
               canUseTool: async () => ({ behavior: 'deny', message: 'Tool was not approved by Prompt' }),
               stderr: () => {},
@@ -258,6 +265,11 @@ export class ClaudeAdapter {
           } else if (selectedModel !== desiredModel) {
             await running.setModel(desiredModel);
             selectedModel = desiredModel;
+          }
+          if (selectedPermissionMode !== desiredPermissionMode) {
+            if (typeof running.setPermissionMode !== 'function') throw new Fault(502, 'permission_control_unavailable');
+            await running.setPermissionMode(desiredPermissionMode);
+            selectedPermissionMode = desiredPermissionMode;
           }
           if (execution.reasoningEffort !== undefined || execution.resetEffort) {
             if (typeof running.applyFlagSettings !== 'function') throw new Fault(502, 'effort_control_unavailable');

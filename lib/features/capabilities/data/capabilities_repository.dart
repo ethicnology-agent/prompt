@@ -120,13 +120,13 @@ class CapabilitiesRepository {
     List<OpenCodeProviderRecord> providers,
     ServerProfile profile,
   ) {
-    if (profile.backend != AgentBackend.gatewayCodex) return null;
+    if (profile.backend != AgentBackend.gatewayCodex &&
+        profile.backend != AgentBackend.gatewayClaude) {
+      return null;
+    }
+    final engine = profile.backend.engine;
     final matches = providers
-        .where(
-          (provider) =>
-              provider.isConnected &&
-              provider.id == AgentBackend.gatewayCodex.engine,
-        )
+        .where((provider) => provider.isConnected && provider.id == engine)
         .toList(growable: false);
     return matches.length == 1 ? matches.single : null;
   }

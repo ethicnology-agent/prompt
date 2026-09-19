@@ -6,12 +6,22 @@ const codexPermissionChoices = Object.freeze([
   Object.freeze({ id: 'read', label: 'Read', description: 'No filesystem writes or approval escalation.' }),
 ]);
 
+const claudePermissionChoices = Object.freeze([
+  Object.freeze({ id: 'ask', label: 'Auto', description: 'Ask before uncertain tool use.' }),
+  Object.freeze({ id: 'plan', label: 'Plan', description: 'Plan without executing tools or changing files.' }),
+]);
+
 /// Returns only policies the private gateway can enforce end to end.
 export function permissionOptions(engine) {
-  if (engine !== 'codex') return undefined;
+  const permissionModes = engine === 'codex'
+    ? codexPermissionChoices
+    : engine === 'claude'
+      ? claudePermissionChoices
+      : undefined;
+  if (!permissionModes) return undefined;
   return {
     version: 1,
-    permissionModes: codexPermissionChoices,
+    permissionModes,
     defaultPermissionModeId: 'ask',
   };
 }
