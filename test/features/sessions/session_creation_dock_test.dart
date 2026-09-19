@@ -956,8 +956,8 @@ void main() {
     await tester.enterText(find.byType(TextField), 'Keep draft');
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
-    await tester.ensureVisible(find.byTooltip('Close new session options'));
-    await tester.tap(find.byTooltip('Close new session options'));
+    expect(find.byTooltip('Close new session options'), findsNothing);
+    await tester.binding.handlePopRoute();
     await tester.pumpAndSettle();
     expect(controller.text, 'Keep draft');
     expect(fixture.created, isEmpty);

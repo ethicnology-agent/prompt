@@ -43,7 +43,8 @@ void main() {
       expect(expanded, isTrue);
       expect(find.text('Creation configuration'), findsOneWidget);
       expect(requests, [true]);
-      await tester.tap(find.byTooltip('Close new session options'));
+      expect(find.byTooltip('Close new session options'), findsNothing);
+      await tester.binding.handlePopRoute();
       await tester.pumpAndSettle();
       expect(expanded, isFalse);
       expect(find.text('Creation configuration'), findsNothing);

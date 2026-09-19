@@ -141,7 +141,6 @@ class _NewSessionDockState extends State<NewSessionDock> {
                 onSubmit: widget.onCreate,
                 onTerminal: widget.onTerminal,
                 onAttach: widget.onAttach,
-                onClose: _close,
                 onChanged: widget.onChanged,
                 hint: widget.hint,
               ),

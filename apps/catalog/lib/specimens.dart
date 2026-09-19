@@ -466,7 +466,6 @@ class _DraftComposerSpecimenState extends State<_DraftComposerSpecimen> {
         ],
       ),
       onSubmit: widget.canSubmit ? () => _controller.clear() : null,
-      onClose: _focus.unfocus,
     ),
   );
 }

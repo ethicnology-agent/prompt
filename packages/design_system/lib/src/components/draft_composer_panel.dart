@@ -56,7 +56,6 @@ class DraftComposerPanel extends StatelessWidget {
     this.onSubmit,
     this.onAttach,
     this.onTerminal,
-    this.onClose,
     this.onChanged,
     this.hint = 'What would you like to do?',
     super.key,
@@ -74,7 +73,6 @@ class DraftComposerPanel extends StatelessWidget {
   final VoidCallback? onSubmit;
   final VoidCallback? onAttach;
   final VoidCallback? onTerminal;
-  final VoidCallback? onClose;
   final ValueChanged<String>? onChanged;
   final String hint;
 
@@ -149,12 +147,6 @@ class DraftComposerPanel extends StatelessWidget {
                             icon: Icons.terminal_rounded,
                             tooltip: 'Remote terminal',
                             onPressed: onTerminal,
-                          ),
-                        if (onClose != null)
-                          AppIconButton(
-                            icon: Icons.keyboard_hide_outlined,
-                            tooltip: 'Close new session options',
-                            onPressed: onClose,
                           ),
                       ],
                       controls: actions,
