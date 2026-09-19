@@ -47,6 +47,48 @@ class InlineSelectionPanel<T> extends StatefulWidget {
       _InlineSelectionPanelState<T>();
 }
 
+/// Dialog shell for [InlineSelectionPanel]. Anchored composer selectors can
+/// use the panel directly while form and desktop flows share this geometry.
+class InlineSelectionDialog<T> extends StatelessWidget {
+  const InlineSelectionDialog({
+    required this.title,
+    required this.options,
+    required this.selected,
+    required this.onSelected,
+    required this.onClose,
+    this.radioIndicator = false,
+    super.key,
+  });
+
+  final String title;
+  final List<InlineSelectionOption<T>> options;
+  final T? selected;
+  final ValueChanged<T>? onSelected;
+  final VoidCallback onClose;
+  final bool radioIndicator;
+
+  @override
+  Widget build(BuildContext context) => Dialog(
+    backgroundColor: Colors.transparent,
+    elevation: 0,
+    insetPadding: const EdgeInsets.all(16),
+    child: LayoutBuilder(
+      builder: (context, constraints) => SizedBox(
+        width: 560,
+        child: InlineSelectionPanel<T>(
+          title: title,
+          options: options,
+          selected: selected,
+          radioIndicator: radioIndicator,
+          listHeight: (constraints.maxHeight - 56).clamp(0.0, 344.0),
+          onSelected: onSelected,
+          onClose: onClose,
+        ),
+      ),
+    ),
+  );
+}
+
 class _InlineSelectionPanelState<T> extends State<InlineSelectionPanel<T>> {
   final _scrollController = ScrollController();
 

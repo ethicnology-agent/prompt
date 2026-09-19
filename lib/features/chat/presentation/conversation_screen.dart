@@ -563,33 +563,21 @@ class _ConversationScreenState extends State<ConversationScreen>
     return showDialog<_Selection<T>>(
       context: context,
       useSafeArea: true,
-      builder: (context) => Dialog(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        insetPadding: const EdgeInsets.all(16),
-        child: LayoutBuilder(
-          builder: (context, constraints) => SizedBox(
-            width: 560,
-            child: InlineSelectionPanel<T?>(
-              title: title,
-              radioIndicator: true,
-              listHeight: (constraints.maxHeight - 56).clamp(0.0, 344.0),
-              selected: selected,
-              options: [
-                InlineSelectionOption<T?>(value: null, label: 'Default'),
-                for (final option in options)
-                  InlineSelectionOption<T?>(
-                    value: option.value,
-                    label: option.label,
-                    description: option.description,
-                  ),
-              ],
-              onSelected: (value) =>
-                  Navigator.of(context).pop(_Selection<T>(value)),
-              onClose: () => Navigator.of(context).pop(),
+      builder: (context) => InlineSelectionDialog<T?>(
+        title: title,
+        radioIndicator: true,
+        selected: selected,
+        options: [
+          InlineSelectionOption<T?>(value: null, label: 'Default'),
+          for (final option in options)
+            InlineSelectionOption<T?>(
+              value: option.value,
+              label: option.label,
+              description: option.description,
             ),
-          ),
-        ),
+        ],
+        onSelected: (value) => Navigator.of(context).pop(_Selection<T>(value)),
+        onClose: () => Navigator.of(context).pop(),
       ),
     );
   }

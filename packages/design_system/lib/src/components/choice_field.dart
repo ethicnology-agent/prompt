@@ -85,40 +85,29 @@ class _ChoiceFieldState<T> extends State<ChoiceField<T>> {
         valueListenable: updates,
         builder: (context, _, _) {
           if (!mounted || !identical(_route, route)) return const SizedBox();
-          return Dialog(
-            backgroundColor: Colors.transparent,
-            elevation: 0,
-            insetPadding: const EdgeInsets.all(16),
-            child: LayoutBuilder(
-              builder: (context, constraints) => SizedBox(
-                width: 560,
-                child: InlineSelectionPanel<T>(
-                  title: widget.label,
-                  options: widget.options,
-                  selected: widget.selected,
-                  listHeight: (constraints.maxHeight - 56).clamp(0.0, 344.0),
-                  onClose: _dismiss,
-                  onSelected: widget.onSelected == null
-                      ? null
-                      : (value) {
-                          if (!mounted ||
-                              !identical(_route, route) ||
-                              scope != widget.scopeKey) {
-                            return;
-                          }
-                          final callback = widget.onSelected;
-                          if (callback == null) return;
-                          for (final option in widget.options) {
-                            if (option.value == value) {
-                              _dismiss();
-                              callback(option.value);
-                              return;
-                            }
-                          }
-                        },
-                ),
-              ),
-            ),
+          return InlineSelectionDialog<T>(
+            title: widget.label,
+            options: widget.options,
+            selected: widget.selected,
+            onClose: _dismiss,
+            onSelected: widget.onSelected == null
+                ? null
+                : (value) {
+                    if (!mounted ||
+                        !identical(_route, route) ||
+                        scope != widget.scopeKey) {
+                      return;
+                    }
+                    final callback = widget.onSelected;
+                    if (callback == null) return;
+                    for (final option in widget.options) {
+                      if (option.value == value) {
+                        _dismiss();
+                        callback(option.value);
+                        return;
+                      }
+                    }
+                  },
           );
         },
       ),
