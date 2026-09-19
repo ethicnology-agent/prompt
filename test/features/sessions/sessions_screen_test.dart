@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:http/testing.dart';
 import 'package:prompt/core/security/credentials_store.dart';
 import 'package:prompt/core/ui/ui.dart';
 import 'package:prompt/data/remote/opencode_transport.dart';
+import 'package:prompt/features/connection/domain/agent_backend.dart';
 import 'package:prompt/features/connection/domain/server_profile.dart';
 import 'package:prompt/features/sessions/data/opencode_sessions_service.dart';
 import 'package:prompt/features/sessions/data/sessions_repository.dart';
@@ -180,6 +182,211 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  testWidgets('long-press fork is capability-gated and cannot submit twice', (
+    tester,
+  ) async {
+    final forkResponse = Completer<http.Response>();
+    var forkRequests = 0;
+    final client = MockClient((request) async {
+      if (request.method == 'POST' &&
+          request.url.path == '/session/session-1/fork') {
+        forkRequests += 1;
+        return forkResponse.future;
+      }
+      if (request.url.path == '/session') {
+        return http.Response(_renameSessionJson, 200);
+      }
+      if (request.url.path == '/project') {
+        return http.Response(
+          '[{"id":"project","worktree":"/srv/project"}]',
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+    final profile = ServerProfile(
+      origin: Uri.parse('http://10.80.0.1:4096'),
+      username: 'opencode',
+    );
+    final viewModel = SessionsViewModel(
+      SessionsRepository(
+        OpenCodeSessionsService(OpenCodeTransport(client)),
+        const _PasswordStore(),
+      ),
+    );
+    addTearDown(viewModel.dispose);
+    OpenCodeSession? opened;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SessionsScreen(
+          profile: profile,
+          viewModel: viewModel,
+          onOpenSession: (session) => opened = session,
+          onOpenWorkspace: (_) {},
+          onOpenTerminal: () {},
+          onOpenDiagnostics: () {},
+          onOpenVoiceSettings: () {},
+          onDisconnect: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(SessionListTile));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Fork session'));
+    await tester.pump();
+    expect(forkRequests, 1);
+
+    await tester.longPress(find.byType(SessionListTile));
+    await tester.pumpAndSettle();
+    expect(
+      tester
+          .widget<ListTile>(find.widgetWithText(ListTile, 'Forking session…'))
+          .onTap,
+      isNull,
+    );
+    await tester.tapAt(const Offset(8, 8));
+    await tester.pumpAndSettle();
+
+    forkResponse.complete(http.Response(_forkedSessionJson, 200));
+    await tester.pumpAndSettle();
+
+    expect(forkRequests, 1);
+    expect(opened?.id, 'forked-session');
+    expect((viewModel.value as SessionsReady).sessions, hasLength(2));
+    expect(
+      tester.widget<SessionListTile>(find.byType(SessionListTile)).project,
+      contains('1 subagents'),
+    );
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('long-press hides fork when the backend does not advertise it', (
+    tester,
+  ) async {
+    final client = MockClient((request) async {
+      if (request.url.path == '/session') {
+        return http.Response(_renameSessionJson, 200);
+      }
+      if (request.url.path == '/project') {
+        return http.Response(
+          '[{"id":"project","worktree":"/srv/project"}]',
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+    final profile = ServerProfile(
+      origin: Uri.parse('http://10.80.0.1:4096'),
+      username: 'opencode',
+      capabilities: BackendCapabilities([
+        BackendFeature.sessions,
+        BackendFeature.sessionRename,
+      ]),
+    );
+    final viewModel = SessionsViewModel(
+      SessionsRepository(
+        OpenCodeSessionsService(OpenCodeTransport(client)),
+        const _PasswordStore(),
+      ),
+    );
+    addTearDown(viewModel.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SessionsScreen(
+          profile: profile,
+          viewModel: viewModel,
+          onOpenSession: (_) {},
+          onOpenWorkspace: (_) {},
+          onOpenTerminal: () {},
+          onOpenDiagnostics: () {},
+          onOpenVoiceSettings: () {},
+          onDisconnect: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    await tester.longPress(find.byType(SessionListTile));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Fork session'), findsNothing);
+    expect(find.text('Rename'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('long-press fork reports failure and permits a safe retry', (
+    tester,
+  ) async {
+    var forkRequests = 0;
+    final client = MockClient((request) async {
+      if (request.method == 'POST' &&
+          request.url.path == '/session/session-1/fork') {
+        forkRequests += 1;
+        return forkRequests == 1
+            ? http.Response('', 503)
+            : http.Response(_forkedSessionJson, 200);
+      }
+      if (request.url.path == '/session') {
+        return http.Response(_renameSessionJson, 200);
+      }
+      if (request.url.path == '/project') {
+        return http.Response(
+          '[{"id":"project","worktree":"/srv/project"}]',
+          200,
+        );
+      }
+      return http.Response('', 404);
+    });
+    final profile = ServerProfile(
+      origin: Uri.parse('http://10.80.0.1:4096'),
+      username: 'opencode',
+    );
+    final viewModel = SessionsViewModel(
+      SessionsRepository(
+        OpenCodeSessionsService(OpenCodeTransport(client)),
+        const _PasswordStore(),
+      ),
+    );
+    addTearDown(viewModel.dispose);
+    OpenCodeSession? opened;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: SessionsScreen(
+          profile: profile,
+          viewModel: viewModel,
+          onOpenSession: (session) => opened = session,
+          onOpenWorkspace: (_) {},
+          onOpenTerminal: () {},
+          onOpenDiagnostics: () {},
+          onOpenVoiceSettings: () {},
+          onDisconnect: () {},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    Future<void> fork() async {
+      await tester.longPress(find.byType(SessionListTile));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Fork session'));
+      await tester.pumpAndSettle();
+    }
+
+    await fork();
+    expect(opened, isNull);
+    expect(
+      find.text(SessionsFailure.unexpectedResponse.message),
+      findsOneWidget,
+    );
+    await fork();
+
+    expect(forkRequests, 2);
+    expect(opened?.id, 'forked-session');
+    expect(tester.takeException(), isNull);
+  });
 
   for (final failFirst in [false, true]) {
     testWidgets(
@@ -942,6 +1149,11 @@ void main() {
 const _sessionJson =
     '{"id":"new","projectID":"project","directory":"/srv/new-project",'
     '"title":"New","time":{"created":1000,"updated":1000}}';
+
+const _forkedSessionJson =
+    '{"id":"forked-session","projectID":"project",'
+    '"directory":"/srv/project","title":"Forked",'
+    '"parentID":"session-1","time":{"created":2000,"updated":2000}}';
 
 const _renameSessionJson =
     '[{"id":"session-1","projectID":"project","directory":"/srv/project",'

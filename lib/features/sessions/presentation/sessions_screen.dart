@@ -101,6 +101,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   Timer? _focusCooldown;
   bool _showFilters = false;
   bool _creationExpanded = false;
+  (String, String)? _forkingSession;
 
   @override
   void initState() {
@@ -572,6 +573,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
                       }
                     },
                     onCopyId: () => _copySessionId(session),
+                    onFork: () => unawaited(_forkSession(entry)),
                     onRename: () =>
                         _renameSession(session, profile: entry.profile),
                     onDelete: () =>
@@ -579,6 +581,13 @@ class _SessionsScreenState extends State<SessionsScreen> {
                     canRename: entry.profile.capabilities.supports(
                       BackendFeature.sessionRename,
                     ),
+                    canFork:
+                        entry.profile.capabilities.supports(
+                          BackendFeature.sessionFork,
+                        ) &&
+                        (entry.profile.id == widget.profile.id ||
+                            widget.onOpenScopedSession != null),
+                    forkInProgress: _forkingSession != null,
                     canDelete: entry.profile.capabilities.supports(
                       BackendFeature.sessionDelete,
                     ),
@@ -653,6 +662,26 @@ class _SessionsScreenState extends State<SessionsScreen> {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(const SnackBar(content: Text('Session ID copied')));
+  }
+
+  Future<void> _forkSession(ScopedSession entry) async {
+    if (_forkingSession != null) return;
+    setState(() => _forkingSession = entry.identity);
+    final result = await widget.viewModel.fork(entry.profile, entry.session);
+    if (!mounted) return;
+    setState(() => _forkingSession = null);
+    switch (result) {
+      case Ok<OpenCodeSession, SessionsFailure>(:final value):
+        if (widget.onOpenScopedSession case final open?) {
+          open(ScopedSession(entry.profile, value));
+        } else {
+          widget.onOpenSession(value);
+        }
+      case Err<OpenCodeSession, SessionsFailure>(:final failure):
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(failure.message)));
+    }
   }
 
   Future<void> _renameSession(
@@ -1264,10 +1293,13 @@ class _SessionCard extends StatelessWidget {
     required this.activity,
     required this.onTap,
     required this.onCopyId,
+    required this.onFork,
     required this.onRename,
     required this.onDelete,
     required this.canRename,
+    required this.canFork,
     required this.canDelete,
+    required this.forkInProgress,
     this.engineLabel,
     super.key,
   });
@@ -1277,10 +1309,13 @@ class _SessionCard extends StatelessWidget {
   final SessionActivity activity;
   final VoidCallback onTap;
   final VoidCallback onCopyId;
+  final VoidCallback onFork;
   final VoidCallback onRename;
   final VoidCallback onDelete;
   final bool canRename;
+  final bool canFork;
   final bool canDelete;
+  final bool forkInProgress;
   final String? engineLabel;
 
   @override
@@ -1319,31 +1354,45 @@ class _SessionCard extends StatelessWidget {
       showDragHandle: true,
       builder: (context) => SafeArea(
         top: false,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.content_copy_outlined),
-              title: const Text('Copy session ID'),
-              onTap: () => Navigator.pop(context, _SessionAction.copyId),
-            ),
-            if (canRename)
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (canRename)
+                ListTile(
+                  leading: const Icon(Icons.edit_outlined),
+                  title: const Text('Rename'),
+                  onTap: () => Navigator.pop(context, _SessionAction.rename),
+                ),
+              if (canFork)
+                ListTile(
+                  leading: const Icon(Icons.fork_right_rounded),
+                  title: Text(
+                    forkInProgress ? 'Forking session…' : 'Fork session',
+                  ),
+                  onTap: forkInProgress
+                      ? null
+                      : () => Navigator.pop(context, _SessionAction.fork),
+                ),
               ListTile(
-                leading: const Icon(Icons.edit_outlined),
-                title: const Text('Rename'),
-                onTap: () => Navigator.pop(context, _SessionAction.rename),
+                leading: const Icon(Icons.content_copy_outlined),
+                title: const Text('Copy session ID'),
+                onTap: () => Navigator.pop(context, _SessionAction.copyId),
               ),
-            if (canDelete)
-              ListTile(
-                leading: const Icon(Icons.delete_outline),
-                title: const Text('Delete'),
-                onTap: () => Navigator.pop(context, _SessionAction.delete),
-              ),
-          ],
+              if (canDelete)
+                ListTile(
+                  leading: const Icon(Icons.delete_outline),
+                  title: const Text('Delete'),
+                  onTap: () => Navigator.pop(context, _SessionAction.delete),
+                ),
+            ],
+          ),
         ),
       ),
     );
     switch (action) {
+      case _SessionAction.fork:
+        onFork();
       case _SessionAction.copyId:
         onCopyId();
       case _SessionAction.rename:
@@ -1356,7 +1405,7 @@ class _SessionCard extends StatelessWidget {
   }
 }
 
-enum _SessionAction { copyId, rename, delete }
+enum _SessionAction { fork, copyId, rename, delete }
 
 class _OnlineDot extends StatelessWidget {
   const _OnlineDot();

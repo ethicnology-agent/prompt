@@ -202,6 +202,20 @@ class SessionsViewModel extends ValueNotifier<SessionsUiState> {
     return result;
   }
 
+  Future<Result<OpenCodeSession, SessionsFailure>> fork(
+    ServerProfile profile,
+    OpenCodeSession session,
+  ) async {
+    final revision = ++_revision;
+    final result = await _repository.fork(profile, session);
+    if (revision == _revision) {
+      if (result case Ok<OpenCodeSession, SessionsFailure>(:final value)) {
+        _addSession(profile, value);
+      }
+    }
+    return result;
+  }
+
   Future<Result<List<String>, SessionsFailure>?> suggestDirectories(
     ServerProfile profile,
     String input,
