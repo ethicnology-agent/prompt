@@ -353,6 +353,9 @@ class _ConversationScreenState extends State<ConversationScreen>
     final owner = (widget.profile.id, widget.session.id);
     var model = _selectedModel(capabilities.models);
     var agent = _selectedAgent(capabilities.agents);
+    var missingModel = _executionOptions.value.hasModel && model == null;
+    var missingAgent =
+        _executionOptions.value.agentName != null && agent == null;
     var effort = _executionOptions.value.reasoningEffort;
     var permissionModeId = _executionOptions.value.permissionModeId;
     String? selectionError;
@@ -396,7 +399,9 @@ class _ConversationScreenState extends State<ConversationScreen>
                 ),
               _ExecutionChoice(
                 label: 'Model',
-                value: model?.name ?? _executionDefaultLabel,
+                value: missingModel
+                    ? 'Unavailable model'
+                    : model?.name ?? _executionDefaultLabel,
                 onTap: () async {
                   final choice = await _chooseModel(capabilities.models, model);
                   if (choice != null && context.mounted) {
@@ -406,6 +411,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                         effort = null;
                       }
                       model = choice.value;
+                      missingModel = false;
                     });
                   }
                 },
@@ -440,11 +446,16 @@ class _ConversationScreenState extends State<ConversationScreen>
                 ),
               _ExecutionChoice(
                 label: 'Agent',
-                value: agent?.name ?? _executionDefaultLabel,
+                value: missingAgent
+                    ? 'Unavailable agent'
+                    : agent?.name ?? _executionDefaultLabel,
                 onTap: () async {
                   final choice = await _chooseAgent(capabilities.agents, agent);
                   if (choice != null && context.mounted) {
-                    setDialogState(() => agent = choice.value);
+                    setDialogState(() {
+                      agent = choice.value;
+                      missingAgent = false;
+                    });
                   }
                 },
               ),
@@ -480,6 +491,8 @@ class _ConversationScreenState extends State<ConversationScreen>
                           )
                           .firstOrNull;
                       if (current == null ||
+                          missingModel ||
+                          missingAgent ||
                           (model != null && freshModel == null) ||
                           (effort != null &&
                               !_reasoningEfforts(

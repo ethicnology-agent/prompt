@@ -4355,6 +4355,92 @@ void main() {
     expect(find.byType(SelectableText), findsWidgets);
   });
 
+  for (final missing in ['model', 'agent']) {
+    testWidgets('secondary choices preserve an already unavailable $missing', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(const Size(1280, 850));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final saved = PromptExecutionOptions(
+        modelProviderId: missing == 'model' ? 'provider' : null,
+        modelId: missing == 'model' ? 'removed-model' : null,
+        agentName: missing == 'agent' ? 'removed-agent' : null,
+      );
+      viewModel.rememberExecutionOptions(profile, session, saved);
+      viewModel.artifacts.value = const SessionArtifactsReady(
+        todos: [],
+        diffs: [],
+      );
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      await pumpScreen(tester, capabilitiesViewModel: capabilities);
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'provider',
+              id: 'replacement',
+              name: 'Replacement model',
+              isProviderConnected: true,
+            ),
+          ],
+          agents: [
+            OpenCodeAgent(
+              name: 'replacement-agent',
+              mode: OpenCodeAgentMode.primary,
+              isBuiltIn: true,
+            ),
+          ],
+          commands: [],
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Model').last);
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Apply'));
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      expect(find.text('Prompt execution'), findsOneWidget);
+      expect(find.textContaining('Execution choices changed.'), findsOneWidget);
+      expect(
+        viewModel.executionOptionsFor(profile, session).modelId,
+        saved.modelId,
+      );
+      expect(
+        viewModel.executionOptionsFor(profile, session).agentName,
+        saved.agentName,
+      );
+      final label = missing == 'model' ? 'Model' : 'Agent';
+      await tester.tap(find.widgetWithText(ListTile, label).last);
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find
+            .text(
+              missing == 'model' ? 'Replacement model' : 'replacement-agent',
+            )
+            .last,
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Apply'));
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      expect(find.text('Prompt execution'), findsNothing);
+      final updated = viewModel.executionOptionsFor(profile, session);
+      expect(
+        missing == 'model' ? updated.modelId : updated.agentName,
+        missing == 'model' ? 'replacement' : 'replacement-agent',
+      );
+      expect(viewModel.enqueueCallCount, 0);
+    });
+  }
+
   for (final width in [390.0, 1280.0]) {
     testWidgets('secondary native choices retain model and effort at $width', (
       tester,
