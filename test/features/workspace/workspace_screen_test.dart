@@ -12,6 +12,141 @@ import 'package:prompt/features/workspace/presentation/workspace_file_screen.dar
 import 'package:prompt/features/workspace/presentation/workspace_view_model.dart';
 
 void main() {
+  testWidgets('server change clears the previous workspace and search', (
+    tester,
+  ) async {
+    final repo = _Repository();
+    final viewModel = WorkspaceViewModel(repo);
+    addTearDown(viewModel.dispose);
+    var profile = ServerProfile(origin: Uri.parse('http://10.80.0.1:4096'));
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return WorkspaceScreen(
+              profile: profile,
+              projects: const [
+                OpenCodeProject(id: 'project', directory: '/work'),
+              ],
+              viewModel: viewModel,
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('workspace-project-selector')));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('work').last);
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'old query');
+    await tester.pump(const Duration(milliseconds: 350));
+    update(() {
+      profile = ServerProfile(origin: Uri.parse('http://10.80.0.2:4096'));
+    });
+    await tester.pumpAndSettle();
+    expect(viewModel.value, isA<WorkspaceIdle>());
+    expect(find.text('old query'), findsNothing);
+    expect(find.textContaining('Select a project'), findsOneWidget);
+    expect(repo.loadedPaths, ['/work']);
+  });
+
+  testWidgets(
+    'project choices distinguish paths and survive refreshed objects',
+    (tester) async {
+      final repo = _Repository();
+      final viewModel = WorkspaceViewModel(repo);
+      addTearDown(viewModel.dispose);
+      var projects = [
+        OpenCodeProject(id: 'one', directory: '/alpha/app'),
+        OpenCodeProject(id: 'two', directory: '/beta/app'),
+      ];
+      late StateSetter update;
+      await tester.pumpWidget(
+        MaterialApp(
+          home: StatefulBuilder(
+            builder: (context, setState) {
+              update = setState;
+              return WorkspaceScreen(
+                profile: ServerProfile(
+                  origin: Uri.parse('http://10.80.0.1:4096'),
+                ),
+                projects: projects,
+                viewModel: viewModel,
+              );
+            },
+          ),
+        ),
+      );
+      final selector = find.byKey(const ValueKey('workspace-project-selector'));
+      await tester.tap(selector);
+      await tester.pumpAndSettle();
+      expect(find.text('/alpha/app'), findsOneWidget);
+      expect(find.text('/beta/app'), findsOneWidget);
+      await tester.tap(find.text('/beta/app'));
+      await tester.pumpAndSettle();
+      expect(repo.loadedPaths, ['/beta/app']);
+      update(() {
+        projects = [
+          for (final project in projects)
+            OpenCodeProject(id: project.id, directory: project.directory),
+        ];
+      });
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      await tester.tap(selector);
+      await tester.pumpAndSettle();
+      final panel = tester.widget<InlineSelectionPanel<OpenCodeProject>>(
+        find.byType(InlineSelectionPanel<OpenCodeProject>),
+      );
+      expect(panel.selected, same(projects.last));
+      await tester.tap(find.byTooltip('Close Server project choices'));
+      await tester.pumpAndSettle();
+      expect(repo.loadedPaths, ['/beta/app']);
+      update(() => projects = [projects.first]);
+      await tester.pumpAndSettle();
+      expect(viewModel.value, isA<WorkspaceIdle>());
+      expect(find.textContaining('Select a project'), findsOneWidget);
+    },
+  );
+
+  testWidgets('server change dismisses an open chooser without loading', (
+    tester,
+  ) async {
+    final repo = _Repository();
+    final viewModel = WorkspaceViewModel(repo);
+    addTearDown(viewModel.dispose);
+    var profile = ServerProfile(origin: Uri.parse('http://10.80.0.1:4096'));
+    late StateSetter update;
+    await tester.pumpWidget(
+      MaterialApp(
+        home: StatefulBuilder(
+          builder: (context, setState) {
+            update = setState;
+            return WorkspaceScreen(
+              profile: profile,
+              projects: const [
+                OpenCodeProject(id: 'project', directory: '/work'),
+              ],
+              viewModel: viewModel,
+            );
+          },
+        ),
+      ),
+    );
+    await tester.tap(find.byKey(const ValueKey('workspace-project-selector')));
+    await tester.pumpAndSettle();
+    expect(find.byType(InlineSelectionPanel<OpenCodeProject>), findsOneWidget);
+    update(
+      () => profile = ServerProfile(origin: Uri.parse('http://10.80.0.2:4096')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(InlineSelectionPanel<OpenCodeProject>), findsNothing);
+    expect(viewModel.value, isA<WorkspaceIdle>());
+    expect(repo.loadedPaths, isEmpty);
+  });
+
   for (final kind in WorkspaceSearchKind.values) {
     testWidgets('$kind result opens exact path and preserves query on Back', (
       tester,
@@ -193,6 +328,17 @@ void main() {
         tester.view.viewInsets = const FakeViewPadding();
         await tester.pumpAndSettle();
         expect(tester.takeException(), isNull);
+        final selector = find.byKey(
+          const ValueKey('workspace-project-selector'),
+        );
+        await tester.ensureVisible(selector);
+        await tester.tap(selector);
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
+        expect(find.text('/work').hitTestable(), findsOneWidget);
+        await tester.tap(find.byTooltip('Close Server project choices'));
+        await tester.pumpAndSettle();
+        expect(tester.takeException(), isNull);
       },
     );
   }
@@ -215,7 +361,7 @@ void main() {
       find.text('Select a server project to browse files.'),
       findsOneWidget,
     );
-    await tester.tap(find.byType(DropdownButtonFormField<OpenCodeProject>));
+    await tester.tap(find.byKey(const ValueKey('workspace-project-selector')));
     await tester.pumpAndSettle();
     await tester.tap(find.text('work').last);
     await tester.pumpAndSettle();
@@ -315,7 +461,7 @@ Future<void> _openWorkspace(
       ),
     ),
   );
-  await tester.tap(find.byType(DropdownButtonFormField<OpenCodeProject>));
+  await tester.tap(find.byKey(const ValueKey('workspace-project-selector')));
   await tester.pumpAndSettle();
   await tester.tap(find.text('work').last);
   await tester.pumpAndSettle();

@@ -365,28 +365,30 @@ class _ReviewScreenState extends State<ReviewScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Expanded(
-                  child: DropdownButtonFormField<String>(
+                  child: ChoiceField<String>(
                     key: ValueKey('review-selector-${role.name}'),
-                    initialValue:
+                    label: _role(role),
+                    scopeKey: (
+                      widget.target.profile.id,
+                      widget.target.session.id,
+                      role,
+                    ),
+                    selected:
                         models.any(
                           (model) => _modelKey(model) == _selection[role],
                         )
                         ? _selection[role]
                         : null,
-                    isExpanded: true,
-                    decoration: InputDecoration(labelText: _role(role)),
-                    items: models
+                    options: models
                         .map(
-                          (model) => DropdownMenuItem(
+                          (model) => InlineSelectionOption(
                             value: _modelKey(model),
-                            child: Text(
-                              '${model.providerId} · ${model.name}',
-                              overflow: TextOverflow.ellipsis,
-                            ),
+                            label: model.name,
+                            description: '${model.providerId} · ${model.id}',
                           ),
                         )
                         .toList(),
-                    onChanged: capabilityState is! CapabilitiesReady
+                    onSelected: capabilityState is! CapabilitiesReady
                         ? null
                         : (model) {
                             if (!mounted || !_roles.contains(role)) return;

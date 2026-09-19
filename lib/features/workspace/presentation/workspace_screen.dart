@@ -30,6 +30,34 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
   final _scroll = ScrollController();
   WorkspaceSearchKind _kind = WorkspaceSearchKind.file;
 
+  OpenCodeProject? _currentProject(OpenCodeProject? selected) {
+    if (selected == null) return null;
+    for (final project in widget.projects) {
+      if (project.id == selected.id &&
+          project.directory == selected.directory) {
+        return project;
+      }
+    }
+    return null;
+  }
+
+  @override
+  void didUpdateWidget(WorkspaceScreen oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.profile.id != widget.profile.id ||
+        oldWidget.viewModel != widget.viewModel ||
+        (_selectedProject != null &&
+            _currentProject(_selectedProject) == null)) {
+      _selectedProject = null;
+      _search.clear();
+      _kind = WorkspaceSearchKind.file;
+      oldWidget.viewModel.clear();
+      if (oldWidget.viewModel != widget.viewModel) widget.viewModel.clear();
+    } else {
+      _selectedProject = _currentProject(_selectedProject);
+    }
+  }
+
   @override
   void dispose() {
     _search.dispose();
@@ -94,29 +122,27 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
 
   Widget _projectPicker() => Padding(
     padding: const EdgeInsets.all(16),
-    child: DropdownButtonFormField<OpenCodeProject>(
-      initialValue: _selectedProject,
-      isExpanded: true,
-      decoration: const InputDecoration(labelText: 'Server project'),
-      hint: const Text('Select a project'),
-      items: [
+    child: ChoiceField<OpenCodeProject>(
+      key: const ValueKey('workspace-project-selector'),
+      label: 'Server project',
+      placeholder: 'Select a project',
+      selected: _selectedProject,
+      scopeKey: (widget.profile.id, widget.viewModel),
+      options: [
         for (final project in widget.projects)
-          DropdownMenuItem(
+          InlineSelectionOption(
             value: project,
-            child: Text(
-              project.id == 'global' ? 'Global' : project.name,
-              overflow: TextOverflow.ellipsis,
-            ),
+            label: project.directory,
+            description: project.id == 'global' ? 'Global' : project.name,
           ),
       ],
-      onChanged: widget.projects.isEmpty
-          ? null
-          : (project) {
-              if (project == null) return;
-              _resetSearch();
-              setState(() => _selectedProject = project);
-              widget.viewModel.selectProject(widget.profile, project);
-            },
+      onSelected: (selected) {
+        final project = _currentProject(selected);
+        if (project == null) return;
+        _resetSearch();
+        setState(() => _selectedProject = project);
+        widget.viewModel.selectProject(widget.profile, project);
+      },
     ),
   );
 

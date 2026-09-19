@@ -62,7 +62,7 @@ void main() {
       );
 
       expect(engine.permissionRequests, 0);
-      expect(find.text('French'), findsWidgets);
+      expect(find.text('Language: French'), findsOneWidget);
       expect(find.text('English INT8'), findsOneWidget);
       expect(find.text('Install French model'), findsOneWidget);
       await tester.tap(find.text('Install French model'));
@@ -73,7 +73,12 @@ void main() {
       expect(picker.calls, isEmpty);
       expect(viewModel.hasSelectedModel.value, isTrue);
       expect(viewModel.language.value, VoiceLanguage.french);
-      await tester.tap(find.text('French').first);
+      await tester.tap(find.text('Language: French'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Close Language choices'));
+      await tester.pumpAndSettle();
+      expect(viewModel.language.value, VoiceLanguage.french);
+      await tester.tap(find.text('Language: French'));
       await tester.pumpAndSettle();
       await tester.tap(find.text('English').last);
       await tester.pumpAndSettle();

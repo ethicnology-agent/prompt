@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prompt/core/ui/ui.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:prompt/core/security/credentials_store.dart';
@@ -144,20 +145,20 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      final picker = find.byType(DropdownButtonFormField<AgentBackend>);
+      final picker = find.byType(ChoiceField<AgentBackend>);
       await tester.ensureVisible(picker);
       await tester.tap(picker);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       final choice = find.text(AgentBackend.gatewayClaude.label).last;
       await tester.ensureVisible(choice);
+      await tester.pumpAndSettle();
+      expect(choice.hitTestable(), findsOneWidget);
       await tester.tap(choice);
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(
-        tester
-            .widget<DropdownButtonFormField<AgentBackend>>(picker)
-            .initialValue,
+        tester.widget<ChoiceField<AgentBackend>>(picker).selected,
         AgentBackend.gatewayClaude,
       );
     });

@@ -23,7 +23,7 @@ void main() {
       await tester.tap(find.text('Browse workspace'));
       await tester.pumpAndSettle();
       await tester.tap(
-        find.byWidgetPredicate((widget) => widget is DropdownButtonFormField),
+        find.byKey(const ValueKey('workspace-project-selector')),
       );
       await tester.pumpAndSettle();
       await tester.tap(find.text('prompt').last);

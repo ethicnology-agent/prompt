@@ -470,7 +470,7 @@ class ApprovalDockState extends State<ApprovalDock> {
 
 /// One question within an [ApprovalDock] showing [PendingQuestionApproval.
 /// questions]. Options render as accessible, keyboard/touch-operable
-/// [FilterChip]s; a free-text answer is offered alongside them whenever
+/// radio or checkbox rows; a free-text answer is offered alongside them whenever
 /// [QuestionPrompt.allowsCustomAnswer] is true.
 class _QuestionCard extends StatelessWidget {
   const _QuestionCard({
@@ -501,22 +501,18 @@ class _QuestionCard extends StatelessWidget {
           Text(prompt.question),
           if (prompt.options.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Wrap(
-              spacing: 8,
-              runSpacing: 8,
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
               children: [
                 for (final option in prompt.options)
-                  Semantics(
-                    label: '${option.label}: ${option.description}',
+                  ChoiceOptionTile(
+                    label: option.label,
+                    description: option.description,
                     selected: selected.contains(option.label),
-                    button: true,
-                    child: FilterChip(
-                      label: Text(option.label),
-                      selected: selected.contains(option.label),
-                      onSelected: enabled
-                          ? (_) => onToggleOption(option.label)
-                          : null,
-                    ),
+                    multiple: prompt.multiple,
+                    enabled: enabled,
+                    onPressed: () => onToggleOption(option.label),
                   ),
               ],
             ),

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:prompt/core/ui/ui.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:prompt/core/security/credentials_store.dart';
@@ -244,10 +245,8 @@ void main() {
     await tester.pumpWidget(_screen(review, capabilities));
     await tester.pumpAndSettle();
     final select = tester
-        .widget<DropdownButtonFormField<String>>(
-          find.byType(DropdownButtonFormField<String>).first,
-        )
-        .onChanged!;
+        .widget<ChoiceField<String>>(find.byType(ChoiceField<String>).first)
+        .onSelected!;
     capabilities.value = CapabilitiesReady(
       OpenCodeCapabilities(
         models: _models.skip(1).toList(),
@@ -306,7 +305,7 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(find.textContaining('Model 0'), findsOneWidget);
-      expect(find.byType(DropdownButtonFormField<String>), findsNWidgets(2));
+      expect(find.byType(ChoiceField<String>), findsNWidgets(2));
       await tester.tap(find.text('Start review'));
       await tester.pump();
       expect(repository.started.single, hasLength(2));
@@ -363,7 +362,7 @@ void main() {
 
     await tester.tap(find.text('Add reviewer'));
     await tester.pump();
-    expect(find.byType(DropdownButtonFormField<String>), findsNWidgets(3));
+    expect(find.byType(ChoiceField<String>), findsNWidgets(3));
     expect(
       find.byKey(const ValueKey('remove-reviewer-testsAndRegressions')),
       findsOneWidget,
@@ -372,7 +371,7 @@ void main() {
       find.byKey(const ValueKey('remove-reviewer-testsAndRegressions')),
     );
     await tester.pump();
-    expect(find.byType(DropdownButtonFormField<String>), findsNWidgets(2));
+    expect(find.byType(ChoiceField<String>), findsNWidgets(2));
     await tester.tap(find.text('Add reviewer'));
     await tester.pump();
 

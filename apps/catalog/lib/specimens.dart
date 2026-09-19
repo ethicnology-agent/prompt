@@ -25,6 +25,8 @@ final specimens = <Specimen>[
   Specimen('Image viewer', (_) => const _ImageViewerSpecimen()),
   Specimen('Inline selection panel', (_) => const _InlineSelectionSpecimen()),
   Specimen('Compact choice button', (_) => const _CompactChoiceSpecimen()),
+  Specimen('Choice option tile', (_) => const _ChoiceOptionSpecimen()),
+  Specimen('Choice field', (_) => const _ChoiceFieldSpecimen()),
   Specimen('Navigation title', (_) => const _NavigationTitleSpecimen()),
   Specimen(
     'Code lines',
@@ -448,6 +450,89 @@ class SpecimenPage extends StatelessWidget {
         child: specimen.builder(context),
       ),
     ),
+  );
+}
+
+class _ChoiceFieldSpecimen extends StatefulWidget {
+  const _ChoiceFieldSpecimen();
+  @override
+  State<_ChoiceFieldSpecimen> createState() => _ChoiceFieldSpecimenState();
+}
+
+class _ChoiceFieldSpecimenState extends State<_ChoiceFieldSpecimen> {
+  String _value = 'first';
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      ChoiceField<String>(
+        label: 'Language',
+        selected: _value,
+        options: const [
+          InlineSelectionOption(
+            value: 'first',
+            label: 'French',
+            description: 'Local French recognition',
+          ),
+          InlineSelectionOption(
+            value: 'second',
+            label: 'English',
+            description: 'Local English recognition',
+          ),
+        ],
+        onSelected: (value) => setState(() => _value = value),
+      ),
+      const SizedBox(height: 12),
+      const ChoiceField<String>(
+        label: 'Unavailable choice',
+        selected: null,
+        options: [],
+        onSelected: null,
+      ),
+    ],
+  );
+}
+
+class _ChoiceOptionSpecimen extends StatefulWidget {
+  const _ChoiceOptionSpecimen();
+  @override
+  State<_ChoiceOptionSpecimen> createState() => _ChoiceOptionSpecimenState();
+}
+
+class _ChoiceOptionSpecimenState extends State<_ChoiceOptionSpecimen> {
+  int _choice = 0;
+  bool _extra = false;
+  @override
+  Widget build(BuildContext context) => Column(
+    children: [
+      ChoiceOptionTile(
+        label: 'Preserve behavior',
+        description:
+            'Keep existing behavior while correcting the selected issue.',
+        selected: _choice == 0,
+        onPressed: () => setState(() => _choice = 0),
+      ),
+      ChoiceOptionTile(
+        label: 'Update callers',
+        description: 'Change the behavior and update every affected caller.',
+        selected: _choice == 1,
+        onPressed: () => setState(() => _choice = 1),
+      ),
+      ChoiceOptionTile(
+        label: 'Include additional checks',
+        description:
+            'A separately selectable option with a visible description.',
+        selected: _extra,
+        multiple: true,
+        onPressed: () => setState(() => _extra = !_extra),
+      ),
+      const ChoiceOptionTile(
+        label: 'Unavailable option',
+        description: 'Disabled choices retain their explanation.',
+        selected: false,
+        enabled: false,
+        onPressed: null,
+      ),
+    ],
   );
 }
 

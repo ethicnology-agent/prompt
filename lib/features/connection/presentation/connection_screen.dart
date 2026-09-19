@@ -177,30 +177,21 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 32),
-                            DropdownButtonFormField<AgentBackend>(
-                              key: ValueKey(_backend),
-                              isExpanded: true,
-                              itemHeight: null,
-                              initialValue: _backend,
-                              decoration: const InputDecoration(
-                                labelText: 'Agent connection',
-                              ),
-                              items: AgentBackend.values
+                            ChoiceField<AgentBackend>(
+                              label: 'Agent connection',
+                              selected: _backend,
+                              scopeKey: widget.viewModel,
+                              options: AgentBackend.values
                                   .map(
-                                    (backend) => DropdownMenuItem(
+                                    (backend) => InlineSelectionOption(
                                       value: backend,
-                                      child: Text(
-                                        backend.label,
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
+                                      label: backend.label,
                                     ),
                                   )
                                   .toList(),
-                              onChanged: checking
+                              onSelected: checking
                                   ? null
                                   : (backend) {
-                                      if (backend == null) return;
                                       setState(() {
                                         _backend = backend;
                                         _editedAddress = true;

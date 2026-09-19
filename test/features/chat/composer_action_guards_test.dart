@@ -116,9 +116,11 @@ void main() {
         await tester.pump();
         expect(
           tester
-              .widget<FilterChip>(find.widgetWithText(FilterChip, 'Two'))
-              .onSelected,
-          isNull,
+              .widget<ChoiceOptionTile>(
+                find.widgetWithText(ChoiceOptionTile, 'Two'),
+              )
+              .enabled,
+          isFalse,
         );
         expect(
           tester.widget<TextField>(find.byType(TextField)).readOnly,
@@ -128,9 +130,11 @@ void main() {
         await tester.pumpAndSettle();
         expect(
           tester
-              .widget<FilterChip>(find.widgetWithText(FilterChip, 'Two'))
-              .onSelected,
-          isNotNull,
+              .widget<ChoiceOptionTile>(
+                find.widgetWithText(ChoiceOptionTile, 'Two'),
+              )
+              .enabled,
+          isTrue,
         );
         expect(
           tester.widget<TextField>(find.byType(TextField)).readOnly,

@@ -24,21 +24,16 @@ class VoiceSettingsScreen extends StatelessWidget {
         const SizedBox(height: 8),
         ValueListenableBuilder<VoiceLanguage>(
           valueListenable: viewModel.language,
-          builder: (context, language, _) =>
-              DropdownButtonFormField<VoiceLanguage>(
-                initialValue: language,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Language',
-                ),
-                items: [
-                  for (final option in VoiceLanguage.values)
-                    DropdownMenuItem(value: option, child: Text(option.label)),
-                ],
-                onChanged: (value) {
-                  if (value != null) viewModel.selectLanguage(value);
-                },
-              ),
+          builder: (context, language, _) => ChoiceField<VoiceLanguage>(
+            label: 'Language',
+            scopeKey: viewModel,
+            selected: language,
+            options: [
+              for (final option in VoiceLanguage.values)
+                InlineSelectionOption(value: option, label: option.label),
+            ],
+            onSelected: viewModel.selectLanguage,
+          ),
         ),
         const SizedBox(height: 20),
         Text(
