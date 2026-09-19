@@ -351,13 +351,14 @@ class _ConversationScreenState extends State<ConversationScreen>
     OpenCodeCapabilities capabilities,
   ) async {
     final owner = (widget.profile.id, widget.session.id);
+    var model = _selectedModel(capabilities.models);
+    var agent = _selectedAgent(capabilities.agents);
+    var effort = _executionOptions.value.reasoningEffort;
+    var permissionModeId = _executionOptions.value.permissionModeId;
+    String? selectionError;
     final selected = await _showAdaptiveChoice<PromptExecutionOptions>(
       title: 'Prompt execution',
       builder: (context, controller) {
-        var model = _selectedModel(capabilities.models);
-        var agent = _selectedAgent(capabilities.agents);
-        var effort = _executionOptions.value.reasoningEffort;
-        var permissionModeId = _executionOptions.value.permissionModeId;
         return StatefulBuilder(
           builder: (context, setDialogState) => ListView(
             controller: controller,
@@ -390,7 +391,7 @@ class _ConversationScreenState extends State<ConversationScreen>
                 ),
               _ExecutionChoice(
                 label: 'Model',
-                value: model?.name ?? 'Default',
+                value: model?.name ?? _executionDefaultLabel,
                 onTap: () async {
                   final choice = await _chooseModel(capabilities.models, model);
                   if (choice != null && context.mounted) {
@@ -404,9 +405,37 @@ class _ConversationScreenState extends State<ConversationScreen>
                   }
                 },
               ),
+              if (_reasoningEfforts(model).isNotEmpty)
+                _ExecutionChoice(
+                  label: 'Effort',
+                  value:
+                      _reasoningEfforts(model)
+                          .where((choice) => choice.id == effort)
+                          .map(_effortLabel)
+                          .firstOrNull ??
+                      (effort == null ? 'Default' : 'Unavailable effort'),
+                  onTap: () async {
+                    final choices = _reasoningEfforts(model);
+                    final choice = await _showSelectionPicker<String>(
+                      title: 'Effort',
+                      selected: effort,
+                      options: [
+                        for (final item in choices)
+                          SelectionOption(
+                            value: item.id,
+                            label: _effortLabel(item),
+                            description: item.description,
+                          ),
+                      ],
+                    );
+                    if (choice != null && context.mounted) {
+                      setDialogState(() => effort = choice.value);
+                    }
+                  },
+                ),
               _ExecutionChoice(
                 label: 'Agent',
-                value: agent?.name ?? 'Default',
+                value: agent?.name ?? _executionDefaultLabel,
                 onTap: () async {
                   final choice = await _chooseAgent(capabilities.agents, agent);
                   if (choice != null && context.mounted) {
@@ -414,9 +443,19 @@ class _ConversationScreenState extends State<ConversationScreen>
                   }
                 },
               ),
+              if (selectionError != null)
+                Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Semantics(
+                    liveRegion: true,
+                    child: Text(selectionError!),
+                  ),
+                ),
               const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
+              Wrap(
+                alignment: WrapAlignment.end,
+                spacing: 8,
+                runSpacing: 4,
                 children: [
                   AppButton(
                     label: 'Cancel',
@@ -425,17 +464,48 @@ class _ConversationScreenState extends State<ConversationScreen>
                   ),
                   AppButton(
                     label: 'Apply',
-                    onPressed: () => Navigator.of(context).pop(
-                      _Selection(
-                        PromptExecutionOptions(
-                          modelProviderId: model?.providerId,
-                          modelId: model?.id,
-                          agentName: agent?.name,
-                          reasoningEffort: effort,
-                          permissionModeId: permissionModeId,
+                    onPressed: () {
+                      final current = _currentCapabilities;
+                      final freshModel = current?.models
+                          .where(
+                            (candidate) =>
+                                candidate.providerId == model?.providerId &&
+                                candidate.id == model?.id &&
+                                candidate.isProviderConnected,
+                          )
+                          .firstOrNull;
+                      if (current == null ||
+                          (model != null && freshModel == null) ||
+                          (effort != null &&
+                              !_reasoningEfforts(
+                                freshModel,
+                              ).any((choice) => choice.id == effort)) ||
+                          (agent != null &&
+                              !current.agents.any(
+                                (candidate) => candidate.name == agent?.name,
+                              )) ||
+                          (permissionModeId != null &&
+                              !current.permissionModes.any(
+                                (mode) => mode.id == permissionModeId,
+                              ))) {
+                        setDialogState(
+                          () => selectionError =
+                              'Execution choices changed. Close and reopen to choose from the current options.',
+                        );
+                        return;
+                      }
+                      Navigator.of(context).pop(
+                        _Selection(
+                          PromptExecutionOptions(
+                            modelProviderId: model?.providerId,
+                            modelId: model?.id,
+                            agentName: agent?.name,
+                            reasoningEffort: effort,
+                            permissionModeId: permissionModeId,
+                          ),
                         ),
-                      ),
-                    ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -458,7 +528,7 @@ class _ConversationScreenState extends State<ConversationScreen>
 
   Future<_Selection<T>?> _showAdaptiveChoice<T>({
     required String title,
-    required Widget Function(BuildContext, ScrollController) builder,
+    required Widget Function(BuildContext, ScrollController?) builder,
   }) {
     final isCompact =
         MediaQuery.sizeOf(context).width < PromptBreakpoints.tablet;
@@ -512,7 +582,7 @@ class _ConversationScreenState extends State<ConversationScreen>
             width: 420,
             child: ConstrainedBox(
               constraints: BoxConstraints(maxHeight: contentMaxHeight),
-              child: builder(dialogContext, ScrollController()),
+              child: builder(dialogContext, null),
             ),
           ),
         );
@@ -525,6 +595,7 @@ class _ConversationScreenState extends State<ConversationScreen>
     OpenCodeModel? selected,
   ) => _showSelectionPicker<OpenCodeModel>(
     title: 'Model',
+    defaultLabel: _executionDefaultLabel,
     selected: selected,
     options: [
       for (final candidate in models.where(
@@ -548,6 +619,7 @@ class _ConversationScreenState extends State<ConversationScreen>
     OpenCodeAgent? selected,
   ) => _showSelectionPicker<OpenCodeAgent>(
     title: 'Agent',
+    defaultLabel: _executionDefaultLabel,
     selected: selected,
     options: [
       for (final candidate in agents)
@@ -559,6 +631,7 @@ class _ConversationScreenState extends State<ConversationScreen>
     required String title,
     required T? selected,
     required List<SelectionOption<T>> options,
+    String defaultLabel = 'Default',
   }) {
     return showDialog<_Selection<T>>(
       context: context,
@@ -568,7 +641,7 @@ class _ConversationScreenState extends State<ConversationScreen>
         radioIndicator: true,
         selected: selected,
         options: [
-          InlineSelectionOption<T?>(value: null, label: 'Default'),
+          InlineSelectionOption<T?>(value: null, label: defaultLabel),
           for (final option in options)
             InlineSelectionOption<T?>(
               value: option.value,
@@ -694,20 +767,28 @@ class _ConversationScreenState extends State<ConversationScreen>
         _ => choice.label,
       };
 
+  String get _executionDefaultLabel =>
+      widget.profile.backend == AgentBackend.gatewayCodex ||
+          widget.profile.backend == AgentBackend.gatewayClaude
+      ? 'CLI default'
+      : 'Default';
+
+  List<ReasoningEffortChoice> _reasoningEfforts(OpenCodeModel? model) =>
+      !widget.profile.backend.isGateway ||
+          widget.profile.backend.engine == 'opencode' ||
+          model == null ||
+          !_selectableModel(model) ||
+          model.providerId != widget.profile.backend.engine
+      ? const []
+      : model.executionOptions?.reasoningEfforts ?? const [];
+
   Widget _effortControl(
     OpenCodeCapabilities capabilities,
     PromptExecutionOptions options,
   ) {
     final model = _selectedModel(capabilities.models);
-    final choices = model?.executionOptions?.reasoningEfforts;
-    if (!widget.profile.backend.isGateway ||
-        widget.profile.backend.engine == 'opencode' ||
-        model == null ||
-        !model.isProviderConnected ||
-        model.id == 'default' ||
-        model.providerId != widget.profile.backend.engine ||
-        choices == null ||
-        choices.isEmpty) {
+    final choices = _reasoningEfforts(model);
+    if (model == null || choices.isEmpty) {
       return const SizedBox.shrink();
     }
     final selected = choices
@@ -1187,12 +1268,16 @@ class _ConversationScreenState extends State<ConversationScreen>
               final modelName =
                   selectedModel?.name ??
                   (configuredModel == null
-                      ? 'OpenCode default'
+                      ? (_executionDefaultLabel == 'Default'
+                            ? 'OpenCode default'
+                            : _executionDefaultLabel)
                       : '${options.modelProviderId}/$configuredModel');
               final agentName =
                   selectedAgent?.name ??
                   options.agentName ??
-                  'OpenCode default';
+                  (_executionDefaultLabel == 'Default'
+                      ? 'OpenCode default'
+                      : _executionDefaultLabel);
               return _ExecutionPanel(
                 modelName: modelName,
                 agentName: agentName,

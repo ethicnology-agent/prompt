@@ -3047,6 +3047,8 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Alternate model').last);
       await tester.pumpAndSettle();
+      await tester.binding.setSurfaceSize(const Size(1180, 780));
+      await tester.pumpAndSettle();
       await tester.tap(find.text('Apply'));
       await tester.pumpAndSettle();
       expect(viewModel.executionOptionsFor(profile, session).modelId, 'model');
@@ -4335,6 +4337,135 @@ void main() {
     expect(find.text('lib/example.dart'), findsOneWidget);
     expect(find.byType(SelectableText), findsWidgets);
   });
+
+  for (final width in [390.0, 1280.0]) {
+    testWidgets('secondary native choices retain model and effort at $width', (
+      tester,
+    ) async {
+      await tester.binding.setSurfaceSize(Size(width, 850));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final native = ServerProfile(
+        origin: profile.origin,
+        username: profile.username,
+        backend: AgentBackend.gatewayCodex,
+        capabilities: BackendCapabilities([
+          BackendFeature.text,
+          BackendFeature.sessions,
+          BackendFeature.sessionArtifacts,
+        ]),
+      );
+      viewModel.artifacts.value = const SessionArtifactsReady(
+        todos: [],
+        diffs: [],
+      );
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      await pumpScreen(
+        tester,
+        activeProfile: native,
+        capabilitiesViewModel: capabilities,
+      );
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'codex',
+              id: 'default',
+              name: 'CLI default',
+              isProviderConnected: true,
+            ),
+            OpenCodeModel(
+              providerId: 'codex',
+              id: 'reasoner',
+              name: 'Reasoning model',
+              isProviderConnected: true,
+              executionOptions: ModelExecutionOptions(
+                reasoningEfforts: [
+                  ReasoningEffortChoice(id: 'low', label: 'Low'),
+                  ReasoningEffortChoice(id: 'high', label: 'High'),
+                ],
+              ),
+            ),
+          ],
+          agents: [],
+          commands: [],
+        ),
+      );
+      await tester.pumpAndSettle();
+      if (width < 600) {
+        await tester.tap(find.byTooltip('Session details and actions'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Session artifacts'));
+        await tester.pumpAndSettle();
+      }
+      expect(find.text('OpenCode default'), findsNothing);
+      await tester.tap(find.widgetWithText(ListTile, 'Model').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Model').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Reasoning model').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Effort').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('High'));
+      await tester.pumpAndSettle();
+      await tester.binding.setSurfaceSize(Size(width - 30, 760));
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Apply'));
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      final saved = viewModel.executionOptionsFor(native, session);
+      expect(saved.modelId, 'reasoner');
+      expect(saved.reasoningEffort, 'high');
+
+      // Returning to the CLI's default removes the model-specific effort only
+      // when the transaction is applied; cancellation keeps both saved values.
+      await tester.tap(find.widgetWithText(ListTile, 'Model').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Model').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('CLI default').last);
+      await tester.pumpAndSettle();
+      expect(find.widgetWithText(ListTile, 'Effort'), findsNothing);
+      await tester.ensureVisible(find.text('Cancel'));
+      await tester.tap(find.text('Cancel'));
+      await tester.pumpAndSettle();
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        'high',
+      );
+
+      // A catalog refresh may invalidate a choice while its dialog is open.
+      await tester.tap(find.widgetWithText(ListTile, 'Model').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.widgetWithText(ListTile, 'Effort').last);
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Low'));
+      await tester.pumpAndSettle();
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(models: [], agents: [], commands: []),
+      );
+      await tester.pumpAndSettle();
+      await tester.ensureVisible(find.text('Apply'));
+      await tester.tap(find.text('Apply'));
+      await tester.pumpAndSettle();
+      expect(find.text('Prompt execution'), findsOneWidget);
+      expect(find.textContaining('Execution choices changed.'), findsOneWidget);
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        'high',
+      );
+      expect(viewModel.enqueuedTexts, isEmpty);
+      expect(tester.takeException(), isNull);
+    });
+  }
 
   testWidgets('shows and changes model and agent in session artifacts', (
     tester,
