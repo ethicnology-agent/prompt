@@ -1099,9 +1099,11 @@ class _ConversationScreenState extends State<ConversationScreen>
           final selectedModel = capabilities == null
               ? null
               : _selectedModel(capabilities.models);
-          return Wrap(
-            spacing: 4,
-            runSpacing: 4,
+          // One line, never two, at ordinary text sizes: the reference keeps
+          // every execution control on the single action row and lets the
+          // model name ellipsise. A `Wrap` folded the row in half and took the
+          // model picker out of reach at phone widths.
+          return _ComposerChoiceRow(
             children: [
               CompactChoiceButton(
                 key: const ValueKey('composer-permission-picker'),
@@ -2347,6 +2349,36 @@ class _DesktopResizeHandle extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// The execution choices under the composer: one line normally, wrapped when
+/// the text scale makes a single line unreadable.
+///
+/// The threshold is the one the roomy execution layout already uses, so the two
+/// agree on when enlarged text stops fitting.
+class _ComposerChoiceRow extends StatelessWidget {
+  const _ComposerChoiceRow({required this.children});
+
+  final List<Widget> children;
+
+  @override
+  Widget build(BuildContext context) {
+    if (MediaQuery.textScalerOf(context).scale(14) > 18) {
+      return Wrap(
+        spacing: 4,
+        runSpacing: 4,
+        alignment: WrapAlignment.end,
+        children: children,
+      );
+    }
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.end,
+      children: [
+        for (final child in children)
+          Flexible(fit: FlexFit.loose, child: child),
+      ],
     );
   }
 }

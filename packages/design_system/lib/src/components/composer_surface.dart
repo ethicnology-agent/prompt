@@ -1,10 +1,18 @@
 import 'package:flutter/material.dart';
 
+import '../mobile_composer_metrics.dart';
+
 /// Shared visual shell for draft and in-session composers.
+///
+/// Both wear the same shell, at the geometry in [MobileComposerMetrics]: the
+/// two composers differ in what they hold, never in where they sit.
 class ComposerSurface extends StatelessWidget {
   const ComposerSurface({
     required this.child,
-    this.contentPadding = const EdgeInsets.all(8),
+    this.contentPadding = const EdgeInsets.symmetric(
+      horizontal: MobileComposerMetrics.shellInset,
+      vertical: MobileComposerMetrics.shellPaddingTop,
+    ),
     super.key,
   });
 
@@ -20,7 +28,7 @@ class ComposerSurface extends StatelessWidget {
       shadowColor: scheme.shadow.withValues(alpha: 0.2),
       surfaceTintColor: Colors.transparent,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(28),
+        borderRadius: BorderRadius.circular(MobileComposerMetrics.shellRadius),
         side: BorderSide(color: scheme.outlineVariant),
       ),
       child: Padding(padding: contentPadding, child: child),

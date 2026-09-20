@@ -24,7 +24,12 @@ void main() {
     );
     final shape = material.shape! as RoundedRectangleBorder;
     expect(material.elevation, 4);
-    expect(shape.borderRadius, BorderRadius.circular(28));
+    // The reference's shell radius, shared by the home draft and the chat
+    // composer so neither shifts under the thumb.
+    expect(
+      shape.borderRadius,
+      BorderRadius.circular(MobileComposerMetrics.shellRadius),
+    );
     expect(shape.side.color, promptTheme().colorScheme.outlineVariant);
     expect(tester.getSize(find.byType(ComposerSurface)), const Size(64, 44));
   });
