@@ -32,7 +32,11 @@ void main() {
                 identifier: 'local-session',
                 title: title,
                 project: 'A long project directory name',
-                status: 'Activity unknown',
+                avatar: const IdentityAvatar(
+                  identifier: 'local-session',
+                  size: 48,
+                ),
+                statusLabel: 'Activity unknown',
                 timestamp: '2026-09-17',
                 onTap: () {},
               ),
@@ -41,14 +45,17 @@ void main() {
             ),
           );
           expect(tester.takeException(), isNull);
+          final tileOrigin = tester.getTopLeft(find.byType(SessionListTile));
+          // Happy draws a 48 mark centred in a 60 slot that starts at 16, so
+          // the mark itself lands at 22 and the text column at 88. Measured on
+          // Happy 1.7.0, Pixel 6a: avatar bounds x 58 px at density 420.
           expect(
             tester.getSize(find.byType(IdentityAvatar)),
-            const Size(60, 60),
+            const Size(48, 48),
           );
-          final tileOrigin = tester.getTopLeft(find.byType(SessionListTile));
           expect(
             tester.getTopLeft(find.byType(IdentityAvatar)).dx - tileOrigin.dx,
-            16,
+            22,
           );
           expect(tester.getTopLeft(find.text(title)).dx - tileOrigin.dx, 88);
           expect(
@@ -64,17 +71,116 @@ void main() {
           expect(node.label, contains(title));
           expect(node.label, contains('Activity unknown'));
           expect(node.label, isNot(contains('Unread')));
-          expect(node.label, isNot(contains('online')));
-          expect(
-            tester.getSize(find.byType(SessionListTile)).height,
-            lessThanOrEqualTo(scale == 1 ? 84 : 150),
-          );
         } finally {
           semantics.dispose();
         }
       });
     }
   }
+
+  testWidgets('a working session sweeps its title and keeps the timestamp', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        SessionListTile(
+          identifier: 'local',
+          title: 'Session',
+          project: 'Project',
+          avatar: const IdentityAvatar(identifier: 'local', size: 48),
+          state: SessionRowState.thinking,
+          statusLabel: 'Working',
+          timestamp: '1m',
+          onTap: () {},
+        ),
+      ),
+    );
+    expect(find.byType(ShimmerText), findsOneWidget);
+    expect(find.text('1m'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('a blocked session replaces the timestamp with the amber dot', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        SessionListTile(
+          identifier: 'local',
+          title: 'Session',
+          project: 'Project',
+          avatar: const IdentityAvatar(identifier: 'local', size: 48),
+          state: SessionRowState.permissionRequired,
+          statusLabel: 'Waiting',
+          unread: true,
+          timestamp: '1m',
+          onTap: () {},
+        ),
+      ),
+    );
+    expect(find.text('1m'), findsNothing);
+    expect(find.byType(ShimmerText), findsNothing);
+    final dotFinder = find.byKey(const ValueKey('session-row-dot'));
+    final dot = tester.widget<Container>(dotFinder);
+    expect((dot.decoration! as BoxDecoration).color, sessionBlockedDotColor);
+    expect(tester.getSize(dotFinder), const Size(20, 20));
+  });
+
+  testWidgets('a faded session shows neither sweep nor dot', (tester) async {
+    final semantics = tester.ensureSemantics();
+    try {
+      await tester.pumpWidget(
+        host(
+          SessionListTile(
+            identifier: 'local',
+            title: 'Session',
+            project: 'Project',
+            avatar: const IdentityAvatar(identifier: 'local', size: 48),
+            state: SessionRowState.thinking,
+            statusLabel: 'Offline',
+            unread: true,
+            faded: true,
+            timestamp: '2h',
+            onTap: () {},
+          ),
+        ),
+      );
+      expect(find.byType(ShimmerText), findsNothing);
+      expect(find.text('2h'), findsOneWidget);
+    } finally {
+      semantics.dispose();
+    }
+  });
+
+  testWidgets('the third line carries worktree, draft and git counters', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host(
+        SessionListTile(
+          identifier: 'local',
+          title: 'Session',
+          project: 'Project',
+          avatar: const IdentityAvatar(identifier: 'local', size: 48),
+          statusLabel: 'Idle',
+          worktree: 'feature-branch',
+          hasDraft: true,
+          changedFiles: 3,
+          insertions: 84,
+          deletions: 12,
+          timestamp: '1m',
+          onTap: () {},
+        ),
+      ),
+    );
+    expect(find.text('feature-branch'), findsOneWidget);
+    expect(find.byIcon(Icons.edit_outlined), findsOneWidget);
+    expect(find.text('3'), findsOneWidget);
+    expect(find.text('+84'), findsOneWidget);
+    expect(find.text('−12'), findsOneWidget);
+    // No status word is printed; the row spends that line on workspace facts.
+    expect(find.text('Idle'), findsNothing);
+  });
 
   for (final enabled in [false, true]) {
     testWidgets('selected row exposes one semantic action enabled=$enabled', (
@@ -90,13 +196,12 @@ void main() {
               identifier: 'local',
               title: 'Session',
               project: 'Project',
-              status: 'Working',
+              avatar: const IdentityAvatar(identifier: 'local', size: 48),
+              statusLabel: 'Idle',
               timestamp: '1m',
               selected: true,
               unread: true,
               nested: true,
-              statusIcon: Icons.sync,
-              inProgress: true,
               onTap: enabled ? () => opened++ : null,
               onLongPress: enabled ? () => actions++ : null,
             ),
@@ -117,10 +222,6 @@ void main() {
         expect(node.label, contains('Unread'));
         expect(node.label, contains('Child session'));
         expect(find.text('1m'), findsNothing);
-        expect(
-          tester.widget<SpinningIcon>(find.byType(SpinningIcon)).spinning,
-          isTrue,
-        );
         if (enabled) {
           await tester.tap(find.byType(SessionListTile));
           await tester.longPress(find.byType(SessionListTile));

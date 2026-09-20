@@ -23,6 +23,8 @@ export 'src/components/draft_composer_panel.dart';
 export 'src/components/identity_avatar.dart';
 export 'src/components/prompt_panel.dart';
 export 'src/components/session_list_tile.dart';
+export 'src/components/session_row_presentation.dart';
+export 'src/components/shimmer_text.dart';
 export 'src/components/selection_picker.dart';
 export 'src/components/inline_selection_panel.dart';
 export 'src/components/settings_group.dart';

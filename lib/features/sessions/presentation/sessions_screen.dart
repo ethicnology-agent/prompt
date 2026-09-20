@@ -178,7 +178,9 @@ class _SessionsScreenState extends State<SessionsScreen> {
       appBar: compactKeyboard
           ? null
           : AppBar(
-              toolbarHeight: 60,
+              // The reference header is 64 tall and carries a 19 mark on the
+              // left, measured on the device at 168 px and 50 px, density 420.
+              toolbarHeight: 64,
               centerTitle: true,
               leading: _buildCatalogMenu(brand: true),
               title: const Text('Sessions'),
@@ -366,7 +368,7 @@ class _SessionsScreenState extends State<SessionsScreen> {
   AppMenuButton<_CatalogAction> _buildCatalogMenu({bool brand = false}) {
     return AppMenuButton<_CatalogAction>(
       tooltip: 'More actions',
-      icon: brand ? const Icon(Icons.code_rounded, size: 22) : null,
+      icon: brand ? const Icon(Icons.code_rounded, size: 19) : null,
       onSelected: _onCatalogAction,
       optionsBuilder: (_) => [
         AppMenuOption(
@@ -1346,12 +1348,15 @@ class _SessionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final (status, icon) = switch (activity) {
-      SessionActivity.working => ('Working', Icons.sync_rounded),
-      SessionActivity.idle => ('Idle', Icons.check_circle_outline_rounded),
-      SessionActivity.retrying => ('Retrying', Icons.replay_rounded),
-      SessionActivity.unknown => ('Activity unknown', Icons.help_outline),
-      SessionActivity.unavailable => ('Status unavailable', Icons.sync_problem),
+    final (statusLabel, rowState) = switch (activity) {
+      SessionActivity.working => ('Working', SessionRowState.thinking),
+      SessionActivity.idle => ('Idle', SessionRowState.idle),
+      SessionActivity.retrying => ('Retrying', SessionRowState.thinking),
+      SessionActivity.unknown => ('Activity unknown', SessionRowState.idle),
+      SessionActivity.unavailable => (
+        'Status unavailable',
+        SessionRowState.idle,
+      ),
     };
     final project = [
       ?engineLabel,
@@ -1361,11 +1366,18 @@ class _SessionCard extends StatelessWidget {
       identifier: session.id,
       title: session.title.isEmpty ? 'Untitled session' : session.title,
       project: childCount > 0 ? '$project · $childCount subagents' : project,
-      status: status,
-      statusIcon: icon,
-      inProgress:
-          activity == SessionActivity.working ||
-          activity == SessionActivity.retrying,
+      avatar: IdentityAvatar(
+        identifier: session.id,
+        size: 48,
+        monochrome: activity == SessionActivity.unavailable,
+      ),
+      state: rowState,
+      statusLabel: statusLabel,
+      faded: activity == SessionActivity.unavailable,
+      worktree: session.branch,
+      changedFiles: session.changedFiles,
+      insertions: session.additions ?? 0,
+      deletions: session.deletions ?? 0,
       timestamp: _relativeTime(session.updatedAt),
       nested: session.parentId?.isNotEmpty == true,
       showDivider: false,

@@ -170,7 +170,8 @@ void main() {
       expect(row.title, 'Prompt');
       expect(row.project, 'project');
       expect(row.timestamp, isNotEmpty);
-      expect(row.status, 'Status unavailable');
+      expect(row.statusLabel, 'Status unavailable');
+      expect(row.faded, isTrue);
       expect(tester.getSize(tile).height, lessThanOrEqualTo(100));
       expect(find.byIcon(Icons.difference_outlined), findsNothing);
       await tester.tap(tile);
@@ -703,25 +704,41 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    expect(find.text('Working'), findsOneWidget);
-    expect(find.text('Idle'), findsOneWidget);
-    expect(find.text('Retrying'), findsOneWidget);
-    expect(find.text('Status unavailable'), findsOneWidget);
-    // A session working in the list turns, exactly as it does once opened.
-    final spinning = tester
-        .widgetList<SpinningIcon>(
-          find.byKey(const ValueKey('session-activity-spin')),
-        )
-        .where((icon) => icon.spinning)
-        .length;
-    expect(spinning, 2, reason: 'working and retrying both animate');
-    expect(
-      tester.getSemantics(find.text('Working')).label,
-      contains('Session activity: Working'),
+    // Activity is never spelled out in the row. It is carried by the title
+    // sweep and, for a session that needs the user, by the dot that takes the
+    // timestamp's place. The words survive for assistive technology only.
+    for (final word in ['Working', 'Idle', 'Retrying', 'Status unavailable']) {
+      expect(find.text(word), findsNothing, reason: '$word must not be drawn');
+    }
+    final rows = tester.widgetList<SessionListTile>(
+      find.byType(SessionListTile),
     );
     expect(
-      tester.getSemantics(find.text('Status unavailable')).label,
-      contains('Session activity: Status unavailable'),
+      rows.where((row) => row.state == SessionRowState.thinking).length,
+      2,
+      reason: 'working and retrying both sweep',
+    );
+    expect(rows.where((row) => row.faded).length, 1);
+    expect(find.byType(ShimmerText), findsNWidgets(2));
+    final labels = tester
+        .widgetList<Semantics>(
+          find.descendant(
+            of: find.byType(SessionListTile),
+            matching: find.byType(Semantics),
+          ),
+        )
+        .map((node) => node.properties.label)
+        .whereType<String>()
+        .toList();
+    expect(
+      labels.any((label) => label.contains('Session activity: Working')),
+      isTrue,
+    );
+    expect(
+      labels.any(
+        (label) => label.contains('Session activity: Status unavailable'),
+      ),
+      isTrue,
     );
     viewModel.dispose();
   });
@@ -783,15 +800,27 @@ void main() {
     );
     await tester.pumpAndSettle();
     expect(find.byType(RefreshIndicator), findsOneWidget);
-    expect(find.text('Idle'), findsOneWidget);
+    // The row never prints its activity: an idle session simply shows neither
+    // the title sweep nor a dot, and keeps its timestamp.
+    expect(find.text('Idle'), findsNothing);
+    expect(find.byType(ShimmerText), findsNothing);
+    expect(
+      tester.widget<SessionListTile>(find.byType(SessionListTile)).state,
+      SessionRowState.idle,
+    );
 
     await tester.tap(find.byTooltip('Refresh sessions'));
-    // A working session spins for as long as it works, so the tree never
+    // A working session sweeps for as long as it works, so the tree never
     // settles: pump a bounded number of frames instead.
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
     expect(catalogLoads, greaterThan(2));
-    expect(find.text('Working'), findsOneWidget);
+    expect(find.text('Working'), findsNothing);
+    expect(find.byType(ShimmerText), findsOneWidget);
+    expect(
+      tester.widget<SessionListTile>(find.byType(SessionListTile)).state,
+      SessionRowState.thinking,
+    );
     viewModel.dispose();
   });
 
