@@ -49,6 +49,7 @@ class DraftComposerPanel extends StatelessWidget {
     required this.expanded,
     this.enabled = true,
     this.readOnly = false,
+    this.pageMode = false,
     this.attachments,
     this.configuration,
     this.actions,
@@ -66,6 +67,7 @@ class DraftComposerPanel extends StatelessWidget {
   final bool expanded;
   final bool enabled;
   final bool readOnly;
+  final bool pageMode;
   final Widget? attachments;
   final Widget? configuration;
   final Widget? actions;
@@ -86,78 +88,95 @@ class DraftComposerPanel extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
-    return SingleChildScrollView(
-      reverse: true,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (expanded && configuration != null)
-            Material(
-              key: const ValueKey('draft-configuration-surface'),
-              color: scheme.surface,
-              child: Padding(
-                padding: const EdgeInsets.only(bottom: 12),
-                child: configuration!,
-              ),
+    final configurationPanel = expanded && configuration != null
+        ? Material(
+            key: const ValueKey('draft-configuration-surface'),
+            color: pageMode ? scheme.surfaceContainerLow : scheme.surface,
+            borderRadius: pageMode ? BorderRadius.circular(16) : null,
+            child: Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: configuration!,
             ),
-          _wrapComposer(
-            ComposerSurface(
-              key: const ValueKey('draft-composer-card'),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ?attachments,
-                  Row(
-                    children: [
-                      if (!expanded && onTerminal != null)
-                        AppIconButton(
-                          icon: Icons.terminal_rounded,
-                          tooltip: 'Remote terminal',
-                          onPressed: onTerminal,
-                        ),
-                      Expanded(
-                        child: AppTextField(
-                          controller: controller,
-                          focusNode: focusNode,
-                          enabled: enabled,
-                          readOnly: readOnly,
-                          minLines: 1,
-                          maxLines: 4,
-                          onChanged: onChanged,
-                          textInputAction: TextInputAction.newline,
-                          hint: hint,
-                          variant: AppTextFieldVariant.borderless,
-                        ),
-                      ),
-                      if (!expanded) _submit(),
-                    ],
+          )
+        : null;
+    final composer = _wrapComposer(
+      ComposerSurface(
+        key: const ValueKey('draft-composer-card'),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ?attachments,
+            Row(
+              children: [
+                if (!expanded && onTerminal != null)
+                  AppIconButton(
+                    icon: Icons.terminal_rounded,
+                    tooltip: 'Remote terminal',
+                    onPressed: onTerminal,
                   ),
-                  if (expanded)
-                    ComposerActionBar(
-                      leading: [
-                        if (onAttach != null)
-                          AppIconButton(
-                            icon: Icons.add_rounded,
-                            tooltip: 'Attach files',
-                            onPressed: onAttach,
-                          ),
-                        if (onTerminal != null)
-                          AppIconButton(
-                            icon: Icons.terminal_rounded,
-                            tooltip: 'Remote terminal',
-                            onPressed: onTerminal,
-                          ),
-                      ],
-                      controls: actions,
-                      trailing: _submit(),
+                Expanded(
+                  child: AppTextField(
+                    controller: controller,
+                    focusNode: focusNode,
+                    enabled: enabled,
+                    readOnly: readOnly,
+                    minLines: 1,
+                    maxLines: 4,
+                    onChanged: onChanged,
+                    textInputAction: TextInputAction.newline,
+                    hint: hint,
+                    variant: AppTextFieldVariant.borderless,
+                  ),
+                ),
+                if (!expanded) _submit(),
+              ],
+            ),
+            if (expanded)
+              ComposerActionBar(
+                leading: [
+                  if (onAttach != null)
+                    AppIconButton(
+                      icon: Icons.add_rounded,
+                      tooltip: 'Attach files',
+                      onPressed: onAttach,
+                    ),
+                  if (onTerminal != null)
+                    AppIconButton(
+                      icon: Icons.terminal_rounded,
+                      tooltip: 'Remote terminal',
+                      onPressed: onTerminal,
                     ),
                 ],
+                controls: actions,
+                trailing: _submit(),
               ),
-            ),
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        if (pageMode &&
+            constraints.hasBoundedHeight &&
+            constraints.maxHeight >= 360) {
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(child: SingleChildScrollView(child: configurationPanel)),
+              const SizedBox(height: 12),
+              composer,
+            ],
+          );
+        }
+        return SingleChildScrollView(
+          reverse: true,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [?configurationPanel, composer],
+          ),
+        );
+      },
     );
   }
 

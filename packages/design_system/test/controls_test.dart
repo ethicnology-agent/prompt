@@ -11,6 +11,31 @@ Widget _host(Widget child, {bool dark = false}) => MaterialApp(
 );
 
 void main() {
+  for (final busy in [false, true]) {
+    testWidgets('icon has exactly one accessible label busy=$busy', (
+      tester,
+    ) async {
+      final semantics = tester.ensureSemantics();
+      try {
+        await tester.pumpWidget(
+          _host(
+            AppIconButton(
+              icon: Icons.settings,
+              tooltip: 'Execution settings',
+              busy: busy,
+              onPressed: () {},
+            ),
+          ),
+        );
+        final data = tester
+            .getSemantics(find.byType(IconButton))
+            .getSemanticsData();
+        expect(data.label, 'Execution settings');
+      } finally {
+        semantics.dispose();
+      }
+    });
+  }
   for (final dark in [false, true]) {
     for (final variant in AppButtonVariant.values) {
       testWidgets('$variant supports touch and semantics in dark=$dark', (

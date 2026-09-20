@@ -3,6 +3,62 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 void main() {
+  for (final height in [240.0, 360.0, 800.0]) {
+    for (final scale in [1.0, 2.0]) {
+      testWidgets(
+        'page creation remains usable at height=$height scale=$scale',
+        (tester) async {
+          await tester.binding.setSurfaceSize(Size(600, height));
+          addTearDown(() => tester.binding.setSurfaceSize(null));
+          final controller = TextEditingController(text: 'Local draft');
+          final focus = FocusNode();
+          addTearDown(controller.dispose);
+          addTearDown(focus.dispose);
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: MediaQuery(
+                  data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+                  child: DraftComposerPanel(
+                    controller: controller,
+                    focusNode: focus,
+                    expanded: true,
+                    pageMode: true,
+                    configuration: Column(
+                      children: List.generate(
+                        8,
+                        (i) => CreationConfigurationRow(
+                          icon: Icons.folder,
+                          label: 'Directory $i',
+                          value: '/workspace/$i',
+                        ),
+                      ),
+                    ),
+                    onSubmit: () {},
+                  ),
+                ),
+              ),
+            ),
+          );
+          expect(tester.takeException(), isNull);
+          expect(find.text('Local draft'), findsOneWidget);
+          expect(
+            find.byTooltip('New session from draft').hitTestable(),
+            findsOneWidget,
+          );
+          if (height >= 360) {
+            expect(
+              tester
+                  .getRect(find.byKey(const ValueKey('draft-composer-card')))
+                  .bottom,
+              height,
+            );
+          }
+          await tester.pumpWidget(const SizedBox());
+        },
+      );
+    }
+  }
   for (final expanded in [false, true]) {
     for (final canSubmit in [false, true]) {
       testWidgets(

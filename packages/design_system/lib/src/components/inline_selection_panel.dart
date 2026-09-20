@@ -30,6 +30,7 @@ class InlineSelectionPanel<T> extends StatefulWidget {
     required this.onClose,
     this.listHeight = 240,
     this.radioIndicator = true,
+    this.embedded = false,
   });
 
   final String title;
@@ -41,6 +42,7 @@ class InlineSelectionPanel<T> extends StatefulWidget {
   /// Maximum choices viewport height; short lists use only their content height.
   final double listHeight;
   final bool radioIndicator;
+  final bool embedded;
 
   @override
   State<InlineSelectionPanel<T>> createState() =>
@@ -111,45 +113,51 @@ class _InlineSelectionPanelState<T> extends State<InlineSelectionPanel<T>> {
       child: Material(
         color: colors.surface,
         surfaceTintColor: Colors.transparent,
-        elevation: 4,
+        elevation: widget.embedded ? 0 : 4,
         shadowColor: Colors.black.withValues(alpha: 0.18),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(24),
-          side: BorderSide(
-            color: colors.outlineVariant.withValues(alpha: 0.65),
-          ),
-        ),
+        shape: widget.embedded
+            ? null
+            : RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(24),
+                side: BorderSide(
+                  color: colors.outlineVariant.withValues(alpha: 0.65),
+                ),
+              ),
         clipBehavior: Clip.antiAlias,
         child: Padding(
           padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Row(
-                children: [
-                  Expanded(
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 12),
-                      child: Semantics(
-                        header: true,
-                        child: Text(
-                          widget.title.toUpperCase(),
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.w600,
-                            letterSpacing: 1,
-                            color: colors.onSurfaceVariant,
+              SizedBox(
+                height: widget.embedded ? 32 : 48,
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: Semantics(
+                          header: true,
+                          child: Text(
+                            widget.title.toUpperCase(),
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.w600,
+                              letterSpacing: 1,
+                              color: colors.onSurfaceVariant,
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  AppIconButton(
-                    icon: Icons.close,
-                    tooltip: 'Close ${widget.title} choices',
-                    onPressed: widget.onClose,
-                  ),
-                ],
+                    if (!widget.embedded)
+                      AppIconButton(
+                        icon: Icons.close,
+                        tooltip: 'Close ${widget.title} choices',
+                        onPressed: widget.onClose,
+                      ),
+                  ],
+                ),
               ),
               Flexible(
                 child: ConstrainedBox(
