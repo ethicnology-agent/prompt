@@ -1,13 +1,15 @@
 const identifier = (value) => typeof value === 'string' && value.length > 0 && value.length <= 128 && !/[\x00-\x1f\x7f]/.test(value);
 
 const codexPermissionChoices = Object.freeze([
-  Object.freeze({ id: 'ask', label: 'Auto', description: 'Ask when unsure; writes stay inside the workspace.' }),
+  Object.freeze({ id: 'ask', label: 'Ask', description: 'Ask before each command or file change; writes stay inside the workspace.' }),
   Object.freeze({ id: 'auto', label: 'Workspace', description: 'Sandboxed workspace access that can request escalation.' }),
+  Object.freeze({ id: 'unattended', label: 'Unattended', description: 'Never ask. Runs and edits unsupervised inside the workspace sandbox.' }),
   Object.freeze({ id: 'read', label: 'Read', description: 'No filesystem writes or approval escalation.' }),
 ]);
 
 const claudePermissionChoices = Object.freeze([
-  Object.freeze({ id: 'ask', label: 'Auto', description: 'Ask before uncertain tool use.' }),
+  Object.freeze({ id: 'ask', label: 'Ask', description: 'Ask before each tool use.' }),
+  Object.freeze({ id: 'unattended', label: 'Unattended', description: 'Never ask. Runs and edits unsupervised in this workspace.' }),
   Object.freeze({ id: 'plan', label: 'Plan', description: 'Plan without executing tools or changing files.' }),
 ]);
 
@@ -29,6 +31,11 @@ export function permissionOptions(engine) {
 export function codexExecutionPolicy(mode) {
   if (mode === 'auto') {
     return { approvalPolicy: 'on-request', sandboxPolicy: { type: 'workspaceWrite' } };
+  }
+  // Unattended still runs inside the workspace sandbox: the gateway never
+  // advertises a policy the agent does not actually enforce.
+  if (mode === 'unattended') {
+    return { approvalPolicy: 'never', sandboxPolicy: { type: 'workspaceWrite' } };
   }
   if (mode === 'read') {
     return { approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly' } };

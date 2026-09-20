@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import { CodexAdapter, ClaudeAdapter } from '../src/adapters.js';
-import { NativeModelCatalog, providerCatalog } from '../src/model-catalog.js';
+import { NativeModelCatalog, providerCatalog, codexExecutionPolicy } from '../src/model-catalog.js';
 import { Sessions } from '../src/sessions.js';
 import { InputStream } from '../src/input-stream.js';
 import { createGateway } from '../src/server.js';
@@ -89,8 +89,9 @@ test('catalog publishes bounded versioned advertised efforts, not fixed guessed 
   assert.deepEqual(providerCatalog('codex', value).all[0].executionOptions, {
     version: 1,
     permissionModes: [
-      { id: 'ask', label: 'Auto', description: 'Ask when unsure; writes stay inside the workspace.' },
+      { id: 'ask', label: 'Ask', description: 'Ask before each command or file change; writes stay inside the workspace.' },
       { id: 'auto', label: 'Workspace', description: 'Sandboxed workspace access that can request escalation.' },
+      { id: 'unattended', label: 'Unattended', description: 'Never ask. Runs and edits unsupervised inside the workspace sandbox.' },
       { id: 'read', label: 'Read', description: 'No filesystem writes or approval escalation.' },
     ],
     defaultPermissionModeId: 'ask',
@@ -98,7 +99,8 @@ test('catalog publishes bounded versioned advertised efforts, not fixed guessed 
   assert.deepEqual(providerCatalog('claude', value).all[0].executionOptions, {
     version: 1,
     permissionModes: [
-      { id: 'ask', label: 'Auto', description: 'Ask before uncertain tool use.' },
+      { id: 'ask', label: 'Ask', description: 'Ask before each tool use.' },
+      { id: 'unattended', label: 'Unattended', description: 'Never ask. Runs and edits unsupervised in this workspace.' },
       { id: 'plan', label: 'Plan', description: 'Plan without executing tools or changing files.' },
     ],
     defaultPermissionModeId: 'ask',
@@ -224,9 +226,30 @@ test('Claude applies only advertised ask and no-tool plan policies', async () =>
   });
   await runner.run('plan first', 'default', [], { permissionMode: 'plan' });
   await runner.run('ask next', 'default', [], { permissionMode: 'ask' });
+  await runner.run('then unattended', 'default', [], { permissionMode: 'unattended' });
   assert.equal(initial.permissionMode, 'plan');
+  // Unattended is enforced by the hook, not by an SDK mode that would need
+  // allowDangerouslySkipPermissions and cannot be switched into mid-session.
   assert.deepEqual(permissionModes, ['default']);
-  assert.deepEqual(decisions.map((value) => value.hookSpecificOutput.permissionDecision), ['deny', 'allow']);
+  assert.deepEqual(decisions.map((value) => value.hookSpecificOutput.permissionDecision), ['deny', 'allow', 'allow']);
+  // Unattended is answered once when the session is configured, so the third
+  // turn must not raise a second approval.
   assert.equal(permissionRequests, 1);
   runner.close();
+});
+
+test('Codex unattended never asks yet stays inside the workspace sandbox', () => {
+  assert.deepEqual(codexExecutionPolicy('unattended'), {
+    approvalPolicy: 'never', sandboxPolicy: { type: 'workspaceWrite' },
+  });
+  assert.deepEqual(codexExecutionPolicy('ask'), {
+    approvalPolicy: 'untrusted', sandboxPolicy: { type: 'workspaceWrite' },
+  });
+  assert.deepEqual(codexExecutionPolicy('read'), {
+    approvalPolicy: 'never', sandboxPolicy: { type: 'readOnly' },
+  });
+  // An unknown mode must fall back to the strictest advertised policy.
+  assert.deepEqual(codexExecutionPolicy('invented'), {
+    approvalPolicy: 'untrusted', sandboxPolicy: { type: 'workspaceWrite' },
+  });
 });
