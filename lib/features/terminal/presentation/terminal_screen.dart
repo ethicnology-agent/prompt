@@ -273,7 +273,7 @@ class _Ready extends StatelessWidget {
                   : state.output.isEmpty
                   ? 'Select a running terminal to connect.'
                   : state.output,
-              style: const TextStyle(fontFamily: 'monospace'),
+              style: const TextStyle(fontFamily: promptMonoFamily),
             ),
           ),
         ),

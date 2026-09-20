@@ -12,3 +12,24 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+flutter:
+  uses-material-design: true
+  fonts:
+    - family: IBMPlexSans
+      fonts:
+        - asset: lib/fonts/IBMPlexSans-Regular.ttf
+          weight: 400
+        - asset: lib/fonts/IBMPlexSans-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: lib/fonts/IBMPlexSans-SemiBold.ttf
+          weight: 600
+    - family: IBMPlexMono
+      fonts:
+        - asset: lib/fonts/IBMPlexMono-Regular.ttf
+          weight: 400
+        - asset: lib/fonts/IBMPlexMono-Italic.ttf
+          weight: 400
+          style: italic
+        - asset: lib/fonts/IBMPlexMono-SemiBold.ttf
+          weight: 600

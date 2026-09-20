@@ -5,7 +5,13 @@ enum AppButtonVariant { primary, secondary, tertiary, destructive }
 
 enum AppButtonTone { standard, subtle, userMessage }
 
-enum AppIconButtonVariant { standard, filled, tonal }
+/// How a round icon action is filled.
+///
+/// [filled] is the composer's resting send action: the reference paints it with
+/// the neutral `surfaceHighest` and a secondary-text glyph, never with the brand
+/// colour. [prominent] is its working counterpart — solid black with a light
+/// glyph — used when the action becomes "stop".
+enum AppIconButtonVariant { standard, filled, prominent, tonal }
 
 enum AppIconButtonTone { standard, recording }
 
@@ -135,14 +141,27 @@ class AppIconButton extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = theme.extension<PromptTokens>();
+    final (Color? background, Color? foreground) = switch ((tone, variant)) {
+      (AppIconButtonTone.recording, _) => (
+        tokens?.userMessageForeground ?? theme.colorScheme.onPrimaryContainer,
+        tokens?.userMessageBackground ?? theme.colorScheme.primaryContainer,
+      ),
+      (_, AppIconButtonVariant.filled) => (
+        tokens?.surfaceHighest ?? theme.colorScheme.surfaceContainerHighest,
+        theme.colorScheme.onSurfaceVariant,
+      ),
+      (_, AppIconButtonVariant.prominent) => (
+        tokens?.buttonPrimaryBackground ?? theme.colorScheme.onSurface,
+        tokens?.buttonPrimaryTint ?? theme.colorScheme.surface,
+      ),
+      _ => (null, null),
+    };
     final style = IconButton.styleFrom(
       minimumSize: const Size(48, 48),
-      backgroundColor: tone == AppIconButtonTone.recording
-          ? tokens?.userMessageForeground ??
-                theme.colorScheme.onPrimaryContainer
-          : null,
-      foregroundColor: tone == AppIconButtonTone.recording
-          ? tokens?.userMessageBackground ?? theme.colorScheme.primaryContainer
+      backgroundColor: background,
+      foregroundColor: foreground,
+      disabledBackgroundColor: variant == AppIconButtonVariant.filled
+          ? background
           : null,
     );
     final iconWidget = Semantics(
@@ -164,7 +183,8 @@ class AppIconButton extends StatelessWidget {
         isSelected: isSelected,
         selectedIcon: selected,
       ),
-      AppIconButtonVariant.filled => IconButton.filled(
+      AppIconButtonVariant.filled ||
+      AppIconButtonVariant.prominent => IconButton.filled(
         tooltip: tooltip,
         onPressed: action,
         icon: iconWidget,

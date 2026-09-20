@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'prompt_color_tokens.dart';
+import 'prompt_typography.dart';
 import 'prompt_ui_tokens.dart';
 
 ThemeData promptTheme() => _theme(Brightness.light);
@@ -39,34 +40,41 @@ ThemeData _theme(Brightness brightness) {
         onSecondaryFixed: accent.onSecondaryFixed,
         onSecondaryFixedVariant: accent.onSecondaryFixedVariant,
         surfaceContainerLow: dark ? const Color(0xff111111) : Colors.white,
+        // Happy's `textSecondary` and `divider`, rather than a seed-derived
+        // pair: every subtitle, timestamp and composer glyph reads off these.
+        onSurfaceVariant: dark
+            ? const Color(0xffcac4d0)
+            : const Color(0xff49454f),
         outlineVariant: dark
-            ? const Color(0xff2c2c2e)
+            ? const Color(0xff2a2a2a)
             : const Color(0xffeaeaea),
       );
-  final textTheme = ThemeData(brightness: brightness).textTheme.copyWith(
-    headlineSmall: const TextStyle(
-      fontSize: 24,
-      height: 1.15,
-      fontWeight: FontWeight.w700,
-      letterSpacing: -0.6,
-    ),
-    titleLarge: const TextStyle(
-      fontSize: 19,
-      height: 1.15,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.4,
-    ),
-    titleMedium: const TextStyle(
-      fontSize: 16,
-      height: 1.3,
-      fontWeight: FontWeight.w600,
-      letterSpacing: -0.2,
-    ),
-    bodyLarge: const TextStyle(fontSize: 16, height: 1.48),
-    bodyMedium: const TextStyle(fontSize: 14, height: 1.45),
-    bodySmall: const TextStyle(fontSize: 12.5, height: 1.4),
-    labelLarge: const TextStyle(fontWeight: FontWeight.w600),
-  );
+  final textTheme = ThemeData(brightness: brightness).textTheme
+      .apply(fontFamily: promptSansFamily)
+      .copyWith(
+        headlineSmall: const TextStyle(
+          fontSize: 24,
+          height: 1.15,
+          fontWeight: PromptFontWeights.semiBold,
+          letterSpacing: -0.6,
+        ),
+        titleLarge: const TextStyle(
+          fontSize: 19,
+          height: 1.15,
+          fontWeight: PromptFontWeights.semiBold,
+          letterSpacing: -0.4,
+        ),
+        titleMedium: const TextStyle(
+          fontSize: 16,
+          height: 1.3,
+          fontWeight: PromptFontWeights.semiBold,
+          letterSpacing: -0.2,
+        ),
+        bodyLarge: const TextStyle(fontSize: 16, height: 1.48),
+        bodyMedium: const TextStyle(fontSize: 14, height: 1.45),
+        bodySmall: const TextStyle(fontSize: 12.5, height: 1.4),
+        labelLarge: const TextStyle(fontWeight: PromptFontWeights.semiBold),
+      );
 
   final rounded = OutlineInputBorder(
     borderRadius: BorderRadius.circular(13),
@@ -88,6 +96,15 @@ ThemeData _theme(Brightness brightness) {
         ? const Color(0xfffafafa)
         : const Color(0xff18171c),
     userMessageBorder: dark ? const Color(0xff39393b) : const Color(0xffe4e4e6),
+    // Happy's Android neutrals, read from `sources/theme.ts`.
+    surfaceHigh: dark ? const Color(0xff1e1e1e) : const Color(0xfff8f8f8),
+    surfaceHighest: dark ? const Color(0xff282828) : const Color(0xfff0f0f0),
+    groupedBackground: dark ? const Color(0xff000000) : const Color(0xfff5f5f5),
+    inputBackground: dark ? const Color(0xff1e1e1e) : const Color(0xfff5f5f5),
+    inputPlaceholder: dark ? const Color(0xff8e8e93) : const Color(0xff999999),
+    buttonPrimaryBackground: const Color(0xff000000),
+    buttonPrimaryTint: const Color(0xffffffff),
+    buttonPrimaryDisabled: const Color(0xffc0c0c0),
   );
 
   return ThemeData(
@@ -95,6 +112,7 @@ ThemeData _theme(Brightness brightness) {
     colorScheme: scheme,
     extensions: [tokens],
     useMaterial3: true,
+    fontFamily: promptSansFamily,
     scaffoldBackgroundColor: scheme.surface,
     textTheme: textTheme,
     materialTapTargetSize: MaterialTapTargetSize.padded,
@@ -147,7 +165,7 @@ ThemeData _theme(Brightness brightness) {
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(PromptUiTokens.controlRadius),
         ),
-        textStyle: const TextStyle(fontWeight: FontWeight.w700),
+        textStyle: const TextStyle(fontWeight: PromptFontWeights.semiBold),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(

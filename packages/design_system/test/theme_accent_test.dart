@@ -140,9 +140,17 @@ void main() {
             ),
           )
           .toList();
+      // The filled round action is a neutral composer control, not an accent
+      // surface: Happy fills it with `surfaceHighest` and a secondary glyph.
+      // Only the tonal variant still carries the accent.
+      final tokens = theme.extension<PromptTokens>()!;
       expect(
         icons.map((material) => material.color),
-        containsAll([expected.primary, expected.secondaryContainer]),
+        containsAll([tokens.surfaceHighest, expected.secondaryContainer]),
+      );
+      expect(
+        icons.map((material) => material.color),
+        isNot(contains(expected.primary)),
       );
     });
   }

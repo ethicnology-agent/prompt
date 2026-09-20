@@ -157,10 +157,10 @@ class _DiffRowView extends StatelessWidget {
         : Colors.transparent;
     final base =
         theme.textTheme.bodySmall?.copyWith(
-          fontFamily: 'monospace',
+          fontFamily: promptMonoFamily,
           height: 1.3,
         ) ??
-        const TextStyle(fontFamily: 'monospace', height: 1.3);
+        const TextStyle(fontFamily: promptMonoFamily, height: 1.3);
     final hint = theme.hintColor;
     final spans = isMeta
         ? <InlineSpan>[

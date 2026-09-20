@@ -1,5 +1,6 @@
 export 'src/adaptive_layout.dart';
 export 'src/app_theme.dart';
+export 'src/prompt_typography.dart';
 export 'src/components/app_button.dart';
 export 'src/components/app_action_sheet.dart';
 export 'src/components/app_choice_chip.dart';

@@ -918,4 +918,12 @@ PromptTokens _tokens(ThemeData theme) =>
       userMessageBackground: Color(0xffd7f7ed),
       userMessageForeground: Color(0xff123a30),
       userMessageBorder: Color(0xff64bba2),
+      surfaceHigh: Color(0xfff8f8f8),
+      surfaceHighest: Color(0xfff0f0f0),
+      groupedBackground: Color(0xfff5f5f5),
+      inputBackground: Color(0xfff5f5f5),
+      inputPlaceholder: Color(0xff999999),
+      buttonPrimaryBackground: Color(0xff000000),
+      buttonPrimaryTint: Color(0xffffffff),
+      buttonPrimaryDisabled: Color(0xffc0c0c0),
     );

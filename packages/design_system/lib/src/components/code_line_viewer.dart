@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../prompt_typography.dart';
+
 /// A lazy, read-only text viewer. Content is rendered literally, never as links.
 class CodeLineViewer extends StatelessWidget {
   const CodeLineViewer({
@@ -18,7 +20,9 @@ class CodeLineViewer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final style = theme.textTheme.bodySmall?.copyWith(fontFamily: 'monospace');
+    final style = theme.textTheme.bodySmall?.copyWith(
+      fontFamily: promptMonoFamily,
+    );
     final gutterWidth =
         MediaQuery.textScalerOf(
           context,

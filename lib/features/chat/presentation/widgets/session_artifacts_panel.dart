@@ -314,8 +314,9 @@ class _DiffRowState extends State<_DiffRow> {
     );
   }
 
-  TextStyle? _codeStyle(BuildContext context) =>
-      Theme.of(context).textTheme.bodySmall?.copyWith(fontFamily: 'monospace');
+  TextStyle? _codeStyle(BuildContext context) => Theme.of(
+    context,
+  ).textTheme.bodySmall?.copyWith(fontFamily: promptMonoFamily);
 
   @override
   Widget build(BuildContext context) {

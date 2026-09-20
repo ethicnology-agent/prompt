@@ -151,7 +151,7 @@ void main() {
         expect(field.decoration!.border, InputBorder.none);
       }
       if (variant == AppTextFieldVariant.code) {
-        expect(field.style!.fontFamily, 'monospace');
+        expect(field.style!.fontFamily, promptMonoFamily);
       }
     });
   }

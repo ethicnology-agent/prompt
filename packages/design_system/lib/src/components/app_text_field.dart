@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import '../prompt_typography.dart';
+
 enum AppTextFieldVariant { standard, borderless, code }
 
 class AppTextField extends StatelessWidget {
@@ -61,7 +63,7 @@ class AppTextField extends StatelessWidget {
   Widget build(BuildContext context) => TextField(
     controller: controller,
     style: variant == AppTextFieldVariant.code
-        ? const TextStyle(fontFamily: 'monospace')
+        ? const TextStyle(fontFamily: promptMonoFamily)
         : null,
     focusNode: focusNode,
     enabled: enabled,
@@ -157,7 +159,7 @@ class AppTextFormField extends StatelessWidget {
   Widget build(BuildContext context) => TextFormField(
     controller: controller,
     style: variant == AppTextFieldVariant.code
-        ? const TextStyle(fontFamily: 'monospace')
+        ? const TextStyle(fontFamily: promptMonoFamily)
         : null,
     focusNode: focusNode,
     enabled: enabled,

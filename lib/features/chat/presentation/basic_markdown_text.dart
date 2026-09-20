@@ -4,6 +4,8 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:url_launcher/link.dart';
 
+import '../../../core/ui/ui.dart';
+
 /// Renders the small Markdown subset used in conversation text without
 /// interpreting HTML or accepting arbitrary link schemes.
 class BasicMarkdownText extends StatelessWidget {
@@ -47,7 +49,7 @@ class BasicMarkdownText extends StatelessWidget {
           color: theme.colorScheme.surfaceContainerHigh,
           child: SelectableText(
             text,
-            style: style?.copyWith(fontFamily: 'monospace'),
+            style: style?.copyWith(fontFamily: promptMonoFamily),
             onTap: onBlockTap == null ? null : () => onBlockTap!(text),
           ),
         ),
@@ -102,7 +104,7 @@ List<InlineSpan> _inlineSpans(
           TextSpan(
             text: text.substring(index + 1, end),
             style: (style ?? const TextStyle()).copyWith(
-              fontFamily: 'monospace',
+              fontFamily: promptMonoFamily,
               backgroundColor: Theme.of(
                 context,
               ).colorScheme.surfaceContainerHigh,
