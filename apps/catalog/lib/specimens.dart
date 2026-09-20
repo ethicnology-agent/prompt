@@ -12,6 +12,56 @@ class Specimen {
 }
 
 final specimens = <Specimen>[
+  Specimen(
+    'Execution controls',
+    (_) => ExecutionControls(
+      summary: 'Ask · Balanced model · High',
+      onOpen: () {},
+      compact: Wrap(
+        children: [
+          CompactChoiceButton(
+            label: 'Ask',
+            semanticLabel: 'Permissions: Ask',
+            onPressed: () {},
+          ),
+          CompactChoiceButton(
+            label: 'Balanced model',
+            semanticLabel: 'Model: Balanced model',
+            onPressed: () {},
+          ),
+          CompactChoiceButton(
+            label: 'High',
+            semanticLabel: 'Effort: High',
+            onPressed: () {},
+          ),
+        ],
+      ),
+    ),
+  ),
+  Specimen(
+    'Grouped execution settings',
+    (_) => const _GroupedSelectionSpecimen(),
+  ),
+  Specimen(
+    'Desktop creation page',
+    (_) => const _DraftComposerSpecimen(pageMode: true),
+  ),
+  Specimen(
+    'Content column',
+    (_) => const ContentColumn(
+      child: SingleChildScrollView(
+        child: SettingsGroup(
+          title: 'CONTENT',
+          children: [
+            ListTile(
+              title: Text('Readable width'),
+              subtitle: Text('The same layout fills a narrow pane.'),
+            ),
+          ],
+        ),
+      ),
+    ),
+  ),
   Specimen('Draft composer panel', (_) => const _DraftComposerSpecimen()),
   Specimen(
     'Draft composer collapsed',
@@ -495,9 +545,14 @@ class _NavigationTitleSpecimenState extends State<_NavigationTitleSpecimen> {
 }
 
 class _DraftComposerSpecimen extends StatefulWidget {
-  const _DraftComposerSpecimen({this.expanded = true, this.canSubmit = true});
+  const _DraftComposerSpecimen({
+    this.expanded = true,
+    this.canSubmit = true,
+    this.pageMode = false,
+  });
   final bool expanded;
   final bool canSubmit;
+  final bool pageMode;
   @override
   State<_DraftComposerSpecimen> createState() => _DraftComposerSpecimenState();
 }
@@ -521,6 +576,7 @@ class _DraftComposerSpecimenState extends State<_DraftComposerSpecimen> {
       controller: _controller,
       focusNode: _focus,
       expanded: widget.expanded,
+      pageMode: widget.pageMode,
       configuration: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -653,6 +709,44 @@ class _ChoiceOptionSpecimenState extends State<_ChoiceOptionSpecimen> {
       ),
     ],
   );
+}
+
+class _GroupedSelectionSpecimen extends StatefulWidget {
+  const _GroupedSelectionSpecimen();
+  @override
+  State<_GroupedSelectionSpecimen> createState() =>
+      _GroupedSelectionSpecimenState();
+}
+
+class _GroupedSelectionSpecimenState extends State<_GroupedSelectionSpecimen> {
+  final _values = <String, String>{};
+  bool _open = true;
+  Widget section(String title, List<String> options, double height) =>
+      InlineSelectionPanel<String>(
+        title: title,
+        embedded: true,
+        listHeight: (height - 40).clamp(0, 500),
+        selected: _values[title],
+        options: [
+          for (final option in options)
+            InlineSelectionOption(value: option, label: option),
+        ],
+        onSelected: (value) => setState(() => _values[title] = value),
+        onClose: () => setState(() => _open = false),
+      );
+  @override
+  Widget build(BuildContext context) => _open
+      ? SelectionPanelGroup(
+          maxHeight: 400,
+          onClose: () => setState(() => _open = false),
+          topBuilder: (h) => section('Permissions', ['Ask', 'Read only'], h),
+          primaryBuilder: (h) => section('Model', ['Balanced', 'Fast'], h),
+          secondaryBuilder: (h) => section('Effort', ['Low', 'High'], h),
+        )
+      : AppButton(
+          label: 'Open execution settings',
+          onPressed: () => setState(() => _open = true),
+        );
 }
 
 class _InlineSelectionSpecimen extends StatefulWidget {

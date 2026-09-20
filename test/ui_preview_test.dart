@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:prompt/features/chat/chat.dart';
+import 'package:prompt/features/capabilities/capabilities.dart';
+import 'package:prompt/features/connection/connection.dart';
 import 'package:prompt/features/queue/queue.dart';
 import 'package:prompt/features/workspace/workspace.dart';
 import 'package:prompt/features/chat/presentation/session_file_diff_screen.dart';
@@ -9,6 +11,39 @@ import '../tool/ui_preview.dart';
 import '../tool/ui_preview/offline_client.dart';
 
 void main() {
+  test(
+    'execution preview exposes synthetic native choices without sending',
+    () async {
+      final preview = OfflinePreview(executionChoices: true);
+      try {
+        final profile = ServerProfile(
+          origin: Uri.parse(OfflinePreviewClient.origin),
+          backend: AgentBackend.gatewayCodex,
+        );
+        final capabilities = preview.dependencies.capabilitiesViewModel;
+        await capabilities.load(profile);
+        final ready = capabilities.value as CapabilitiesReady;
+        expect(ready.capabilities.models.first.providerId, 'codex');
+        expect(
+          ready
+              .capabilities
+              .models
+              .first
+              .executionOptions!
+              .reasoningEfforts
+              .length,
+          2,
+        );
+        expect(ready.capabilities.permissionModes.map((mode) => mode.id), [
+          'ask',
+          'read',
+        ]);
+        expect(preview.client.acceptedPrompts, 0);
+      } finally {
+        await preview.dependencies.dispose();
+      }
+    },
+  );
   testWidgets(
     'workspace fixture searches and opens relative results in their scope',
     (tester) async {

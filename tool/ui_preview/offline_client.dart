@@ -34,7 +34,9 @@ class OfflinePreviewClient extends http.BaseClient {
   Map<String, Object?>? _permissionAssistant;
   final _epoch = DateTime(2026, 9, 17, 12).millisecondsSinceEpoch;
 
-  OfflinePreviewClient() {
+  final bool executionChoices;
+
+  OfflinePreviewClient({this.executionChoices = false}) {
     _messages.add(
       _message(
         'fixture-user',
@@ -159,8 +161,22 @@ class OfflinePreviewClient extends http.BaseClient {
     if (request.url.origin != origin) {
       return _json(403, {'error': 'Offline only'});
     }
-    final path = request.url.path;
+    final requestedPath = request.url.path;
+    final path = executionChoices && requestedPath.startsWith('/prompt/codex/')
+        ? requestedPath.substring('/prompt/codex'.length)
+        : requestedPath;
     if (request.method == 'GET') {
+      if (executionChoices && path == '/prompt/capabilities') {
+        return _json(200, {
+          'protocolVersion': 1,
+          'engines': {
+            'codex': {
+              'available': true,
+              'features': ['sessions', 'text', 'abort'],
+            },
+          },
+        });
+      }
       if (path == '/file/content') {
         fileReads++;
         final scope = request.url.queryParameters['directory'];
@@ -313,13 +329,42 @@ class OfflinePreviewClient extends http.BaseClient {
         '/provider' => _json(200, {
           'all': [
             {
-              'id': 'fixture',
+              'id': executionChoices ? 'codex' : 'fixture',
+              if (executionChoices)
+                'executionOptions': {
+                  'version': 1,
+                  'defaultPermissionModeId': 'ask',
+                  'permissionModes': [
+                    {
+                      'id': 'ask',
+                      'label': 'Ask',
+                      'description': 'Synthetic approval setting',
+                    },
+                    {
+                      'id': 'read',
+                      'label': 'Read only',
+                      'description': 'Synthetic read-only setting',
+                    },
+                  ],
+                },
               'models': {
-                'offline': {'name': 'Offline fixture (no model)'},
+                'offline': {
+                  'name': 'Offline fixture (no model)',
+                  if (executionChoices)
+                    'executionOptions': {
+                      'version': 1,
+                      'reasoningEfforts': [
+                        {'id': 'low', 'label': 'Low'},
+                        {'id': 'high', 'label': 'High'},
+                      ],
+                    },
+                },
+                if (executionChoices)
+                  'fast': {'name': 'Fast fixture (no model)'},
               },
             },
           ],
-          'connected': ['fixture'],
+          'connected': [executionChoices ? 'codex' : 'fixture'],
         }),
         '/agent' => _json(200, [
           {

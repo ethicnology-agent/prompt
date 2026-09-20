@@ -136,12 +136,13 @@ class OpenCodeChatApi {
     final effort = executionOptions.reasoningEffort;
     final permissionMode = executionOptions.permissionModeId;
     if (permissionMode != null &&
-        (profile.backend != AgentBackend.gatewayCodex ||
+        (!profile.backend.isGateway ||
+            profile.backend.engine == 'opencode' ||
             permissionMode.isEmpty ||
             permissionMode.length > 128 ||
             RegExp(r'[\x00-\x1f\x7f]').hasMatch(permissionMode))) {
       throw const FormatException(
-        'Permission mode requires the native Codex gateway.',
+        'Permission mode requires a native engine gateway.',
       );
     }
     if (effort != null &&

@@ -106,12 +106,23 @@ class ConnectionRepository {
   Future<void> rememberActiveProfile(ServerProfile profile) =>
       _profileStore.save(profile);
 
-  Future<ConnectionResult> test(ServerProfile profile, String? password) async {
+  Future<ConnectionResult> test(
+    ServerProfile profile,
+    String? password, {
+    bool detectBackend = false,
+  }) async {
     if (!ConnectionOriginPolicy.supports(profile.origin)) {
       return const ConnectionFailed(ConnectionFailure.invalidAddress);
     }
 
     try {
+      if (detectBackend) {
+        final detected = await _healthService.detectProfile(profile, password);
+        if (detected == null) {
+          return const ConnectionFailed(ConnectionFailure.unsupportedBackend);
+        }
+        profile = detected;
+      }
       final capabilities = await _healthService.checkCapabilities(
         profile,
         password,

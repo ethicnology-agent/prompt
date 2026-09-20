@@ -497,6 +497,134 @@ void main() {
     await tester.pump();
   }
 
+  testWidgets(
+    'desktop grouped choices preserve draft and reject stale effort',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final capabilities = CapabilitiesViewModel(
+        CapabilitiesRepository(
+          OpenCodeCapabilitiesService(
+            OpenCodeTransport(MockClient((_) async => http.Response('', 404))),
+          ),
+          const _StaticPasswordStore(),
+        ),
+      );
+      addTearDown(capabilities.dispose);
+      final native = ServerProfile(
+        origin: profile.origin,
+        backend: AgentBackend.gatewayCodex,
+      );
+      await pumpScreen(
+        tester,
+        capabilitiesViewModel: capabilities,
+        activeProfile: native,
+      );
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(
+          models: [
+            OpenCodeModel(
+              providerId: 'codex',
+              id: 'reasoner',
+              name: 'Reasoning model',
+              isProviderConnected: true,
+              executionOptions: ModelExecutionOptions(
+                reasoningEfforts: [
+                  ReasoningEffortChoice(id: 'high', label: 'High'),
+                ],
+              ),
+            ),
+            OpenCodeModel(
+              providerId: 'codex',
+              id: 'fast',
+              name: 'Fast model',
+              isProviderConnected: true,
+            ),
+          ],
+          agents: [],
+          commands: [],
+          permissionModes: [
+            PermissionModeChoice(id: 'ask', label: 'Ask'),
+            PermissionModeChoice(id: 'read', label: 'Read only'),
+          ],
+          defaultPermissionModeId: 'ask',
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.enterText(find.byType(TextField), 'Draft stays private');
+      final before = tester.getRect(
+        find.byKey(const ValueKey('conversation-composer-content')),
+      );
+      expect(find.byKey(const ValueKey('composer-model-picker')), findsNothing);
+      await tester.tap(find.byTooltip('Execution settings'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SelectionPanelGroup), findsOneWidget);
+      await tester.tap(find.text('Reasoning model'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SelectionPanelGroup), findsOneWidget);
+      final staleEffort = tester
+          .widget<InlineSelectionPanel<String?>>(
+            find.byWidgetPredicate(
+              (w) =>
+                  w is InlineSelectionPanel<String?> &&
+                  w.title == 'Reasoning effort',
+            ),
+          )
+          .onSelected!;
+      await tester.tap(find.text('High'));
+      await tester.pumpAndSettle();
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        'high',
+      );
+      await tester.tap(find.text('Read only'));
+      await tester.pumpAndSettle();
+      expect(
+        viewModel.executionOptionsFor(native, session).permissionModeId,
+        'read',
+      );
+      await tester.tap(find.text('Fast model'));
+      await tester.pumpAndSettle();
+      expect(find.text('High'), findsNothing);
+      staleEffort('high');
+      expect(
+        viewModel.executionOptionsFor(native, session).reasoningEffort,
+        isNull,
+      );
+      expect(
+        viewModel.executionOptionsFor(native, session).permissionModeId,
+        'read',
+      );
+      capabilities.value = const CapabilitiesReady(
+        OpenCodeCapabilities(models: [], agents: [], commands: []),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Read only'), findsNothing);
+      expect(find.text('No available choices'), findsOneWidget);
+      expect(
+        tester.getRect(
+          find.byKey(const ValueKey('conversation-composer-content')),
+        ),
+        before,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.escape);
+      await tester.pumpAndSettle();
+      expect(find.byType(SelectionPanelGroup), findsNothing);
+      expect(
+        tester
+            .widget<EditableText>(find.byType(EditableText))
+            .focusNode
+            .hasFocus,
+        isTrue,
+      );
+      expect(
+        tester.widget<TextField>(find.byType(TextField)).controller!.text,
+        'Draft stays private',
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
   testWidgets('title details exposes confirmed session deletion', (
     tester,
   ) async {
@@ -901,7 +1029,8 @@ void main() {
           panel.options.any((option) => option.value == (provider, 'actual')),
           isTrue,
         );
-        await tester.tap(find.byTooltip('Close Model choices'));
+        expect(find.byType(SelectionPanelGroup), findsOneWidget);
+        await tester.tap(find.byTooltip('Close execution settings'));
         await tester.pumpAndSettle();
         expect(
           viewModel.executionOptionsFor(active, session).modelId,
@@ -1295,7 +1424,7 @@ void main() {
       final picker = find.byKey(const ValueKey('composer-permission-picker'));
       expect(picker, findsOneWidget);
       final button = tester.widget<CompactChoiceButton>(picker);
-      expect(button.label, 'Auto');
+      expect(button.label, 'Ask');
       expect(button.onPressed, isNull);
       final modelPicker = find.byKey(const ValueKey('composer-model-picker'));
       expect(modelPicker, findsOneWidget);
@@ -2023,8 +2152,8 @@ void main() {
           final rail = find.byKey(const ValueKey('composer-action-toolbar'));
           if (width >= 900) {
             expect(rail, findsOneWidget);
-            expect(find.text('Contextual detail'), findsOneWidget);
-            expect(find.byTooltip('Hide session details'), findsOneWidget);
+            expect(find.text('Contextual detail'), findsNothing);
+            expect(find.byTooltip('Show session details'), findsOneWidget);
           }
         }
       }
@@ -2032,7 +2161,7 @@ void main() {
     },
   );
 
-  testWidgets('desktop assistant transcript grows with the available width', (
+  testWidgets('desktop assistant transcript caps its readable width', (
     tester,
   ) async {
     final text = 'Transcript width probe ${'content ' * 200}';
@@ -2047,8 +2176,6 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1100, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await pumpScreen(tester);
-    await tester.tap(find.byTooltip('Hide session details'));
-    await tester.pump();
 
     final renderedText = find.byWidgetPredicate(
       (widget) =>
@@ -2060,8 +2187,9 @@ void main() {
     await tester.pump();
     final wideWidth = tester.getSize(renderedText).width;
 
-    expect(narrowWidth, greaterThan(900));
-    expect(wideWidth, greaterThan(narrowWidth + 400));
+    expect(narrowWidth, greaterThan(700));
+    expect(wideWidth, lessThanOrEqualTo(800));
+    expect(wideWidth, narrowWidth);
   });
 
   testWidgets('short height keeps approval, queue, and composer reachable', (
@@ -2298,8 +2426,6 @@ void main() {
     await tester.binding.setSurfaceSize(const Size(1600, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await pumpScreen(tester);
-    await tester.tap(find.byTooltip('Hide session details'));
-    await tester.pump();
 
     expect(
       find.byKey(const ValueKey('conversation-activity-scroll')),
@@ -3035,6 +3161,8 @@ void main() {
       }
 
       final before = savedOptions();
+      await tester.tap(find.byTooltip('Show session details'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ListTile, 'Model').first);
       await tester.pumpAndSettle();
       expect(find.text('Prompt execution'), findsOneWidget);
@@ -4194,6 +4322,10 @@ void main() {
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await pumpScreen(tester);
 
+    // Exercise horizontal overflow in the narrower, user-opened details layout.
+    await tester.tap(find.byTooltip('Show session details'));
+    await tester.pump();
+
     expect(find.text('Name'), findsOneWidget);
     expect(find.text('345'), findsOneWidget);
     expect(find.text('a | b'), findsOneWidget);
@@ -4402,6 +4534,8 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('Show session details'));
+      await tester.pumpAndSettle();
       await tester.tap(find.widgetWithText(ListTile, 'Model').last);
       await tester.pumpAndSettle();
       await tester.ensureVisible(find.text('Apply'));
@@ -4506,6 +4640,9 @@ void main() {
         await tester.tap(find.byTooltip('Session details and actions'));
         await tester.pumpAndSettle();
         await tester.tap(find.text('Session artifacts'));
+        await tester.pumpAndSettle();
+      } else {
+        await tester.tap(find.byTooltip('Show session details'));
         await tester.pumpAndSettle();
       }
       expect(find.text('OpenCode default'), findsNothing);
@@ -4642,6 +4779,8 @@ void main() {
     await tester.pump();
 
     final modelTile = find.widgetWithText(ListTile, 'Model');
+    await tester.tap(find.byTooltip('Show session details'));
+    await tester.pumpAndSettle();
     expect(modelTile, findsOneWidget);
     expect(find.text('Agent'), findsOneWidget);
     expect(find.text('OpenCode default'), findsNWidgets(2));
@@ -4957,6 +5096,8 @@ void main() {
 
     await pumpScreen(tester);
 
+    await tester.tap(find.byTooltip('Show session details'));
+    await tester.pumpAndSettle();
     expect(find.byType(VerticalDivider), findsOneWidget);
     expect(find.text('Desktop todo'), findsOneWidget);
     expect(find.text('lib/desktop.dart'), findsOneWidget);
@@ -5007,11 +5148,18 @@ void main() {
     await pumpScreen(tester);
 
     final artifactsButton = find.widgetWithIcon(
-      IconButton,
+      AppIconButton,
       Icons.assignment_outlined,
     );
+    expect(find.byType(SessionArtifactsPanel), findsNothing);
     expect(
-      tester.widget<IconButton>(artifactsButton).tooltip,
+      tester.widget<AppIconButton>(artifactsButton).tooltip,
+      'Show session details',
+    );
+    await tester.tap(artifactsButton);
+    await tester.pump();
+    expect(
+      tester.widget<AppIconButton>(artifactsButton).tooltip,
       'Hide session details',
     );
     expect(find.text('Session artifacts'), findsOneWidget);
@@ -5019,7 +5167,7 @@ void main() {
     await tester.tap(artifactsButton);
     await tester.pump();
     expect(
-      tester.widget<IconButton>(artifactsButton).tooltip,
+      tester.widget<AppIconButton>(artifactsButton).tooltip,
       'Show session details',
     );
     expect(find.byType(SessionArtifactsPanel), findsNothing);
@@ -5027,7 +5175,7 @@ void main() {
     await tester.tap(artifactsButton);
     await tester.pump();
     expect(
-      tester.widget<IconButton>(artifactsButton).tooltip,
+      tester.widget<AppIconButton>(artifactsButton).tooltip,
       'Hide session details',
     );
     expect(find.byType(SessionArtifactsPanel), findsOneWidget);

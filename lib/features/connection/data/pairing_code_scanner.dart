@@ -24,6 +24,7 @@ final class PairingScanPermissionDenied extends PairingScanResult {
 }
 
 abstract interface class PairingCodeScanner {
+  bool get isAvailable;
   Future<PairingScanResult> scan();
 }
 
@@ -34,6 +35,9 @@ PairingCodeScanner createPairingCodeScanner() =>
 
 class AndroidPairingCodeScanner implements PairingCodeScanner {
   const AndroidPairingCodeScanner();
+
+  @override
+  bool get isAvailable => true;
 
   static const _channel = MethodChannel('me.ethicnology.prompt/pairing');
 
@@ -59,6 +63,9 @@ class AndroidPairingCodeScanner implements PairingCodeScanner {
 
 class UnavailablePairingCodeScanner implements PairingCodeScanner {
   const UnavailablePairingCodeScanner();
+
+  @override
+  bool get isAvailable => false;
 
   @override
   Future<PairingScanResult> scan() async => const PairingScanUnavailable();

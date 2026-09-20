@@ -77,8 +77,8 @@ void main() {
         reason: 'Disconnect must not start another health check.',
       );
       expect(credentials.clears, 0);
-      await tester.ensureVisible(find.text('Test private connection'));
-      await tester.tap(find.text('Test private connection'));
+      await tester.ensureVisible(find.text('Connect'));
+      await tester.tap(find.text('Connect'));
       await tester.pumpAndSettle();
       expect(healthChecks, 2);
       expect(find.byType(HomeShell), findsOneWidget);

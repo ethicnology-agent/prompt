@@ -176,7 +176,6 @@ class AppIconButton extends StatelessWidget {
         : Semantics(label: tooltip, child: Icon(selectedIcon));
     final button = switch (variant) {
       AppIconButtonVariant.standard => IconButton(
-        tooltip: tooltip,
         onPressed: action,
         icon: iconWidget,
         style: style,
@@ -185,7 +184,6 @@ class AppIconButton extends StatelessWidget {
       ),
       AppIconButtonVariant.filled ||
       AppIconButtonVariant.prominent => IconButton.filled(
-        tooltip: tooltip,
         onPressed: action,
         icon: iconWidget,
         style: style,
@@ -193,7 +191,6 @@ class AppIconButton extends StatelessWidget {
         selectedIcon: selected,
       ),
       AppIconButtonVariant.tonal => IconButton.filledTonal(
-        tooltip: tooltip,
         onPressed: action,
         icon: iconWidget,
         style: style,
@@ -201,7 +198,7 @@ class AppIconButton extends StatelessWidget {
         selectedIcon: selected,
       ),
     };
-    return button;
+    return Tooltip(message: tooltip, excludeFromSemantics: true, child: button);
   }
 }
 

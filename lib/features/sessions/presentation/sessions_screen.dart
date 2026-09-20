@@ -44,6 +44,7 @@ class SessionsScreen extends StatefulWidget {
     required this.onDisconnect,
     this.embedded = false,
     this.onOpenSettings,
+    this.onOpenCreation,
     this.onOpenSessionWithDraft,
     this.capabilitiesViewModel,
     this.onSessionCreated,
@@ -64,6 +65,7 @@ class SessionsScreen extends StatefulWidget {
   final VoidCallback onDisconnect;
   final bool embedded;
   final VoidCallback? onOpenSettings;
+  final VoidCallback? onOpenCreation;
   final void Function(OpenCodeSession session, String draft)?
   onOpenSessionWithDraft;
   final CapabilitiesViewModel? capabilitiesViewModel;
@@ -171,6 +173,21 @@ class _SessionsScreenState extends State<SessionsScreen> {
         children: [
           _buildEmbeddedHeader(context),
           Expanded(child: body),
+          if (widget.onOpenSettings != null)
+            Padding(
+              padding: const EdgeInsets.all(12),
+              child: SizedBox(
+                width: double.infinity,
+                child: AppButton(
+                  label: 'Settings',
+                  icon: Icons.settings_outlined,
+                  variant: AppButtonVariant.tertiary,
+                  tone: AppButtonTone.subtle,
+                  leftAligned: true,
+                  onPressed: widget.onOpenSettings,
+                ),
+              ),
+            ),
         ],
       );
     }
@@ -178,8 +195,8 @@ class _SessionsScreenState extends State<SessionsScreen> {
       appBar: compactKeyboard
           ? null
           : AppBar(
-              // The reference header is 64 tall and carries a 19 mark on the
-              // left, measured on the device at 168 px and 50 px, density 420.
+              // Happy's header is 64 tall and carries a 19 mark on the left,
+              // measured on the device at 168 px and 50 px, density 420.
               toolbarHeight: 64,
               centerTitle: true,
               leading: _buildCatalogMenu(brand: true),
@@ -586,6 +603,10 @@ class _SessionsScreenState extends State<SessionsScreen> {
   }
 
   Future<void> _createSession(List<OpenCodeProject> projects) async {
+    if (widget.onOpenCreation case final open?) {
+      open();
+      return;
+    }
     if (widget.sessionCreationViewModel != null) {
       _draftFocus.requestFocus();
       return;

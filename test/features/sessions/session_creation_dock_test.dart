@@ -20,6 +20,77 @@ import 'package:prompt/features/sessions/presentation/worktree_picker.dart';
 
 void main() {
   testWidgets(
+    'wide creation groups model effort and permissions without launching',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(1440, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      final fixture = _Fixture(permissions: true);
+      addTearDown(fixture.dispose);
+      final controller = TextEditingController(text: 'Keep grouped draft');
+      final focus = FocusNode();
+      addTearDown(controller.dispose);
+      addTearDown(focus.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          builder: (context, child) => MediaQuery(
+            data: MediaQuery.of(context).copyWith(size: const Size(1440, 900)),
+            child: child!,
+          ),
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 800,
+                child: SessionCreationDock(
+                  profile: fixture.profile,
+                  viewModel: fixture.model,
+                  controller: controller,
+                  focusNode: focus,
+                  pageMode: true,
+                  onLaunch: (_) => fail('Selectors must not launch'),
+                  onExpandedChanged: (_) {},
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(find.byTooltip('Execution settings'), findsOneWidget);
+      await tester.tap(find.byTooltip('Execution settings'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SelectionPanelGroup), findsOneWidget);
+      await tester.tap(find.text('Available model'));
+      await tester.pumpAndSettle();
+      expect(find.byType(SelectionPanelGroup), findsOneWidget);
+      expect(find.text('Focused thinking'), findsOneWidget);
+      final staleEffort = tester
+          .widget<InlineSelectionPanel<String?>>(
+            find.byWidgetPredicate(
+              (w) =>
+                  w is InlineSelectionPanel<String?> &&
+                  w.title == 'Reasoning effort',
+            ),
+          )
+          .onSelected!;
+      await tester.tap(find.text('Focused thinking'));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.reasoningEffort, 'focused-custom');
+      await tester.tap(find.text('Other model'));
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.reasoningEffort, isNull);
+      staleEffort('focused-custom');
+      await tester.pumpAndSettle();
+      expect(fixture.model.value.options.reasoningEffort, isNull);
+      expect(find.text('Focused thinking'), findsNothing);
+      await tester.tap(find.byTooltip('Close execution settings'));
+      await tester.pumpAndSettle();
+      expect(focus.hasFocus, isTrue);
+      expect(controller.text, 'Keep grouped draft');
+      expect(fixture.created, isEmpty);
+      expect(tester.takeException(), isNull);
+    },
+  );
+  testWidgets(
     'machine chooser applies immediately and preserves composer and draft',
     (tester) async {
       final fixture = _Fixture();
@@ -544,7 +615,7 @@ void main() {
       final picker = find.byKey(const ValueKey('creation-permission-picker'));
       expect(picker, findsOneWidget);
       final button = tester.widget<CompactChoiceButton>(picker);
-      expect(button.label, 'Auto');
+      expect(button.label, 'Ask');
       expect(button.onPressed, isNull);
       expect(fixture.model.value.options.permissionModeId, isNull);
       expect(tester.takeException(), isNull);

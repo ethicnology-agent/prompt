@@ -133,14 +133,21 @@ class _ConversationScreenState extends State<ConversationScreen>
           model.providerId == widget.profile.backend.engine &&
           model.id == 'default');
 
-  void _commitComposerOptions(PromptExecutionOptions options) {
+  void _commitComposerOptions(
+    PromptExecutionOptions options, {
+    bool keepOpen = false,
+  }) {
     _executionOptions.value = options;
     widget.viewModel.rememberExecutionOptions(
       widget.profile,
       widget.session,
       options,
     );
-    _closeComposerChoice();
+    if (keepOpen) {
+      setState(() {});
+    } else {
+      _closeComposerChoice();
+    }
   }
 
   Future<void> _openSession() {
@@ -672,7 +679,7 @@ class _ConversationScreenState extends State<ConversationScreen>
   void _selectComposerModel(OpenCodeCapabilities capabilities) =>
       _toggleComposerChoice(_ComposerChoice.model);
 
-  void _applyComposerModel((String, String)? choice) {
+  void _applyComposerModel((String, String)? choice, {bool keepOpen = false}) {
     final capabilities = _currentCapabilities;
     if (capabilities == null ||
         (choice != null &&
@@ -694,7 +701,11 @@ class _ConversationScreenState extends State<ConversationScreen>
           ? current.reasoningEffort
           : null,
     );
-    _commitComposerOptions(options);
+    if (keepOpen) {
+      _composerChoice = _ComposerChoice.model;
+      _composerChoiceRevision++;
+    }
+    _commitComposerOptions(options, keepOpen: keepOpen);
   }
 
   void _selectComposerAgent(OpenCodeCapabilities capabilities) =>
@@ -723,7 +734,7 @@ class _ConversationScreenState extends State<ConversationScreen>
   void _selectComposerPermission() =>
       _toggleComposerChoice(_ComposerChoice.permission);
 
-  void _applyComposerPermission(String? choice) {
+  void _applyComposerPermission(String? choice, {bool keepOpen = false}) {
     final capabilities = _currentCapabilities;
     if (capabilities == null ||
         (choice != null &&
@@ -739,10 +750,11 @@ class _ConversationScreenState extends State<ConversationScreen>
         reasoningEffort: current.reasoningEffort,
         permissionModeId: choice,
       ),
+      keepOpen: keepOpen,
     );
   }
 
-  void _applyComposerAgent(String? choice) {
+  void _applyComposerAgent(String? choice, {bool keepOpen = false}) {
     final capabilities = _currentCapabilities;
     if (capabilities == null ||
         (choice != null &&
@@ -757,7 +769,7 @@ class _ConversationScreenState extends State<ConversationScreen>
       reasoningEffort: current.reasoningEffort,
       permissionModeId: current.permissionModeId,
     );
-    _commitComposerOptions(options);
+    _commitComposerOptions(options, keepOpen: keepOpen);
   }
 
   OpenCodeModel? _selectedModel(List<OpenCodeModel> models) {
@@ -824,7 +836,11 @@ class _ConversationScreenState extends State<ConversationScreen>
   void _selectComposerEffort(OpenCodeModel model) =>
       _toggleComposerChoice(_ComposerChoice.effort);
 
-  void _applyComposerEffort(OpenCodeModel model, String? effort) {
+  void _applyComposerEffort(
+    OpenCodeModel model,
+    String? effort, {
+    bool keepOpen = false,
+  }) {
     final current = _executionOptions.value;
     if (current.modelProviderId != model.providerId ||
         current.modelId != model.id) {
@@ -851,7 +867,7 @@ class _ConversationScreenState extends State<ConversationScreen>
       reasoningEffort: effort,
       permissionModeId: current.permissionModeId,
     );
-    _commitComposerOptions(options);
+    _commitComposerOptions(options, keepOpen: keepOpen);
   }
 
   OpenCodeAgent? _selectedAgent(List<OpenCodeAgent> agents) {
@@ -1099,47 +1115,65 @@ class _ConversationScreenState extends State<ConversationScreen>
           final selectedModel = capabilities == null
               ? null
               : _selectedModel(capabilities.models);
-          // One line, never two, at ordinary text sizes: the reference keeps
-          // every execution control on the single action row and lets the
-          // model name ellipsise. A `Wrap` folded the row in half and took the
-          // model picker out of reach at phone widths.
-          return _ComposerChoiceRow(
-            children: [
-              CompactChoiceButton(
-                key: const ValueKey('composer-permission-picker'),
-                label: permissionLabel,
-                semanticLabel: permissionModes.isEmpty
-                    ? 'Permissions: $permissionLabel; fixed by connected engine'
-                    : 'Permissions: $permissionLabel',
-                onPressed: permissionModes.isEmpty
-                    ? null
-                    : _selectComposerPermission,
-              ),
-              if (capabilities != null && hasAgentChoices(capabilities.agents))
+          return ExecutionControls(
+            summary: [
+              permissionLabel,
+              selectedModel?.name ?? options.modelId ?? 'Select model',
+              if (options.reasoningEffort != null)
+                _reasoningEfforts(selectedModel)
+                        .where((choice) => choice.id == options.reasoningEffort)
+                        .map(_effortLabel)
+                        .firstOrNull ??
+                    'Unavailable effort',
+              if (options.agentName != null) options.agentName!,
+            ].join(' · '),
+            onOpen: capabilities == null
+                ? null
+                : () => _selectComposerModel(capabilities),
+            // One line, never two, at ordinary text sizes: the reference keeps
+            // every execution control on the single action row and lets the
+            // model name ellipsise. A `Wrap` folded the row in half and took
+            // the model picker out of reach at phone widths. Enlarged text is
+            // the one case that still wraps, because the labels stop fitting.
+            compact: _ComposerChoiceRow(
+              children: [
                 CompactChoiceButton(
-                  key: const ValueKey('composer-agent-picker'),
-                  label:
-                      _selectedAgent(capabilities.agents)?.name ??
-                      options.agentName ??
-                      'Agent default',
-                  semanticLabel:
-                      'Agent: ${_selectedAgent(capabilities.agents)?.name ?? options.agentName ?? 'Agent default'}',
-                  onPressed: () => _selectComposerAgent(capabilities),
+                  key: const ValueKey('composer-permission-picker'),
+                  label: permissionLabel,
+                  semanticLabel: permissionModes.isEmpty
+                      ? 'Permissions: $permissionLabel; fixed by connected engine'
+                      : 'Permissions: $permissionLabel',
+                  onPressed: permissionModes.isEmpty
+                      ? null
+                      : _selectComposerPermission,
                 ),
-              CompactChoiceButton(
-                key: const ValueKey('composer-model-picker'),
-                label:
-                    selectedModel?.name ??
-                    options.modelId ??
-                    (hasModelChoices ? 'Select model' : 'Model'),
-                semanticLabel:
-                    'Model: ${selectedModel?.name ?? options.modelId ?? 'Select model'}',
-                onPressed: capabilities != null && hasModelChoices
-                    ? () => _selectComposerModel(capabilities)
-                    : null,
-              ),
-              if (capabilities != null) _effortControl(capabilities, options),
-            ],
+                if (capabilities != null &&
+                    hasAgentChoices(capabilities.agents))
+                  CompactChoiceButton(
+                    key: const ValueKey('composer-agent-picker'),
+                    label:
+                        _selectedAgent(capabilities.agents)?.name ??
+                        options.agentName ??
+                        'Agent default',
+                    semanticLabel:
+                        'Agent: ${_selectedAgent(capabilities.agents)?.name ?? options.agentName ?? 'Agent default'}',
+                    onPressed: () => _selectComposerAgent(capabilities),
+                  ),
+                CompactChoiceButton(
+                  key: const ValueKey('composer-model-picker'),
+                  label:
+                      selectedModel?.name ??
+                      options.modelId ??
+                      (hasModelChoices ? 'Select model' : 'Model'),
+                  semanticLabel:
+                      'Model: ${selectedModel?.name ?? options.modelId ?? 'Select model'}',
+                  onPressed: capabilities != null && hasModelChoices
+                      ? () => _selectComposerModel(capabilities)
+                      : null,
+                ),
+                if (capabilities != null) _effortControl(capabilities, options),
+              ],
+            ),
           );
         },
       ),
@@ -1630,20 +1664,25 @@ class _ConversationScreenState extends State<ConversationScreen>
     );
   }
 
-  Widget _inlineComposerChoices(double availableHeight) {
+  Widget _inlineComposerChoices(
+    double availableHeight, {
+    _ComposerChoice? section,
+    bool embedded = false,
+  }) {
     final viewModel = widget.capabilitiesViewModel;
     if (_composerChoice == null || viewModel == null) {
       return const SizedBox.shrink();
     }
     final owner = (widget.profile.id, widget.session.id);
-    final kind = _composerChoice;
+    final openedChoice = _composerChoice;
+    final kind = section ?? openedChoice;
     final revision = _composerChoiceRevision;
     bool current() =>
         mounted &&
         revision == _composerChoiceRevision &&
-        _composerChoice == kind &&
+        _composerChoice == openedChoice &&
         owner == (widget.profile.id, widget.session.id);
-    final height = (availableHeight - 56).clamp(0.0, 344.0);
+    final height = (availableHeight - (embedded ? 40 : 56)).clamp(0.0, 464.0);
     return ValueListenableBuilder<CapabilitiesUiState>(
       valueListenable: viewModel,
       builder: (context, state, _) {
@@ -1651,11 +1690,14 @@ class _ConversationScreenState extends State<ConversationScreen>
             ? state.capabilities
             : null;
         final options = _executionOptions.value;
-        final key = const ValueKey('composer-inline-selection');
+        final key = embedded && kind != _ComposerChoice.model
+            ? ValueKey('composer-section-$kind')
+            : const ValueKey('composer-inline-selection');
         switch (kind) {
           case _ComposerChoice.command:
             return InlineSelectionPanel<String?>(
               key: key,
+              embedded: embedded,
               title: 'Slash command',
               radioIndicator: true,
               listHeight: height,
@@ -1692,6 +1734,7 @@ class _ConversationScreenState extends State<ConversationScreen>
           case _ComposerChoice.permission:
             return InlineSelectionPanel<String?>(
               key: key,
+              embedded: embedded,
               title: 'Permissions',
               radioIndicator: true,
               listHeight: height,
@@ -1712,13 +1755,16 @@ class _ConversationScreenState extends State<ConversationScreen>
                   capabilities == null || capabilities.permissionModes.isEmpty
                   ? null
                   : (choice) {
-                      if (current()) _applyComposerPermission(choice);
+                      if (current()) {
+                        _applyComposerPermission(choice, keepOpen: embedded);
+                      }
                     },
               onClose: _closeComposerChoice,
             );
           case _ComposerChoice.model:
             return InlineSelectionPanel<(String, String)?>(
               key: key,
+              embedded: embedded,
               title: 'Model',
               radioIndicator: true,
               listHeight: height,
@@ -1737,13 +1783,16 @@ class _ConversationScreenState extends State<ConversationScreen>
               onSelected: capabilities == null
                   ? null
                   : (choice) {
-                      if (current()) _applyComposerModel(choice);
+                      if (current()) {
+                        _applyComposerModel(choice, keepOpen: embedded);
+                      }
                     },
               onClose: _closeComposerChoice,
             );
           case _ComposerChoice.agent:
             return InlineSelectionPanel<String?>(
               key: key,
+              embedded: embedded,
               title: 'Agent',
               radioIndicator: true,
               listHeight: height,
@@ -1755,7 +1804,9 @@ class _ConversationScreenState extends State<ConversationScreen>
               onSelected: capabilities == null
                   ? null
                   : (choice) {
-                      if (current()) _applyComposerAgent(choice);
+                      if (current()) {
+                        _applyComposerAgent(choice, keepOpen: embedded);
+                      }
                     },
               onClose: _closeComposerChoice,
             );
@@ -1764,6 +1815,7 @@ class _ConversationScreenState extends State<ConversationScreen>
             final choices = model?.executionOptions?.reasoningEfforts ?? [];
             return InlineSelectionPanel<String?>(
               key: key,
+              embedded: embedded,
               title: 'Reasoning effort',
               radioIndicator: true,
               listHeight: height,
@@ -1778,7 +1830,9 @@ class _ConversationScreenState extends State<ConversationScreen>
               onSelected: model == null || choices.isEmpty
                   ? null
                   : (choice) {
-                      if (current()) _applyComposerEffort(model, choice);
+                      if (current()) {
+                        _applyComposerEffort(model, choice, keepOpen: embedded);
+                      }
                     },
               onClose: _closeComposerChoice,
             );
@@ -1801,13 +1855,61 @@ class _ConversationScreenState extends State<ConversationScreen>
         child: ConstrainedBox(
           key: const ValueKey('conversation-composer-content'),
           constraints: BoxConstraints(
-            maxWidth: constrainWidth ? 960 : double.infinity,
+            maxWidth: constrainWidth ? 800 : double.infinity,
           ),
           child: AnchoredChoiceOverlay(
             open: _composerChoice != null,
             onDismiss: _closeComposerChoice,
-            popupBuilder: (_, height) => _inlineComposerChoices(height),
-            maxHeight: 280,
+            popupBuilder: (_, height) => ListenableBuilder(
+              listenable: widget.capabilitiesViewModel ?? _executionOptions,
+              builder: (_, _) => LayoutBuilder(
+                builder: (context, constraints) {
+                  final capabilities = _currentCapabilities;
+                  final grouped =
+                      constraints.maxWidth >= 600 &&
+                      height >= 320 &&
+                      availableHeight >= 400 &&
+                      _composerChoice != _ComposerChoice.command &&
+                      _composerChoice != _ComposerChoice.agent &&
+                      capabilities != null;
+                  if (!grouped) {
+                    return _inlineComposerChoices(height.clamp(0, 280));
+                  }
+                  final model = _selectedModel(capabilities.models);
+                  return SelectionPanelGroup(
+                    maxHeight: height,
+                    onClose: _closeComposerChoice,
+                    topBuilder: capabilities.permissionModes.isEmpty
+                        ? null
+                        : (h) => _inlineComposerChoices(
+                            h,
+                            section: _ComposerChoice.permission,
+                            embedded: true,
+                          ),
+                    primaryBuilder: (h) => _inlineComposerChoices(
+                      h,
+                      section: _ComposerChoice.model,
+                      embedded: true,
+                    ),
+                    secondaryBuilder: _reasoningEfforts(model).isEmpty
+                        ? (capabilities.agents.isEmpty
+                              ? null
+                              : (h) => _inlineComposerChoices(
+                                  h,
+                                  section: _ComposerChoice.agent,
+                                  embedded: true,
+                                ))
+                        : (h) => _inlineComposerChoices(
+                            h,
+                            section: _ComposerChoice.effort,
+                            embedded: true,
+                          ),
+                  );
+                },
+              ),
+            ),
+            maxWidth: 800,
+            maxHeight: 520,
             horizontalInset: 24,
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -1942,7 +2044,7 @@ class _ConversationScreenState extends State<ConversationScreen>
             widget.profile.capabilities.supports(
               BackendFeature.sessionArtifacts,
             ) &&
-            (_artifactsPanelOverride ?? isDesktop);
+            (_artifactsPanelOverride ?? false);
         return PopScope(
           canPop: _composerChoice == null,
           onPopInvokedWithResult: (didPop, _) {
@@ -2089,32 +2191,27 @@ class _ConversationScreenState extends State<ConversationScreen>
                           ? Row(
                               children: [
                                 Expanded(
-                                  child: Row(
-                                    children: [
-                                      Expanded(
-                                        child: Column(
-                                          children: [
-                                            Expanded(
-                                              child: _transcriptPanel(
-                                                showComposerActions: false,
-                                                desktop: true,
-                                              ),
-                                            ),
-                                            _activityPanel(
-                                              maxHeight:
-                                                  bodyConstraints.maxHeight,
-                                            ),
-                                            footer(
-                                              _composerPanel(
-                                                availableHeight:
-                                                    bodyConstraints.maxHeight,
-                                                constrainWidth: true,
-                                              ),
-                                            ),
-                                          ],
+                                  child: ContentColumn(
+                                    child: Column(
+                                      children: [
+                                        Expanded(
+                                          child: _transcriptPanel(
+                                            showComposerActions: false,
+                                            desktop: true,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                        _activityPanel(
+                                          maxHeight: bodyConstraints.maxHeight,
+                                        ),
+                                        footer(
+                                          _composerPanel(
+                                            availableHeight:
+                                                bodyConstraints.maxHeight,
+                                            constrainWidth: true,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                 ),
                                 if (showArtifactsPanel) ...[
@@ -2355,9 +2452,6 @@ class _DesktopResizeHandle extends StatelessWidget {
 
 /// The execution choices under the composer: one line normally, wrapped when
 /// the text scale makes a single line unreadable.
-///
-/// The threshold is the one the roomy execution layout already uses, so the two
-/// agree on when enlarged text stops fitting.
 class _ComposerChoiceRow extends StatelessWidget {
   const _ComposerChoiceRow({required this.children});
 

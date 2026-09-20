@@ -63,7 +63,13 @@ class HomeShell extends StatefulWidget {
 }
 
 class _HomeShellState extends State<HomeShell> {
-  ScopedSession? _selectedSession;
+  final _selection = ValueNotifier<ScopedSession?>(null);
+  final _paneNavigator = GlobalKey<NavigatorState>();
+  final _creationDraft = TextEditingController();
+  final _creationFocus = FocusNode();
+  Route<void>? _creationRoute;
+  ScopedSession? get _selectedSession => _selection.value;
+  set _selectedSession(ScopedSession? entry) => _selection.value = entry;
   double? _catalogWidth;
   bool _keepPaneEmpty = false;
 
@@ -105,6 +111,9 @@ class _HomeShellState extends State<HomeShell> {
   @override
   void dispose() {
     widget.sessionsViewModel.removeListener(_reconcileSelectedSession);
+    _selection.dispose();
+    _creationDraft.dispose();
+    _creationFocus.dispose();
     super.dispose();
   }
 
@@ -154,104 +163,170 @@ class _HomeShellState extends State<HomeShell> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final desktop = constraints.maxWidth >= PromptBreakpoints.desktop;
-        final sessions = SessionsScreen(
-          embedded: desktop,
-          profile: widget.profile,
-          viewModel: widget.sessionsViewModel,
-          capabilitiesViewModel: widget.capabilitiesViewModel,
-          sessionCreationViewModel: widget.sessionCreationViewModel,
-          onSessionLaunched: widget.onSessionLaunched,
-          onDisconnect: widget.onDisconnect,
-          onOpenSession: (session) {
-            if (desktop) {
-              setState(
-                () => _selectedSession = ScopedSession(widget.profile, session),
-              );
-            } else {
-              _openConversation(
-                context,
-                ScopedSession(widget.profile, session),
-              );
-            }
-          },
-          onOpenScopedSession: (entry) {
-            if (desktop) {
-              setState(() => _selectedSession = entry);
-            } else {
-              _openConversation(context, entry);
-            }
-          },
-          onSessionCreated: (session, draft, options) {
-            widget.conversationViewModel.rememberExecutionOptions(
-              widget.profile,
-              session,
-              options,
-            );
-            widget.conversationViewModel.rememberDraft(
-              widget.profile,
-              session,
-              draft,
-            );
-            if (desktop) {
-              setState(
-                () => _selectedSession = ScopedSession(widget.profile, session),
-              );
-            } else {
-              _openConversation(
-                context,
-                ScopedSession(widget.profile, session),
-              );
-            }
-          },
-          onOpenWorkspace: (projects) => _openWorkspace(context, projects),
-          onOpenTerminal: () => _openTerminal(context),
-          onOpenDiagnostics: () => _openDiagnostics(context),
-          onOpenSettings: () => _openSettings(context),
-          onOpenVoiceSettings: () => _openVoiceSettings(context),
-        );
-        if (!desktop) return sessions;
-        final catalogWidth = _catalogWidthFor(constraints.maxWidth);
-        final resizeHandle = _DesktopResizeHandle(
-          key: const ValueKey('home-session-catalog-divider'),
-          label: 'Resize session catalog',
-          onDelta: (delta) => setState(() {
-            _catalogWidth = _clampCatalogWidth(
-              _catalogWidthFor(constraints.maxWidth) + delta,
-              constraints.maxWidth,
-            );
-          }),
-        );
-        return Row(
-          children: [
-            SizedBox(width: catalogWidth, child: sessions),
-            resizeHandle,
-            Expanded(
-              child: switch (_selectedSession) {
-                final entry? => ConversationScreen(
-                  key: ValueKey((
-                    'conversation',
-                    entry.identity,
-                    entry.session.directory,
-                  )),
-                  profile: entry.profile,
-                  session: entry.session,
-                  viewModel: widget.conversationViewModel,
-                  capabilitiesViewModel: widget.capabilitiesViewModel,
-                  voiceViewModel: widget.voiceViewModel,
-                  onOpenFork: (forked) => setState(
-                    () =>
-                        _selectedSession = ScopedSession(entry.profile, forked),
+        return _HomePaneLayout(
+          desktop: desktop,
+          child: Material(
+            child: Row(
+              // Paint the catalog after the pane's modal semantics boundary,
+              // while keeping its visual position at the leading edge.
+              textDirection: Directionality.of(context) == TextDirection.ltr
+                  ? TextDirection.rtl
+                  : TextDirection.ltr,
+              children: [
+                if (desktop) ...[
+                  SizedBox(
+                    width: _catalogWidthFor(constraints.maxWidth),
+                    child: _catalog(context, true),
                   ),
-                  onOpenFile: (path) => _openSessionFile(context, entry, path),
-                  reviewViewModelFactory: widget.reviewViewModelFactory,
-                  onSessionDeleted: () => unawaited(_sessionDeleted(entry)),
+                  _DesktopResizeHandle(
+                    key: const ValueKey('home-session-catalog-divider'),
+                    label: 'Resize session catalog',
+                    onDelta: (delta) => setState(() {
+                      _catalogWidth = _clampCatalogWidth(
+                        _catalogWidthFor(constraints.maxWidth) + delta,
+                        constraints.maxWidth,
+                      );
+                    }),
+                  ),
+                ],
+                Expanded(
+                  child: NavigatorPopHandler<Object?>(
+                    onPopWithResult: (result) =>
+                        _paneNavigator.currentState!.pop(result),
+                    child: Navigator(
+                      key: _paneNavigator,
+                      onGenerateRoute: (_) => MaterialPageRoute<void>(
+                        builder: (paneContext) =>
+                            ValueListenableBuilder<ScopedSession?>(
+                              valueListenable: _selection,
+                              builder: (_, entry, _) =>
+                                  _HomePaneLayout.of(paneContext).desktop
+                                  ? _conversationPane(entry)
+                                  : _catalog(paneContext, false),
+                            ),
+                      ),
+                    ),
+                  ),
                 ),
-                _ => const _EmptyMasterDetail(),
-              },
+              ].reversed.toList(),
             ),
-          ],
+          ),
         );
       },
+    );
+  }
+
+  Widget _catalog(BuildContext context, bool desktop) => SessionsScreen(
+    embedded: desktop,
+    profile: widget.profile,
+    viewModel: widget.sessionsViewModel,
+    capabilitiesViewModel: widget.capabilitiesViewModel,
+    sessionCreationViewModel: _creationRoute == null
+        ? widget.sessionCreationViewModel
+        : null,
+    onSessionLaunched: widget.onSessionLaunched,
+    onOpenCreation:
+        desktop &&
+            widget.sessionCreationViewModel != null &&
+            widget.onSessionLaunched != null
+        ? _openCreation
+        : null,
+    onDisconnect: widget.onDisconnect,
+    onOpenSession: (session) {
+      if (desktop) {
+        _selectDesktopSession(ScopedSession(widget.profile, session));
+      } else {
+        _openConversation(context, ScopedSession(widget.profile, session));
+      }
+    },
+    onOpenScopedSession: (entry) {
+      if (desktop) {
+        _selectDesktopSession(entry);
+      } else {
+        _openConversation(context, entry);
+      }
+    },
+    onSessionCreated: (session, draft, options) {
+      widget.conversationViewModel.rememberExecutionOptions(
+        widget.profile,
+        session,
+        options,
+      );
+      widget.conversationViewModel.rememberDraft(
+        widget.profile,
+        session,
+        draft,
+      );
+      if (desktop) {
+        _selectDesktopSession(ScopedSession(widget.profile, session));
+      } else {
+        _openConversation(context, ScopedSession(widget.profile, session));
+      }
+    },
+    onOpenWorkspace: (projects) => _openWorkspace(context, projects),
+    onOpenTerminal: () => _openTerminal(context),
+    onOpenDiagnostics: () => _openDiagnostics(context),
+    onOpenSettings: () => _openSettings(context),
+    onOpenVoiceSettings: () => _openVoiceSettings(context),
+  );
+
+  Widget _conversationPane(ScopedSession? selected) => switch (selected) {
+    final entry? => ConversationScreen(
+      key: ValueKey(('conversation', entry.identity, entry.session.directory)),
+      profile: entry.profile,
+      session: entry.session,
+      viewModel: widget.conversationViewModel,
+      capabilitiesViewModel: widget.capabilitiesViewModel,
+      voiceViewModel: widget.voiceViewModel,
+      onOpenFork: (forked) =>
+          _selectDesktopSession(ScopedSession(entry.profile, forked)),
+      onOpenFile: (path) => _openSessionFile(context, entry, path),
+      reviewViewModelFactory: widget.reviewViewModelFactory,
+      onSessionDeleted: () => unawaited(_sessionDeleted(entry)),
+    ),
+    _ => const _EmptyMasterDetail(),
+  };
+
+  void _selectDesktopSession(ScopedSession entry) {
+    _selectedSession = entry;
+    _paneNavigator.currentState!.popUntil((route) => route.isFirst);
+  }
+
+  void _openCreation() {
+    final navigator = _paneNavigator.currentState!;
+    if (_creationRoute case final route?) {
+      navigator.popUntil((candidate) => candidate == route);
+      _creationFocus.requestFocus();
+      return;
+    }
+    final state = widget.sessionsViewModel.value;
+    final projects = state is SessionsReady
+        ? state.projects
+        : const <OpenCodeProject>[];
+    final directory =
+        projects
+            .where((project) => project.id != 'global')
+            .firstOrNull
+            ?.directory ??
+        '';
+    final route = MaterialPageRoute<void>(
+      builder: (_) => SessionCreationScreen(
+        profile: widget.profile,
+        viewModel: widget.sessionCreationViewModel!,
+        controller: _creationDraft,
+        focusNode: _creationFocus,
+        initialDirectory: directory,
+        onLaunch: widget.onSessionLaunched!,
+      ),
+    );
+    _creationRoute = route;
+    unawaited(navigator.push(route));
+    unawaited(
+      route.completed.whenComplete(() {
+        if (_creationRoute == route && mounted) {
+          setState(() => _creationRoute = null);
+        }
+      }),
     );
   }
 
@@ -264,7 +339,7 @@ class _HomeShellState extends State<HomeShell> {
 
   double _catalogWidthFor(double totalWidth) {
     final maximum = (totalWidth - 640).clamp(240.0, double.infinity);
-    final width = _catalogWidth ?? (totalWidth * .2).clamp(280.0, 400.0);
+    final width = _catalogWidth ?? (totalWidth * .3).clamp(280.0, 336.0);
     return width.clamp(240.0, maximum);
   }
 
@@ -274,7 +349,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _openDiagnostics(BuildContext context) {
-    Navigator.of(context).push(
+    _paneNavigator.currentState!.push(
       MaterialPageRoute<void>(
         builder: (_) => DiagnosticsScreen(
           profile: widget.profile,
@@ -291,7 +366,7 @@ class _HomeShellState extends State<HomeShell> {
 
   void _openSettings(BuildContext context) {
     final sessionState = widget.sessionsViewModel.value;
-    Navigator.of(context).push(
+    _paneNavigator.currentState!.push(
       MaterialPageRoute<void>(
         builder: (settingsContext) => SettingsScreen(
           serverLabel:
@@ -336,7 +411,7 @@ class _HomeShellState extends State<HomeShell> {
     final viewModel = widget.connectionViewModelFactory?.call();
     if (viewModel == null) return;
     try {
-      final profile = await Navigator.of(context).push<ServerProfile>(
+      final profile = await _paneNavigator.currentState!.push<ServerProfile>(
         MaterialPageRoute<ServerProfile>(
           builder: (pairingContext) => ConnectionScreen(
             viewModel: viewModel,
@@ -356,7 +431,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _openVoiceSettings(BuildContext context) {
-    Navigator.of(context).push(
+    _paneNavigator.currentState!.push(
       MaterialPageRoute<void>(
         builder: (_) => VoiceSettingsScreen(viewModel: widget.voiceViewModel),
       ),
@@ -364,7 +439,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _openTerminal(BuildContext context) {
-    Navigator.of(context).push(
+    _paneNavigator.currentState!.push(
       MaterialPageRoute<void>(
         builder: (_) => TerminalScreen(
           profile: widget.profile,
@@ -375,7 +450,7 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _openWorkspace(BuildContext context, List<OpenCodeProject> projects) {
-    Navigator.of(context).push(
+    _paneNavigator.currentState!.push(
       MaterialPageRoute<void>(
         builder: (_) => WorkspaceScreen(
           profile: widget.profile,
@@ -392,7 +467,7 @@ class _HomeShellState extends State<HomeShell> {
     String path,
   ) {
     if (!entry.profile.capabilities.supports(BackendFeature.workspace)) return;
-    Navigator.of(context).push<void>(
+    _paneNavigator.currentState!.push<void>(
       MaterialPageRoute<void>(
         builder: (_) => WorkspaceFileScreen(
           profile: entry.profile,
@@ -408,9 +483,9 @@ class _HomeShellState extends State<HomeShell> {
     BuildContext context,
     ScopedSession entry,
   ) async {
-    final deleted = await Navigator.of(
-      context,
-    ).push<bool>(_conversationRoute(context, entry));
+    final deleted = await _paneNavigator.currentState!.push<bool>(
+      _conversationRoute(context, entry),
+    );
     if (mounted && deleted != true) {
       await widget.sessionsViewModel.load(widget.profile);
     }
@@ -456,10 +531,24 @@ class _HomeShellState extends State<HomeShell> {
   }
 
   void _replaceConversation(BuildContext context, ScopedSession entry) {
-    Navigator.of(
-      context,
-    ).pushReplacement<bool, bool>(_conversationRoute(context, entry));
+    _paneNavigator.currentState!.pushReplacement<bool, bool>(
+      _conversationRoute(context, entry),
+    );
   }
+}
+
+/// Carries the outer shell's width decision through its nested routes.
+class _HomePaneLayout extends InheritedWidget {
+  const _HomePaneLayout({required this.desktop, required super.child});
+
+  final bool desktop;
+
+  static _HomePaneLayout of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<_HomePaneLayout>()!;
+
+  @override
+  bool updateShouldNotify(_HomePaneLayout oldWidget) =>
+      desktop != oldWidget.desktop;
 }
 
 class _EmptyMasterDetail extends StatelessWidget {

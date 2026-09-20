@@ -38,6 +38,60 @@ class OpenCodeHealthService {
 
   final OpenCodeTransport _transport;
 
+  /// Detects the protocol on this exact origin, without asking the user to
+  /// select an engine or forwarding credentials to any other endpoint.
+  Future<ServerProfile?> detectProfile(
+    ServerProfile source,
+    String? password,
+  ) async {
+    final response = await _transport.get(
+      source,
+      password,
+      '/prompt/capabilities',
+    );
+    if (response.statusCode == 401 || response.statusCode == 403) {
+      throw OpenCodeHttpFailure(response.statusCode);
+    }
+    final backends = response.statusCode == 200
+        ? _parseBackends(response.body)
+        : <AgentBackend, BackendCapabilities>{};
+    if (backends.isNotEmpty) {
+      final backend = backends.containsKey(source.backend)
+          ? source.backend
+          : backends.keys.first;
+      return ServerProfile(
+        origin: source.origin,
+        username: source.username,
+        backend: backend,
+        capabilities: backends[backend],
+      );
+    }
+    // A direct server may return its web shell for an unknown path. Only a
+    // genuine OpenCode health payload confirms this compatibility path.
+    final absentGateway =
+        response.statusCode == 404 ||
+        (response.statusCode == 200 &&
+            (response.headers['content-type'] ?? '').startsWith('text/html'));
+    if (!absentGateway) return null;
+    final direct = ServerProfile(
+      origin: source.origin,
+      username: source.username,
+    );
+    final health = await _transport.get(direct, password, '/global/health');
+    if (health.statusCode == 401 || health.statusCode == 403) {
+      throw OpenCodeHttpFailure(health.statusCode);
+    }
+    if (health.statusCode != 200) return null;
+    try {
+      final body = jsonDecode(health.body);
+      return body is Map<String, dynamic> && body['healthy'] == true
+          ? direct
+          : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
   Future<String?> redeemPairing(ServerProfile profile, String ticket) async {
     if (!profile.backend.isGateway) return null;
     final response = await _transport.post(
@@ -99,8 +153,12 @@ class OpenCodeHealthService {
       throw OpenCodeHttpFailure(response.statusCode);
     }
     if (response.statusCode != 200) return {};
+    return _parseBackends(response.body);
+  }
+
+  Map<AgentBackend, BackendCapabilities> _parseBackends(String payload) {
     try {
-      final body = jsonDecode(response.body);
+      final body = jsonDecode(payload);
       if (body is! Map<String, dynamic> || body['protocolVersion'] != 1) {
         return {};
       }

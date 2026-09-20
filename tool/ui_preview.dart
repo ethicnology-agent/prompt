@@ -15,13 +15,23 @@ import 'ui_preview/offline_platform.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  runApp(OfflinePreview());
+  runApp(
+    OfflinePreview(
+      executionChoices: const bool.fromEnvironment('PREVIEW_EXECUTION_CHOICES'),
+    ),
+  );
 }
 
 /// The real application and repositories, with in-memory external boundaries.
 class OfflinePreview extends StatelessWidget {
-  OfflinePreview({OfflinePreviewClient? client, super.key})
-    : client = client ?? OfflinePreviewClient();
+  OfflinePreview({
+    OfflinePreviewClient? client,
+    this.executionChoices = false,
+    super.key,
+  }) : client =
+           client ?? OfflinePreviewClient(executionChoices: executionChoices);
+
+  final bool executionChoices;
 
   final OfflinePreviewClient client;
   late final AppDependencies dependencies = AppDependencies.create(
@@ -50,8 +60,12 @@ class OfflinePreview extends StatelessWidget {
       color: const Color(0xff985500),
       child: PromptApp(
         dependencies: dependencies,
-        lastProfileLoader: () async =>
-            ServerProfile(origin: Uri.parse(OfflinePreviewClient.origin)),
+        lastProfileLoader: () async => ServerProfile(
+          origin: Uri.parse(OfflinePreviewClient.origin),
+          backend: executionChoices
+              ? AgentBackend.gatewayCodex
+              : AgentBackend.directOpenCode,
+        ),
       ),
     ),
   );

@@ -306,7 +306,12 @@ void main() {
           await tester.tap(find.text('One'));
           await tester.pumpAndSettle();
         }
-        await tester.tap(find.text('One').last);
+        await tester.tap(
+          find.descendant(
+            of: find.byType(ConversationScreen),
+            matching: find.text('One'),
+          ),
+        );
         await tester.pumpAndSettle();
         expect(find.text('Delete session'), findsOneWidget);
         await tester.tap(find.text('Delete session'));
@@ -316,7 +321,7 @@ void main() {
         await tester.pump();
         if (unrelatedRoute) {
           final navigator = tester.state<NavigatorState>(
-            find.byType(Navigator),
+            find.byType(Navigator).first,
           );
           unawaited(
             navigator.push<void>(
@@ -402,7 +407,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
       expect(find.byType(SessionsScreen), findsOneWidget);
-      expect(find.byType(Navigator), findsOneWidget);
+      expect(find.byType(Navigator), findsNWidgets(2));
       expect(find.byType(ConversationScreen), findsOneWidget);
       expect(
         tester
@@ -514,7 +519,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.text('Two').first);
       await tester.pump();
-      expect(find.byType(Navigator), findsOneWidget);
+      expect(find.byType(Navigator), findsNWidgets(2));
       expect(find.byType(SessionsScreen), findsOneWidget);
     },
   );

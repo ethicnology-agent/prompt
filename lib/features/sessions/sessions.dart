@@ -14,6 +14,7 @@ export 'domain/session_activity.dart';
 export 'data/sessions_repository.dart';
 export 'presentation/sessions_view_model.dart';
 export 'presentation/session_creation_view_model.dart';
+export 'presentation/session_creation_screen.dart';
 export 'domain/session_launch.dart';
 export 'data/opencode_sessions_service.dart';
 export 'presentation/sessions_screen.dart';

@@ -41,7 +41,8 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   bool _editedAddress = false;
   bool _profileLoadFailed = false;
   bool _scanningPairingCode = false;
-  bool _manualExpanded = false;
+  bool _manualExpanded = true;
+  bool _credentialsExpanded = false;
   bool _showNetworkHelp = false;
   String? _pairingMessage;
   String? _pairingTicket;
@@ -56,7 +57,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
   void initState() {
     super.initState();
     _restoreLastProfile();
-    if (widget.scanAutomatically) {
+    if (widget.scanAutomatically && _pairingCodeScanner.isAvailable) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _scanPairingCode();
       });
@@ -85,6 +86,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     _originController.text = profile.origin.toString();
     _usernameController.text = profile.username ?? '';
     _prefilledProfile = profile;
+    _credentialsExpanded = profile.username?.isNotEmpty ?? false;
     final backend = profile.backend;
     setState(() => _backend = backend);
     if (widget.restoreAutomatically) await widget.viewModel.restore(profile);
@@ -130,7 +132,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     } else if (password == null && _prefilledProfile?.id == profile.id) {
       await widget.viewModel.restore(profile);
     } else {
-      await widget.viewModel.connect(profile, password);
+      await widget.viewModel.connect(profile, password, detectBackend: true);
     }
   }
 
@@ -158,6 +160,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
             _prefilledProfile = null;
             setState(() {
               _backend = configuration.profile.backend;
+              _manualExpanded = _credentialsExpanded;
               _editedAddress = true;
               _profileLoadFailed = false;
               _pairingMessage =
@@ -190,6 +193,20 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
     _pairingTicket = null;
   }
 
+  void _toggleCredentials() {
+    widget.viewModel.reset();
+    setState(() {
+      _credentialsExpanded = !_credentialsExpanded;
+      if (!_credentialsExpanded) {
+        _usernameController.clear();
+        _passwordController.clear();
+        _prefilledProfile = null;
+        _pairingMessage = null;
+        _markManualEdit();
+      }
+    });
+  }
+
   String? _validateOrigin(String? input) {
     final origin = Uri.tryParse(input?.trim() ?? '');
     if (origin == null || origin.host.isEmpty) {
@@ -199,7 +216,7 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
       return 'Web browsers require HTTPS, even through WireGuard or Tailscale.';
     }
     if (!ConnectionOriginPolicy.supports(origin)) {
-      return 'HTTP is only permitted for a private WireGuard or Tailscale address.';
+      return 'Use a private IP address, not a public address or hostname.';
     }
     return null;
   }
@@ -244,8 +261,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                     }
 
                     final checking = state is ConnectionChecking;
+                    final canScan = _pairingCodeScanner.isAvailable;
                     final showDetails =
-                        _manualExpanded || _prefilledProfile != null;
+                        !canScan ||
+                        _manualExpanded ||
+                        _prefilledProfile != null;
                     final failure = state is ConnectionError
                         ? state.failure
                         : null;
@@ -270,25 +290,14 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'Scan the Prompt QR code displayed on your computer.',
+                              'Enter the address of your private server to connect.',
                               style: theme.textTheme.bodyLarge,
                               textAlign: TextAlign.center,
                             ),
                             const SizedBox(height: 24),
-                            AppButton(
-                              label: 'Scan pairing QR',
-                              icon: Icons.qr_code_scanner,
-                              variant: showDetails || _pairingTicket != null
-                                  ? AppButtonVariant.secondary
-                                  : AppButtonVariant.primary,
-                              busy: _scanningPairingCode,
-                              onPressed: checking || _scanningPairingCode
-                                  ? null
-                                  : _scanPairingCode,
-                            ),
                             const SizedBox(height: 8),
                             Text(
-                              'Your computer and phone must already be on the same private network.',
+                              'This device must be able to reach your server through your local network or private VPN.',
                               style: theme.textTheme.bodySmall,
                               textAlign: TextAlign.center,
                             ),
@@ -314,14 +323,15 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               ),
                             ),
                             if (_showNetworkHelp)
-                              const Padding(
-                                padding: EdgeInsets.symmetric(vertical: 12),
+                              Padding(
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 12,
+                                ),
                                 child: Text(
-                                  '1. Connect both devices to your private network.\n'
-                                  'Tailscale (including Headscale) or WireGuard works; no VPN choice is needed in Prompt.\n\n'
-                                  '2. Display a pairing QR from the Prompt gateway on your computer.\n\n'
-                                  '3. Scan it here, check the address, then connect.\n\n'
-                                  'The QR authorizes Prompt. It does not set up your VPN.',
+                                  '1. Connect this device to your private network, such as Tailscale (including Headscale) or WireGuard.\n\n'
+                                  '2. Enter your machine’s private server address, then connect. No extra login is needed when your server authorizes your network identity.\n\n'
+                                  '3. Choose an available engine when starting a session.\n\n'
+                                  'Other servers may require credentials or a pairing QR. Prompt does not set up your VPN or expose your server to the internet.',
                                 ),
                               ),
                             if (_pairingTicket != null && !showDetails) ...[
@@ -332,7 +342,6 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               ),
                               const SizedBox(height: 8),
                               Text(_originController.text),
-                              Text(_backend.label),
                               const SizedBox(height: 8),
                               const Text(
                                 'Check that this is your computer before connecting.',
@@ -352,37 +361,11 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                               ),
                             if (showDetails) ...[
                               const SizedBox(height: 24),
-                              ChoiceField<AgentBackend>(
-                                label: 'Agent connection',
-                                selected: _backend,
-                                scopeKey: widget.viewModel,
-                                options: AgentBackend.values
-                                    .map(
-                                      (backend) => InlineSelectionOption(
-                                        value: backend,
-                                        label: backend.label,
-                                      ),
-                                    )
-                                    .toList(),
-                                onSelected: checking
-                                    ? null
-                                    : (backend) {
-                                        setState(() {
-                                          _backend = backend;
-                                          _markManualEdit();
-                                          if (backend.isGateway &&
-                                              _usernameController
-                                                  .text
-                                                  .isEmpty) {
-                                            _usernameController.text = 'prompt';
-                                          }
-                                        });
-                                      },
-                              ),
-                              const SizedBox(height: 16),
                               AppTextFormField(
                                 label: 'Private server address',
-                                hint: 'http://10.0.0.1:4096',
+                                hint: kIsWeb
+                                    ? 'https://10.0.0.1:4096'
+                                    : 'http://10.0.0.1:4096',
                                 controller: _originController,
                                 enabled: !checking,
                                 autofocus: false,
@@ -394,47 +377,75 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                 validator: _validateOrigin,
                               ),
                               const SizedBox(height: 16),
-                              AppTextFormField(
-                                label: 'Username (optional)',
-                                controller: _usernameController,
-                                enabled: !checking,
-                                autocorrect: false,
-                                textInputAction: TextInputAction.next,
-                                autofillHints: const [AutofillHints.username],
-                                onChanged: (_) => _markManualEdit(),
+                              AppButton(
+                                label: _credentialsExpanded
+                                    ? 'Use network identity'
+                                    : 'Server requires credentials?',
+                                variant: AppButtonVariant.tertiary,
+                                onPressed: checking || _scanningPairingCode
+                                    ? null
+                                    : _toggleCredentials,
                               ),
-                              const SizedBox(height: 16),
-                              AppTextFormField(
-                                label: 'Password (optional)',
-                                controller: _passwordController,
-                                enabled: !checking,
-                                obscureText: true,
-                                enableSuggestions: false,
-                                autocorrect: false,
-                                autofillHints: const [AutofillHints.password],
-                                onChanged: (_) => _markManualEdit(),
-                                onSubmitted: (_) => _connect(),
-                              ),
-                              if (_prefilledProfile != null)
-                                const Padding(
-                                  padding: EdgeInsets.only(top: 8),
-                                  child: Text(
-                                    'Leave the password blank to use the saved credential.',
-                                  ),
+                              if (_credentialsExpanded) ...[
+                                const SizedBox(height: 16),
+                                AppTextFormField(
+                                  label: 'Username (optional)',
+                                  controller: _usernameController,
+                                  enabled: !checking,
+                                  autocorrect: false,
+                                  textInputAction: TextInputAction.next,
+                                  autofillHints: const [AutofillHints.username],
+                                  onChanged: (_) => _markManualEdit(),
                                 ),
+                                const SizedBox(height: 16),
+                                AppTextFormField(
+                                  label: 'Password (optional)',
+                                  controller: _passwordController,
+                                  enabled: !checking,
+                                  obscureText: true,
+                                  enableSuggestions: false,
+                                  autocorrect: false,
+                                  autofillHints: const [AutofillHints.password],
+                                  onChanged: (_) => _markManualEdit(),
+                                  onSubmitted: (_) => _connect(),
+                                ),
+                                const SizedBox(height: 12),
+                                const Text(
+                                  'Use the credentials supplied by your Prompt server, not your Claude, Codex or OpenCode account. A pairing QR fills these in for you.',
+                                ),
+                                if (_prefilledProfile != null)
+                                  const Padding(
+                                    padding: EdgeInsets.only(top: 8),
+                                    child: Text(
+                                      'Leave the password blank to use the saved credential.',
+                                    ),
+                                  ),
+                              ],
                               const SizedBox(height: 16),
                               Text(
-                                'HTTP is permitted only on a private WireGuard or Tailscale address. Credentials stay on this device.',
+                                kIsWeb
+                                    ? 'HTTPS with a browser-trusted certificate is required. Your server must allow this web app’s origin. Credentials belong to this browser profile.'
+                                    : 'HTTP is permitted only for a private IP address. Credentials stay on this device.',
                                 style: theme.textTheme.bodySmall,
                                 textAlign: TextAlign.center,
                               ),
                             ],
+                            const Padding(
+                              padding: EdgeInsets.only(top: 12),
+                              child: Text(
+                                'Connect once. Choose Claude, Codex or OpenCode when starting a session, according to what your server provides.',
+                                textAlign: TextAlign.center,
+                              ),
+                            ),
                             if (failure != null) ...[
                               const SizedBox(height: 16),
                               Semantics(
                                 liveRegion: true,
                                 child: Text(
-                                  failure.message,
+                                  failure == ConnectionFailure.unauthorized &&
+                                          !_credentialsExpanded
+                                      ? 'This server did not authorize the connection. Check your private-network access, or use server credentials if required.'
+                                      : failure.message,
                                   style: TextStyle(
                                     color: theme.colorScheme.error,
                                   ),
@@ -457,13 +468,23 @@ class _ConnectionScreenState extends State<ConnectionScreen> {
                                 checking) ...[
                               const SizedBox(height: 24),
                               AppButton(
-                                label: showDetails
-                                    ? 'Test private connection'
-                                    : 'Connect',
+                                label: 'Connect',
                                 busy: checking,
                                 onPressed: checking || _scanningPairingCode
                                     ? null
                                     : _connect,
+                              ),
+                            ],
+                            if (canScan) ...[
+                              const SizedBox(height: 12),
+                              AppButton(
+                                label: 'Scan pairing QR',
+                                icon: Icons.qr_code_scanner,
+                                variant: AppButtonVariant.tertiary,
+                                busy: _scanningPairingCode,
+                                onPressed: checking || _scanningPairingCode
+                                    ? null
+                                    : _scanPairingCode,
                               ),
                             ],
                           ],

@@ -17,6 +17,91 @@ import 'package:prompt/features/connection/presentation/connection_screen.dart';
 import 'package:prompt/features/connection/presentation/connection_view_model.dart';
 
 void main() {
+  testWidgets(
+    'address alone connects without credentials or engine selection',
+    (tester) async {
+      final health = _RecordingHealthService();
+      final viewModel = _viewModel(health: health);
+      addTearDown(viewModel.dispose);
+      ServerProfile? connected;
+      await _pumpScreen(
+        tester,
+        viewModel,
+        manual: false,
+        onConnected: (profile) => connected = profile,
+      );
+      expect(find.byType(TextFormField), findsOneWidget);
+      expect(find.byType(ChoiceField<AgentBackend>), findsNothing);
+      await tester.enterText(
+        find.byType(TextFormField),
+        'http://100.64.0.5:4096',
+      );
+      await tester.ensureVisible(find.text('Connect'));
+      await tester.tap(find.text('Connect'));
+      await tester.pumpAndSettle();
+      expect(health.detections, 1);
+      expect(health.calls, 1);
+      expect(health.password, isNull);
+      expect(connected?.username, isNull);
+      expect(connected?.origin.toString(), 'http://100.64.0.5:4096');
+    },
+  );
+
+  testWidgets('returning to network identity clears entered credentials', (
+    tester,
+  ) async {
+    final health = _RecordingHealthService();
+    final viewModel = _viewModel(health: health);
+    addTearDown(viewModel.dispose);
+    await _pumpScreen(tester, viewModel);
+    await tester.enterText(
+      find.byType(TextFormField).at(0),
+      'http://100.64.0.5:4096',
+    );
+    await tester.enterText(find.byType(TextFormField).at(1), 'old-user');
+    await tester.enterText(find.byType(TextFormField).at(2), 'old-password');
+    await tester.ensureVisible(find.text('Use network identity'));
+    await tester.tap(find.text('Use network identity'));
+    await tester.pumpAndSettle();
+    expect(find.byType(TextFormField), findsOneWidget);
+    await tester.ensureVisible(find.text('Connect'));
+    await tester.tap(find.text('Connect'));
+    await tester.pumpAndSettle();
+    expect(health.calls, 1);
+    expect(health.profile?.username, isNull);
+    expect(health.password, isNull);
+  });
+
+  testWidgets(
+    'unavailable scanner opens manual setup without a dead QR action',
+    (tester) async {
+      final health = _RecordingHealthService();
+      final viewModel = _viewModel(health: health);
+      addTearDown(viewModel.dispose);
+      await _pumpScreen(
+        tester,
+        viewModel,
+        pairingCodeScanner: const UnavailablePairingCodeScanner(),
+        scanAutomatically: true,
+        manual: false,
+      );
+      expect(find.text('Scan pairing QR'), findsNothing);
+      expect(find.byType(TextFormField), findsOneWidget);
+      expect(
+        find.text('Enter the address of your private server to connect.'),
+        findsOneWidget,
+      );
+      expect(find.textContaining('phone'), findsNothing);
+      expect(health.calls, 0);
+      await tester.tap(find.text('How do I connect?'));
+      await tester.pumpAndSettle();
+      expect(
+        find.textContaining('does not set up your VPN or expose your server'),
+        findsOneWidget,
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
   testWidgets('connection opened from settings has an explicit back action', (
     tester,
   ) async {
@@ -55,7 +140,7 @@ void main() {
   });
 
   testWidgets(
-    'first connection is QR-first without fields or automatic camera',
+    'first connection needs only the address without engine or automatic camera',
     (tester) async {
       final health = _RecordingHealthService();
       final viewModel = _viewModel(health: health);
@@ -68,18 +153,15 @@ void main() {
         manual: false,
       );
       expect(find.text('Connect a machine'), findsOneWidget);
-      expect(find.byType(TextFormField), findsNothing);
+      expect(find.byType(TextFormField), findsOneWidget);
       expect(find.byType(ChoiceField<AgentBackend>), findsNothing);
       expect(scanner.calls, 0);
       expect(health.calls, 0);
       await tester.tap(find.text('How do I connect?'));
       await tester.pumpAndSettle();
-      expect(
-        find.textContaining('It does not set up your VPN.'),
-        findsOneWidget,
-      );
-      await tester.ensureVisible(find.text('Enter details manually'));
-      await tester.tap(find.text('Enter details manually'));
+      expect(find.textContaining('No extra login is needed'), findsOneWidget);
+      await tester.ensureVisible(find.text('Server requires credentials?'));
+      await tester.tap(find.text('Server requires credentials?'));
       await tester.pumpAndSettle();
       expect(find.byType(TextFormField), findsNWidgets(3));
       expect(health.calls, 0);
@@ -114,6 +196,7 @@ void main() {
         pairingCodeScanner: scanner,
         manual: false,
       );
+      await tester.ensureVisible(find.text('Scan pairing QR'));
       await tester.tap(find.text('Scan pairing QR'));
       await tester.pumpAndSettle();
       expect(find.text('Machine found'), findsOneWidget);
@@ -144,6 +227,7 @@ void main() {
       profileLoader: () => saved.future,
       pairingCodeScanner: scanner,
     );
+    await tester.ensureVisible(find.text('Scan pairing QR'));
     await tester.tap(find.text('Scan pairing QR'));
     await tester.pump();
     saved.complete(_profile());
@@ -151,8 +235,8 @@ void main() {
     expect(health.calls, 0);
     scanner.complete(const PairingScanCancelled());
     await tester.pumpAndSettle();
-    expect(find.byType(TextFormField), findsNothing);
-    expect(find.text('Enter details manually'), findsOneWidget);
+    expect(find.byType(TextFormField), findsOneWidget);
+    expect(find.text('Server requires credentials?'), findsOneWidget);
     expect(health.calls, 0);
   });
 
@@ -179,6 +263,7 @@ void main() {
     );
     await _pumpScreen(tester, viewModel, pairingCodeScanner: scanner);
 
+    await tester.ensureVisible(find.text('Scan pairing QR'));
     await tester.tap(find.text('Scan pairing QR'));
     await tester.pumpAndSettle();
 
@@ -186,14 +271,7 @@ void main() {
     expect(health.calls, 0);
     expect(find.text('http://100.64.0.8:4097'), findsOneWidget);
     expect(find.text('prompt'), findsOneWidget);
-    expect(
-      tester
-          .widget<ChoiceField<AgentBackend>>(
-            find.byType(ChoiceField<AgentBackend>),
-          )
-          .selected,
-      AgentBackend.gatewayClaude,
-    );
+    expect(find.byType(ChoiceField<AgentBackend>), findsNothing);
     expect(
       find.text(
         'Pairing code loaded. Review the private server, then connect.',
@@ -201,10 +279,11 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.ensureVisible(find.text('Test private connection'));
-    await tester.tap(find.text('Test private connection'));
+    await tester.ensureVisible(find.text('Connect'));
+    await tester.tap(find.text('Connect'));
     await tester.pumpAndSettle();
     expect(health.calls, 1);
+    expect(health.profile?.backend, AgentBackend.gatewayClaude);
     expect(health.pairingTicket, 'abcdefghijklmnopqrstuvwxyzABCDEFGH123456789');
     expect(
       health.password,
@@ -226,6 +305,7 @@ void main() {
       ),
     );
 
+    await tester.ensureVisible(find.text('Scan pairing QR'));
     await tester.tap(find.text('Scan pairing QR'));
     await tester.pumpAndSettle();
 
@@ -258,6 +338,7 @@ void main() {
     addTearDown(viewModel.dispose);
     await _pumpScreen(tester, viewModel, pairingCodeScanner: scanner);
 
+    await tester.ensureVisible(find.text('Scan pairing QR'));
     await tester.tap(find.text('Scan pairing QR'));
     await tester.pump();
     await tester.tap(find.text('Scan pairing QR'), warnIfMissed: false);
@@ -390,7 +471,7 @@ void main() {
   }
 
   for (final width in [320.0, 393.0]) {
-    testWidgets('agent picker fits $width pixels at 200% text scale', (
+    testWidgets('machine connection fits $width pixels at 200% text scale', (
       tester,
     ) async {
       tester.view.physicalSize = Size(width, 852);
@@ -416,25 +497,15 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      await tester.ensureVisible(find.text('Enter details manually'));
-      await tester.tap(find.text('Enter details manually'));
+      await tester.ensureVisible(find.text('Server requires credentials?'));
+      await tester.tap(find.text('Server requires credentials?'));
       await tester.pumpAndSettle();
-      final picker = find.byType(ChoiceField<AgentBackend>);
-      await tester.ensureVisible(picker);
-      await tester.tap(picker);
-      await tester.pumpAndSettle();
-      expect(tester.takeException(), isNull);
-      final choice = find.text(AgentBackend.gatewayClaude.label).last;
-      await tester.ensureVisible(choice);
-      await tester.pumpAndSettle();
-      expect(choice.hitTestable(), findsOneWidget);
-      await tester.tap(choice);
+      expect(find.byType(ChoiceField<AgentBackend>), findsNothing);
+      expect(find.byType(TextFormField), findsNWidgets(3));
+      await tester.ensureVisible(find.text('Connect'));
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(
-        tester.widget<ChoiceField<AgentBackend>>(picker).selected,
-        AgentBackend.gatewayClaude,
-      );
+      expect(find.text('Connect').hitTestable(), findsOneWidget);
     });
   }
 
@@ -513,14 +584,12 @@ void main() {
       find.byType(TextFormField).first,
       'http://198.51.100.1:4096',
     );
-    await tester.ensureVisible(find.text('Test private connection'));
-    await tester.tap(find.text('Test private connection'));
+    await tester.ensureVisible(find.text('Connect'));
+    await tester.tap(find.text('Connect'));
     await tester.pump();
 
     expect(
-      find.text(
-        'HTTP is only permitted for a private WireGuard or Tailscale address.',
-      ),
+      find.text('Use a private IP address, not a public address or hostname.'),
       findsOneWidget,
     );
     expect(health.calls, 0);
@@ -548,11 +617,13 @@ void main() {
         find.byType(TextFormField).at(2),
         'temporary-input',
       );
-      await tester.ensureVisible(find.text('Test private connection'));
-      await tester.tap(find.text('Test private connection'));
+      await tester.ensureVisible(find.text('Connect'));
+      await tester.tap(find.text('Connect'));
       await tester.pumpAndSettle();
 
       expect(health.calls, 1);
+      expect(health.detections, 1);
+      expect(find.byType(ChoiceField<AgentBackend>), findsNothing);
       expect(health.profile?.origin, Uri.parse('http://10.0.0.8:4096'));
       expect(health.profile?.username, 'alice');
       expect(health.password, isNotNull);
@@ -573,8 +644,8 @@ void main() {
       find.byType(TextFormField).first,
       'http://10.0.0.7:4096',
     );
-    await tester.ensureVisible(find.text('Test private connection'));
-    await tester.tap(find.text('Test private connection'));
+    await tester.ensureVisible(find.text('Connect'));
+    await tester.tap(find.text('Connect'));
     await tester.pump();
 
     expect(find.byType(CircularProgressIndicator), findsOneWidget);
@@ -609,6 +680,12 @@ Future<void> _pumpScreen(
     ),
   );
   await tester.pump();
+  if (manual &&
+      find.text('Server requires credentials?').evaluate().isNotEmpty) {
+    await tester.ensureVisible(find.text('Server requires credentials?'));
+    await tester.tap(find.text('Server requires credentials?'));
+    await tester.pump();
+  }
   if (manual && find.text('Enter details manually').evaluate().isNotEmpty) {
     await tester.ensureVisible(find.text('Enter details manually'));
     await tester.tap(find.text('Enter details manually'));
@@ -619,6 +696,8 @@ Future<void> _pumpScreen(
 }
 
 class _PairingCodeScanner implements PairingCodeScanner {
+  @override
+  bool get isAvailable => true;
   _PairingCodeScanner(this.result);
 
   final PairingScanResult result;
@@ -632,6 +711,8 @@ class _PairingCodeScanner implements PairingCodeScanner {
 }
 
 class _PendingPairingCodeScanner implements PairingCodeScanner {
+  @override
+  bool get isAvailable => true;
   final _result = Completer<PairingScanResult>();
   int calls = 0;
 
@@ -670,11 +751,21 @@ class _RecordingHealthService extends OpenCodeHealthService {
   final bool _pending;
   final _completion = Completer<void>();
   int calls = 0;
+  int detections = 0;
   ServerProfile? profile;
   String? password;
   String? pairingTicket;
 
   factory _RecordingHealthService.pending() => _RecordingHealthService._(true);
+
+  @override
+  Future<ServerProfile?> detectProfile(
+    ServerProfile source,
+    String? password,
+  ) async {
+    detections++;
+    return source;
+  }
 
   @override
   Future<String?> redeemPairing(ServerProfile profile, String ticket) async {

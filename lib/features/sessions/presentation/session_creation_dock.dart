@@ -38,6 +38,7 @@ class SessionCreationDock extends StatefulWidget {
     required this.onLaunch,
     required this.onExpandedChanged,
     this.initialDirectory = '',
+    this.pageMode = false,
     super.key,
   });
 
@@ -48,6 +49,7 @@ class SessionCreationDock extends StatefulWidget {
   final ValueChanged<SessionLaunch> onLaunch;
   final ValueChanged<bool> onExpandedChanged;
   final String initialDirectory;
+  final bool pageMode;
 
   @override
   State<SessionCreationDock> createState() => _SessionCreationDockState();
@@ -72,6 +74,13 @@ class _SessionCreationDockState extends State<SessionCreationDock>
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    if (widget.pageMode) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        _expand(true);
+        widget.focusNode.requestFocus();
+      });
+    }
   }
 
   @override
@@ -274,25 +283,37 @@ class _SessionCreationDockState extends State<SessionCreationDock>
           .toList() ??
       [];
 
-  Widget _choicePanel(SessionCreationState state, double listHeight) {
+  Widget _choicePanel(
+    SessionCreationState state,
+    double listHeight, {
+    _InlineChoice? section,
+    bool embedded = false,
+  }) {
+    final kind = section ?? _choice;
     final openedProfile = _choiceProfileId;
     final openedBackend = _choiceBackend;
     final openedChoice = _choice;
     final openedDirectory = _choiceDirectory;
-    final effortIdentity = _effortModel;
+    final effortIdentity = embedded
+        ? (
+            providerId: state.options.modelProviderId ?? '',
+            modelId: state.options.modelId ?? '',
+          )
+        : _effortModel;
     bool canApply(SessionCreationState current) =>
         _choice == openedChoice &&
         current.profile?.id == openedProfile &&
         current.backend == openedBackend &&
         _choiceIsCurrent(current);
     final enabled = _choiceIsCurrent(state);
-    if (_choice == _InlineChoice.worktree) {
+    if (kind == _InlineChoice.worktree) {
       final loading = state.worktreePhase == WorktreePhase.loading;
       bool currentScope(SessionCreationState current) =>
           canApply(current) && current.directory == openedDirectory;
       return InlineSelectionPanel<Object>(
         title: 'Worktree',
         listHeight: listHeight,
+        embedded: embedded,
         options: [
           for (final tree in state.worktrees)
             InlineSelectionOption<Object>(
@@ -334,7 +355,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                   unawaited(widget.viewModel.refreshWorktrees());
                 } else if (choice == _WorktreeAction.create) {
                   if (!current.canCreateWorktree) return;
-                  _closeChoice();
+                  if (!embedded) _closeChoice();
                   unawaited(_createWorktree());
                 } else {
                   final tree = current.worktrees
@@ -342,15 +363,16 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                       .firstOrNull;
                   if (tree == null) return;
                   widget.viewModel.selectWorktree(tree);
-                  _closeChoice();
+                  if (!embedded) _closeChoice();
                 }
               },
       );
     }
-    if (_choice == _InlineChoice.machine) {
+    if (kind == _InlineChoice.machine) {
       return InlineSelectionPanel<String>(
         title: 'Machine',
         listHeight: listHeight,
+        embedded: embedded,
         options: [
           InlineSelectionOption(
             value: widget.profile.id,
@@ -363,14 +385,17 @@ class _SessionCreationDockState extends State<SessionCreationDock>
         onSelected: !enabled
             ? null
             : (_) {
-                if (canApply(widget.viewModel.value)) _closeChoice();
+                if (canApply(widget.viewModel.value) && !embedded) {
+                  _closeChoice();
+                }
               },
       );
     }
-    if (_choice == _InlineChoice.project) {
+    if (kind == _InlineChoice.project) {
       return InlineSelectionPanel<String>(
         title: 'Project',
         listHeight: listHeight,
+        embedded: embedded,
         options: [
           for (final project in state.projects)
             InlineSelectionOption(
@@ -402,14 +427,15 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                   (project) => project.directory == directory,
                 )) {
                   widget.viewModel.updateDirectory(directory);
-                  _closeChoice();
+                  if (!embedded) _closeChoice();
                 }
               },
       );
     }
-    if (_choice == _InlineChoice.engine) {
+    if (kind == _InlineChoice.engine) {
       return InlineSelectionPanel<AgentBackend>(
         listHeight: listHeight,
+        embedded: embedded,
         title: 'Coding engine',
         options: [
           for (final backend in state.backends)
@@ -424,15 +450,16 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                 if (!canApply(current) || !current.backends.contains(backend)) {
                   return;
                 }
-                _closeChoice();
+                if (!embedded) _closeChoice();
                 unawaited(widget.viewModel.selectBackend(backend));
               },
       );
     }
-    if (_choice == _InlineChoice.permission) {
+    if (kind == _InlineChoice.permission) {
       final modes = state.capabilities?.permissionModes ?? const [];
       return InlineSelectionPanel<String?>(
         listHeight: listHeight,
+        embedded: embedded,
         title: 'Permissions',
         options: [
           for (final mode in modes)
@@ -467,12 +494,12 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                     permissionModeId: permissionModeId,
                   ),
                 );
-                _closeChoice();
+                if (!embedded) _closeChoice();
               },
       );
     }
     final models = _models(state);
-    if (_choice == _InlineChoice.model) {
+    if (kind == _InlineChoice.model) {
       final selected = models
           .where(
             (model) =>
@@ -482,6 +509,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
           .firstOrNull;
       return InlineSelectionPanel<_ModelIdentity?>(
         listHeight: listHeight,
+        embedded: embedded,
         title: 'Model',
         options: [
           for (final model in models)
@@ -522,23 +550,25 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                         : null,
                   ),
                 );
-                _closeChoice();
+                if (embedded) setState(() => _choice = _InlineChoice.model);
+                if (!embedded) _closeChoice();
               },
       );
     }
     final model = models
         .where(
           (model) =>
-              model.providerId == _effortModel?.providerId &&
-              model.id == _effortModel?.modelId,
+              model.providerId == effortIdentity?.providerId &&
+              model.id == effortIdentity?.modelId,
         )
         .firstOrNull;
     final choices = model?.executionOptions?.reasoningEfforts ?? [];
     final sameModel =
-        state.options.modelProviderId == _effortModel?.providerId &&
-        state.options.modelId == _effortModel?.modelId;
+        state.options.modelProviderId == effortIdentity?.providerId &&
+        state.options.modelId == effortIdentity?.modelId;
     return InlineSelectionPanel<String?>(
       listHeight: listHeight,
+      embedded: embedded,
       title: 'Reasoning effort',
       options: [
         for (final choice in choices)
@@ -557,14 +587,15 @@ class _SessionCreationDockState extends State<SessionCreationDock>
               final currentModel = _models(current)
                   .where(
                     (model) =>
-                        model.providerId == _effortModel?.providerId &&
-                        model.id == _effortModel?.modelId,
+                        model.providerId == effortIdentity?.providerId &&
+                        model.id == effortIdentity?.modelId,
                   )
                   .firstOrNull;
               if (!canApply(current) ||
-                  _effortModel != effortIdentity ||
-                  current.options.modelProviderId != _effortModel?.providerId ||
-                  current.options.modelId != _effortModel?.modelId ||
+                  (!embedded && _effortModel != effortIdentity) ||
+                  current.options.modelProviderId !=
+                      effortIdentity?.providerId ||
+                  current.options.modelId != effortIdentity?.modelId ||
                   currentModel == null ||
                   (effort != null &&
                       !(currentModel.executionOptions?.reasoningEfforts.any(
@@ -582,7 +613,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
                   permissionModeId: current.options.permissionModeId,
                 ),
               );
-              _closeChoice();
+              if (!embedded) _closeChoice();
             },
     );
   }
@@ -724,6 +755,7 @@ class _SessionCreationDockState extends State<SessionCreationDock>
           draftController: widget.controller,
           focusNode: widget.focusNode,
           expanded: _expanded,
+          pageMode: widget.pageMode,
           enabled: state.phase != SessionCreationPhase.creating,
           readOnly: state.queuePending,
           attachments: AttachmentStrip(
@@ -756,8 +788,48 @@ class _SessionCreationDockState extends State<SessionCreationDock>
           composerWrapper: (composer) => AnchoredChoiceOverlay(
             open: _choice != null,
             onDismiss: _closeChoice,
-            popupBuilder: (_, height) =>
-                _choicePanel(state, (height - 56).clamp(0.0, 344.0)),
+            maxWidth: 800,
+            maxHeight: 520,
+            popupBuilder: (_, height) => LayoutBuilder(
+              builder: (context, constraints) {
+                final grouped =
+                    constraints.maxWidth >= 600 &&
+                    height >= 320 &&
+                    (_choice == _InlineChoice.permission ||
+                        _choice == _InlineChoice.model ||
+                        _choice == _InlineChoice.effort);
+                if (!grouped) {
+                  return _choicePanel(state, (height - 56).clamp(0.0, 344.0));
+                }
+                return SelectionPanelGroup(
+                  maxHeight: height,
+                  onClose: _closeChoice,
+                  topBuilder: permissionModes.isEmpty
+                      ? null
+                      : (h) => _choicePanel(
+                          state,
+                          (h - 40).clamp(0.0, 464.0),
+                          section: _InlineChoice.permission,
+                          embedded: true,
+                        ),
+                  primaryBuilder: (h) => _choicePanel(
+                    state,
+                    (h - 40).clamp(0.0, 464.0),
+                    section: _InlineChoice.model,
+                    embedded: true,
+                  ),
+                  secondaryBuilder:
+                      effortChoices == null || effortChoices.isEmpty
+                      ? null
+                      : (h) => _choicePanel(
+                          state,
+                          (h - 40).clamp(0.0, 464.0),
+                          section: _InlineChoice.effort,
+                          embedded: true,
+                        ),
+                );
+              },
+            ),
             child: composer,
           ),
           configuration: _showDirectory
@@ -766,72 +838,85 @@ class _SessionCreationDockState extends State<SessionCreationDock>
           hint: _expanded
               ? 'Ask ${_engineName(state.backend ?? widget.profile.backend)}'
               : 'Plan, ask, build…',
-          actions: LayoutBuilder(
-            builder: (context, constraints) {
-              final choices = <Widget>[
-                if (state.queuePending) ...[
-                  AppButton(
-                    label: 'Retry saving prompt',
-                    onPressed: state.canCreate ? _send : null,
-                  ),
-                  AppButton(
-                    label: 'Cancel preparation',
-                    onPressed: state.phase == SessionCreationPhase.creating
-                        ? null
-                        : () {
-                            widget.viewModel.cancelPreparation();
-                          },
-                  ),
-                ],
-                CompactChoiceButton(
-                  key: const ValueKey('creation-permission-picker'),
-                  label: permissionLabel,
-                  semanticLabel: permissionModes.isEmpty
-                      ? 'Permissions: $permissionLabel; fixed by connected engine'
-                      : 'Permissions: $permissionLabel',
-                  onPressed: controlsEnabled && permissionModes.isNotEmpty
-                      ? () => _permission(state)
-                      : null,
-                ),
-                CompactChoiceButton(
-                  label: selectedModel?.name ?? 'Select model',
-                  semanticLabel:
-                      'Model: ${selectedModel?.name ?? 'Select model'}',
-                  onPressed: controlsEnabled && state.capabilities != null
-                      ? () => _model(state)
-                      : null,
-                ),
-                if (selectedModel != null &&
-                    effortChoices != null &&
-                    effortChoices.isNotEmpty)
-                  Tooltip(
-                    message: 'Reasoning effort',
-                    child: CompactChoiceButton(
-                      key: const ValueKey('creation-reasoning-effort'),
-                      label:
-                          selectedEffort?.label ??
-                          (state.options.reasoningEffort == null
-                              ? 'Select effort'
-                              : 'Unavailable effort'),
-                      semanticLabel:
-                          'Reasoning effort: ${selectedEffort?.label ?? (state.options.reasoningEffort == null ? 'Select effort' : 'Unavailable effort')}',
-                      onPressed: controlsEnabled
-                          ? () => _effort(state, selectedModel)
-                          : null,
+          actions: ExecutionControls(
+            summary: [
+              permissionLabel,
+              selectedModel?.name ?? 'Select model',
+              if (selectedEffort != null) selectedEffort.label,
+            ].join(' · '),
+            onOpen:
+                controlsEnabled &&
+                    state.capabilities != null &&
+                    !state.queuePending
+                ? () => _model(state)
+                : null,
+            compact: LayoutBuilder(
+              builder: (context, constraints) {
+                final choices = <Widget>[
+                  if (state.queuePending) ...[
+                    AppButton(
+                      label: 'Retry saving prompt',
+                      onPressed: state.canCreate ? _send : null,
                     ),
-                  ),
-              ];
-              if (!state.queuePending &&
-                  MediaQuery.textScalerOf(context).scale(14) <= 18 &&
-                  constraints.maxWidth >= choices.length * 48) {
-                return Row(
-                  children: [
-                    for (final choice in choices) Expanded(child: choice),
+                    AppButton(
+                      label: 'Cancel preparation',
+                      onPressed: state.phase == SessionCreationPhase.creating
+                          ? null
+                          : () {
+                              widget.viewModel.cancelPreparation();
+                            },
+                    ),
                   ],
-                );
-              }
-              return Wrap(spacing: 4, children: choices);
-            },
+                  CompactChoiceButton(
+                    key: const ValueKey('creation-permission-picker'),
+                    label: permissionLabel,
+                    semanticLabel: permissionModes.isEmpty
+                        ? 'Permissions: $permissionLabel; fixed by connected engine'
+                        : 'Permissions: $permissionLabel',
+                    onPressed: controlsEnabled && permissionModes.isNotEmpty
+                        ? () => _permission(state)
+                        : null,
+                  ),
+                  CompactChoiceButton(
+                    label: selectedModel?.name ?? 'Select model',
+                    semanticLabel:
+                        'Model: ${selectedModel?.name ?? 'Select model'}',
+                    onPressed: controlsEnabled && state.capabilities != null
+                        ? () => _model(state)
+                        : null,
+                  ),
+                  if (selectedModel != null &&
+                      effortChoices != null &&
+                      effortChoices.isNotEmpty)
+                    Tooltip(
+                      message: 'Reasoning effort',
+                      child: CompactChoiceButton(
+                        key: const ValueKey('creation-reasoning-effort'),
+                        label:
+                            selectedEffort?.label ??
+                            (state.options.reasoningEffort == null
+                                ? 'Select effort'
+                                : 'Unavailable effort'),
+                        semanticLabel:
+                            'Reasoning effort: ${selectedEffort?.label ?? (state.options.reasoningEffort == null ? 'Select effort' : 'Unavailable effort')}',
+                        onPressed: controlsEnabled
+                            ? () => _effort(state, selectedModel)
+                            : null,
+                      ),
+                    ),
+                ];
+                if (!state.queuePending &&
+                    MediaQuery.textScalerOf(context).scale(14) <= 18 &&
+                    constraints.maxWidth >= choices.length * 48) {
+                  return Row(
+                    children: [
+                      for (final choice in choices) Expanded(child: choice),
+                    ],
+                  );
+                }
+                return Wrap(spacing: 4, children: choices);
+              },
+            ),
           ),
         ),
       );

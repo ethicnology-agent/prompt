@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:prompt/core/security/credentials_store.dart';
+import 'package:prompt/core/async/result.dart';
 import 'package:prompt/data/remote/opencode_transport.dart';
 import 'package:prompt/features/connection/data/connection_repository.dart';
 import 'package:prompt/features/connection/data/opencode_health_service.dart';
@@ -17,6 +18,167 @@ void main() {
     origin: Uri(scheme: 'http', host: '10.80.0.1', port: 4096),
     username: 'prompt',
   );
+
+  test(
+    'one machine connection discovers all engines without a user choice',
+    () async {
+      final paths = <String>[];
+      final client = MockClient((request) async {
+        paths.add(request.url.path);
+        expect(request.url.origin, profile.origin.origin);
+        expect(request.followRedirects, isFalse);
+        expect(
+          request.headers['authorization'],
+          'Basic ${base64Encode(utf8.encode('prompt:device-password'))}',
+        );
+        if (request.url.path == '/prompt/capabilities') {
+          return http.Response(
+            jsonEncode({
+              'protocolVersion': 1,
+              'engines': {
+                for (final name in ['claude', 'codex', 'opencode'])
+                  name: {
+                    'available': true,
+                    'features': ['sessions', 'text', 'abort'],
+                  },
+              },
+            }),
+            200,
+          );
+        }
+        return http.Response('{"healthy":true}', 200);
+      });
+      addTearDown(client.close);
+      final credentials = _FakeCredentialsStore();
+      final profiles = _FakeServerProfileStore();
+      final repository = ConnectionRepository(
+        OpenCodeHealthService(OpenCodeTransport(client)),
+        credentials,
+        profiles,
+      );
+      final result = await repository.test(
+        profile,
+        'device-password',
+        detectBackend: true,
+      );
+      expect(result, isA<ConnectionSucceeded>());
+      final connected = (result as ConnectionSucceeded).profile!;
+      expect(connected.backend, AgentBackend.gatewayOpenCode);
+      expect(profiles.saved?.id, connected.id);
+      expect(credentials.savedId, connected.id);
+      final engines = await repository.availableBackends(connected);
+      expect(
+        (engines as Ok<List<AgentBackend>, ConnectionFailure>).value.toSet(),
+        {
+          AgentBackend.gatewayClaude,
+          AgentBackend.gatewayCodex,
+          AgentBackend.gatewayOpenCode,
+        },
+      );
+      final selected = await repository.prepareBackend(
+        connected,
+        AgentBackend.gatewayCodex,
+      );
+      expect(
+        (selected as ConnectionSucceeded).profile?.backend,
+        AgentBackend.gatewayCodex,
+      );
+      expect(paths, contains('/prompt/codex/global/health'));
+      expect(paths, isNot(contains('/global/health')));
+      expect(profiles.saved?.id, connected.id);
+    },
+  );
+
+  for (final status in [404, 200]) {
+    test(
+      'detects a direct server after ${status == 404 ? 'missing route' : 'web shell'}',
+      () async {
+        final client = MockClient((request) async {
+          if (request.url.path == '/prompt/capabilities') {
+            return http.Response(
+              '<html></html>',
+              status,
+              headers: {'content-type': 'text/html'},
+            );
+          }
+          expect(request.url.path, '/global/health');
+          return http.Response('{"healthy":true}', 200);
+        });
+        addTearDown(client.close);
+        final repository = ConnectionRepository(
+          OpenCodeHealthService(OpenCodeTransport(client)),
+          _FakeCredentialsStore(),
+          _FakeServerProfileStore(),
+        );
+        final result = await repository.test(
+          profile,
+          null,
+          detectBackend: true,
+        );
+        expect(
+          (result as ConnectionSucceeded).profile?.backend,
+          AgentBackend.directOpenCode,
+        );
+      },
+    );
+  }
+
+  for (final status in [401, 403, 302, 500, 200]) {
+    test(
+      'discovery fails closed on status $status or invalid capabilities',
+      () async {
+        var calls = 0;
+        final client = MockClient((request) async {
+          calls++;
+          expect(request.url.path, '/prompt/capabilities');
+          return http.Response('{"protocolVersion":2,"engines":{}}', status);
+        });
+        addTearDown(client.close);
+        final credentials = _FakeCredentialsStore();
+        final profiles = _FakeServerProfileStore();
+        final repository = ConnectionRepository(
+          OpenCodeHealthService(OpenCodeTransport(client)),
+          credentials,
+          profiles,
+        );
+        final result = await repository.test(
+          profile,
+          'not-saved',
+          detectBackend: true,
+        );
+        expect(result, isA<ConnectionFailed>());
+        expect(
+          (result as ConnectionFailed).failure,
+          status == 401 || status == 403
+              ? ConnectionFailure.unauthorized
+              : ConnectionFailure.unsupportedBackend,
+        );
+        expect(calls, 1);
+        expect(credentials.password, isNull);
+        expect(profiles.saved, isNull);
+      },
+    );
+  }
+
+  test('an HTML server is not accepted as a healthy direct server', () async {
+    final client = MockClient(
+      (_) async => http.Response(
+        '<html></html>',
+        200,
+        headers: {'content-type': 'text/html'},
+      ),
+    );
+    addTearDown(client.close);
+    final repository = ConnectionRepository(
+      OpenCodeHealthService(OpenCodeTransport(client)),
+      _FakeCredentialsStore(),
+      _FakeServerProfileStore(),
+    );
+    expect(
+      await repository.test(profile, null, detectBackend: true),
+      isA<ConnectionFailed>(),
+    );
+  });
 
   test(
     'redeems a pairing ticket before authenticating and saving device credential',
@@ -197,6 +359,7 @@ void main() {
 
 class _FakeCredentialsStore implements CredentialsStore {
   String? password;
+  String? savedId;
 
   @override
   Future<void> clearPassword(String profileId) async {
@@ -209,6 +372,7 @@ class _FakeCredentialsStore implements CredentialsStore {
   @override
   Future<void> savePassword(String profileId, String? value) async {
     password = value;
+    savedId = profileId;
   }
 }
 
@@ -219,6 +383,7 @@ class _FailingReadCredentials extends _FakeCredentialsStore {
 }
 
 class _FakeServerProfileStore implements ServerProfileStore {
+  ServerProfile? saved;
   @override
   Future<ServerProfile?> load(String id) async => null;
 
@@ -226,5 +391,7 @@ class _FakeServerProfileStore implements ServerProfileStore {
   Future<ServerProfile?> loadLast() async => null;
 
   @override
-  Future<void> save(ServerProfile profile) async {}
+  Future<void> save(ServerProfile profile) async {
+    saved = profile;
+  }
 }

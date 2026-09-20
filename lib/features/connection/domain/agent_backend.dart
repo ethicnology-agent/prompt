@@ -13,8 +13,8 @@ enum AgentBackend {
   /// permission policies. Native CLI gateways still require explicit approval
   /// for uncertain tool use; OpenCode keeps its own server-side default.
   String get defaultPermissionLabel => switch (this) {
-    gatewayClaude || gatewayCodex => 'Auto',
-    directOpenCode || gatewayOpenCode => 'Default',
+    gatewayClaude || gatewayCodex => 'Ask',
+    directOpenCode || gatewayOpenCode => 'Managed',
   };
 
   static AgentBackend? fromStorage(String value) {

@@ -16,6 +16,7 @@ class NewSessionDock extends StatefulWidget {
     this.expanded,
     this.enabled = true,
     this.readOnly = false,
+    this.pageMode = false,
     this.attachments,
     this.onExpandedChanged,
     this.onChanged,
@@ -35,6 +36,7 @@ class NewSessionDock extends StatefulWidget {
   final bool? expanded;
   final bool enabled;
   final bool readOnly;
+  final bool pageMode;
   final Widget? attachments;
   final ValueChanged<bool>? onExpandedChanged;
   final ValueChanged<String>? onChanged;
@@ -104,7 +106,7 @@ class _NewSessionDockState extends State<NewSessionDock> {
   Widget build(BuildContext context) {
     if (widget.draftController case final controller?) {
       return PopScope(
-        canPop: !_expanded,
+        canPop: widget.pageMode ? widget.onDismissChoice == null : !_expanded,
         onPopInvokedWithResult: (didPop, _) {
           if (!didPop && _expanded) {
             if (widget.onDismissChoice case final dismiss?) {
@@ -132,6 +134,7 @@ class _NewSessionDockState extends State<NewSessionDock> {
                 controller: controller,
                 focusNode: _focus,
                 expanded: _expanded,
+                pageMode: widget.pageMode,
                 enabled: widget.enabled,
                 readOnly: widget.readOnly,
                 attachments: widget.attachments,

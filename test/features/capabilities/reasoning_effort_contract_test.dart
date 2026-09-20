@@ -227,14 +227,15 @@ void main() {
     );
   });
 
-  test('permission policy fails closed outside native Codex', () async {
+  test('permission policy fails closed outside a native engine', () async {
     final client = MockClient((_) async => throw StateError('Must not send'));
     addTearDown(client.close);
     final service = OpenCodeChatService(OpenCodeTransport(client));
+    // A proxied OpenCode server owns its own permission configuration, so the
+    // gateway advertises no mode for it and the client must never send one.
     for (final backend in [
       AgentBackend.directOpenCode,
       AgentBackend.gatewayOpenCode,
-      AgentBackend.gatewayClaude,
     ]) {
       await expectLater(
         service.sendPromptAsync(

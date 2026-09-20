@@ -26,7 +26,7 @@ void main() {
     );
 
     expect(find.text('Connect a machine'), findsOneWidget);
-    expect(find.text('Scan a QR code from your computer'), findsOneWidget);
+    expect(find.text('Configure a private connection'), findsOneWidget);
     expect(scans, 0);
     await tester.tap(find.text('Connect a machine'));
     expect(scans, 1);

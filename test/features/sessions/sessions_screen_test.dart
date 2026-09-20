@@ -719,6 +719,7 @@ void main() {
       reason: 'working and retrying both sweep',
     );
     expect(rows.where((row) => row.faded).length, 1);
+    // Two sweeping rows, so two ShimmerText widgets and no more.
     expect(find.byType(ShimmerText), findsNWidgets(2));
     final labels = tester
         .widgetList<Semantics>(

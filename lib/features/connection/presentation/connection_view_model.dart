@@ -38,11 +38,19 @@ class ConnectionViewModel extends ValueNotifier<ConnectionUiState> {
   /// Invalidates pending screen/profile-loader callbacks as well as requests.
   int get operationGeneration => _operationGeneration;
 
-  Future<void> connect(ServerProfile profile, String? password) async {
+  Future<void> connect(
+    ServerProfile profile,
+    String? password, {
+    bool detectBackend = false,
+  }) async {
     if (_disposed || value is ConnectionChecking) return;
     final generation = ++_operationGeneration;
     value = const ConnectionChecking();
-    final result = await _repository.test(profile, password);
+    final result = await _repository.test(
+      profile,
+      password,
+      detectBackend: detectBackend,
+    );
     if (_disposed || generation != _operationGeneration) return;
 
     switch (result) {
