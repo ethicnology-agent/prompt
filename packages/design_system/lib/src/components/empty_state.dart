@@ -16,6 +16,7 @@ class EmptyState extends StatelessWidget {
     required this.title,
     required this.message,
     this.action,
+    this.error = false,
     super.key,
   });
 
@@ -30,6 +31,9 @@ class EmptyState extends StatelessWidget {
   /// The way out, when there is one.
   final Widget? action;
 
+  /// Whether the situation is a failure rather than simply nothing to show.
+  final bool error;
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -38,37 +42,43 @@ class EmptyState extends StatelessWidget {
     return SingleChildScrollView(
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Stretch would blow the glyph up to the column's width.
-            Center(
-              child: Icon(
-                icon,
-                size: 56,
-                color: theme.colorScheme.onSurfaceVariant,
+        child: ConstrainedBox(
+          // Three centred lines running the width of a tablet are hard to read.
+          constraints: const BoxConstraints(maxWidth: 420),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              // Stretch would blow the glyph up to the column's width.
+              Center(
+                child: Icon(
+                  icon,
+                  size: 56,
+                  color: error
+                      ? theme.colorScheme.error
+                      : theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
-            const SizedBox(height: 20),
-            Semantics(
-              header: true,
-              child: Text(
-                title,
+              const SizedBox(height: 20),
+              Semantics(
+                header: true,
+                child: Text(
+                  title,
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.headlineSmall?.copyWith(fontSize: 24),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                message,
                 textAlign: TextAlign.center,
-                style: theme.textTheme.headlineSmall?.copyWith(fontSize: 24),
+                style: theme.textTheme.bodyLarge?.copyWith(
+                  color: theme.colorScheme.onSurfaceVariant,
+                ),
               ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              message,
-              textAlign: TextAlign.center,
-              style: theme.textTheme.bodyLarge?.copyWith(
-                color: theme.colorScheme.onSurfaceVariant,
-              ),
-            ),
-            if (action case final way?) ...[const SizedBox(height: 24), way],
-          ],
+              if (action case final way?) ...[const SizedBox(height: 24), way],
+            ],
+          ),
         ),
       ),
     );

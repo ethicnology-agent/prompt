@@ -227,7 +227,11 @@ class _Ready extends StatelessWidget {
       SizedBox(
         height: 132,
         child: state.terminals.isEmpty
-            ? const Center(child: Text('No terminals in this directory.'))
+            ? const EmptyState(
+                icon: Icons.terminal_outlined,
+                title: 'No terminals here',
+                message: 'This directory has no terminal sessions yet.',
+              )
             : ListView.builder(
                 itemCount: state.terminals.length,
                 itemBuilder: (context, index) {

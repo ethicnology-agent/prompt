@@ -112,7 +112,14 @@ class _WorkspaceScreenState extends State<WorkspaceScreen> {
                       onOpen: (path) =>
                           _openFile(path, state.project.directory),
                     )
-                  : const Center(child: Text('Workspace is unavailable.')),
+                  : const EmptyState(
+                      icon: Icons.folder_off_outlined,
+                      title: 'Workspace is unavailable',
+                      message:
+                          'This server did not report a workspace for the '
+                          'session.',
+                      error: true,
+                    ),
             ),
           ),
         ),

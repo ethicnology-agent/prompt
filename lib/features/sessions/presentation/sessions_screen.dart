@@ -1571,41 +1571,15 @@ class _CenteredState extends StatelessWidget {
   final bool error;
 
   @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Center(
-      child: SingleChildScrollView(
-        padding: const EdgeInsets.all(32),
-        child: ConstrainedBox(
-          constraints: const BoxConstraints(maxWidth: 420),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(
-                icon,
-                size: 52,
-                color: error
-                    ? theme.colorScheme.error
-                    : theme.colorScheme.primary,
-              ),
-              const SizedBox(height: 18),
-              Text(title, style: theme.textTheme.headlineSmall),
-              const SizedBox(height: 8),
-              Text(
-                body,
-                textAlign: TextAlign.center,
-                style: theme.textTheme.bodyMedium,
-              ),
-              if (action.$2 != null) ...[
-                const SizedBox(height: 20),
-                AppButton(label: action.$1, onPressed: action.$2),
-              ],
-            ],
-          ),
-        ),
-      ),
-    );
-  }
+  Widget build(BuildContext context) => EmptyState(
+    icon: icon,
+    title: title,
+    message: body,
+    error: error,
+    action: action.$2 == null
+        ? null
+        : AppButton(label: action.$1, onPressed: action.$2),
+  );
 }
 
 String _projectLabel(OpenCodeProject project) {
