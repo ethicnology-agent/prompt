@@ -45,7 +45,10 @@ class SettingsScreen extends StatelessWidget {
               children: [
                 if (onScanPairing != null)
                   ListTile(
-                    leading: const Icon(Icons.qr_code_scanner_rounded),
+                    leading: const Icon(
+                      Icons.qr_code_scanner_rounded,
+                      color: SettingsGlyphTones.action,
+                    ),
                     title: const Text('Connect a machine'),
                     subtitle: const Text('Configure a private connection'),
                     trailing: const Icon(Icons.chevron_right),
@@ -61,13 +64,19 @@ class SettingsScreen extends StatelessWidget {
                   onTap: onOpenServer,
                 ),
                 const ListTile(
-                  leading: Icon(Icons.shield_outlined),
+                  leading: Icon(
+                    Icons.shield_outlined,
+                    color: SettingsGlyphTones.safe,
+                  ),
                   title: Text('Private connection'),
                   subtitle: Text('WireGuard or Tailscale · no public relay'),
                 ),
                 if (onOpenWorkspace != null)
                   ListTile(
-                    leading: const Icon(Icons.folder_open_outlined),
+                    leading: const Icon(
+                      Icons.folder_open_outlined,
+                      color: SettingsGlyphTones.action,
+                    ),
                     title: const Text('Browse workspace'),
                     trailing: const Icon(Icons.chevron_right),
                     onTap: onOpenWorkspace,
@@ -88,7 +97,10 @@ class SettingsScreen extends StatelessWidget {
                 ValueListenableBuilder<ThemeMode>(
                   valueListenable: themeViewModel,
                   builder: (context, mode, _) => ListTile(
-                    leading: const Icon(Icons.contrast_rounded),
+                    leading: const Icon(
+                      Icons.contrast_rounded,
+                      color: SettingsGlyphTones.action,
+                    ),
                     title: const Text('Appearance'),
                     subtitle: Text(appearanceLabel(mode)),
                     trailing: const Icon(Icons.chevron_right),
@@ -101,14 +113,20 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.mic_none_rounded),
+                  leading: const Icon(
+                    Icons.mic_none_rounded,
+                    color: SettingsGlyphTones.action,
+                  ),
                   title: const Text('Voice input'),
                   subtitle: const Text('Transcription stays on this device'),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: onOpenVoice,
                 ),
                 ListTile(
-                  leading: const Icon(Icons.notifications_none_rounded),
+                  leading: const Icon(
+                    Icons.notifications_none_rounded,
+                    color: SettingsGlyphTones.action,
+                  ),
                   title: const Text('Notifications'),
                   subtitle: const Text('Opt-in · no conversation content'),
                   trailing: const Icon(Icons.chevron_right),
@@ -131,7 +149,10 @@ class SettingsScreen extends StatelessWidget {
                   ),
                 ),
                 ListTile(
-                  leading: const Icon(Icons.logout_rounded),
+                  leading: const Icon(
+                    Icons.logout_rounded,
+                    color: SettingsGlyphTones.destructive,
+                  ),
                   title: const Text('Disconnect'),
                   subtitle: const Text(
                     'Disconnects this device. Tasks already running on the server continue.',

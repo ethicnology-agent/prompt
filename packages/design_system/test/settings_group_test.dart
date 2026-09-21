@@ -59,10 +59,13 @@ void main() {
             ? (foreground + 0.05) / (background + 0.05)
             : (background + 0.05) / (foreground + 0.05);
         expect(ratio, greaterThanOrEqualTo(4.5));
+        // The group sets only the neutral colour the trailing chevron takes;
+        // a row's leading glyph is coloured by what the row does, as in the
+        // reference, and says so at its own call site.
         for (final icon in [Icons.dns_outlined, Icons.contrast_rounded]) {
           expect(
             IconTheme.of(tester.element(find.byIcon(icon))).color,
-            theme.colorScheme.primary,
+            theme.colorScheme.onSurfaceVariant,
           );
         }
         final heading = tester.widget<Semantics>(

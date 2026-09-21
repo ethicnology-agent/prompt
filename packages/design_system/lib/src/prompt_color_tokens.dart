@@ -166,3 +166,28 @@ class PromptTokens extends ThemeExtension<PromptTokens> {
     );
   }
 }
+
+/// Glyph colours for grouped settings rows.
+///
+/// The reference colours a settings row's leading glyph by what the row does,
+/// which is what makes a long list scannable; painting them all in one brand
+/// colour, as Prompt did, removes the only cue. These are its own constants
+/// (`sources/theme.ts`), not new inventions: the blue it uses for primary
+/// actions and radios, the green for a healthy connection, the amber for a
+/// bypassed guard, the red for a destructive one.
+abstract final class SettingsGlyphTones {
+  /// Something to set up or open.
+  static const Color action = Color(0xFF007AFF);
+
+  /// Something protective that is currently in force.
+  static const Color safe = Color(0xFF34C759);
+
+  /// Something that relaxes a guard.
+  static const Color caution = Color(0xFFFF9500);
+
+  /// Something destructive.
+  static const Color destructive = Color(0xFFFF3B30);
+
+  /// Plain matter of fact. The reference's most common glyph colour.
+  static Color neutral(ColorScheme scheme) => scheme.onSurface;
+}

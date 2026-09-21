@@ -22,14 +22,19 @@ class SettingsGroup extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 12, bottom: 10),
+          // 12 here plus the page's own 16 puts the title at 28, where the
+          // reference puts it.
+          padding: const EdgeInsets.only(left: 12, top: 16, bottom: 8),
           child: Semantics(
             header: true,
             child: Text(
-              title,
-              style: theme.textTheme.bodySmall?.copyWith(
+              title.toUpperCase(),
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 14,
+                height: 20 / 14,
+                letterSpacing: 0.1,
+                fontWeight: FontWeight.w500,
                 color: scheme.onSurfaceVariant,
-                fontWeight: FontWeight.w400,
               ),
             ),
           ),
@@ -39,13 +44,15 @@ class SettingsGroup extends StatelessWidget {
               theme.extension<PromptTokens>()?.panel ??
               scheme.surfaceContainerLow,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
             side: BorderSide(color: scheme.outlineVariant, width: 0.5),
           ),
           clipBehavior: Clip.antiAlias,
           child: ListTileTheme(
             data: ListTileThemeData(
-              iconColor: scheme.primary,
+              // Drives the trailing chevron, which the reference keeps in its
+              // secondary text colour. A row's own glyph sets its own colour.
+              iconColor: scheme.onSurfaceVariant,
               textColor: scheme.onSurface,
               contentPadding: const EdgeInsets.symmetric(
                 horizontal: 16,
@@ -60,8 +67,8 @@ class SettingsGroup extends StatelessWidget {
             ),
             child: ExpansionTileTheme(
               data: ExpansionTileThemeData(
-                iconColor: scheme.primary,
-                collapsedIconColor: scheme.primary,
+                iconColor: scheme.onSurfaceVariant,
+                collapsedIconColor: scheme.onSurfaceVariant,
                 textColor: scheme.onSurface,
                 collapsedTextColor: scheme.onSurface,
                 tilePadding: const EdgeInsets.symmetric(
