@@ -539,7 +539,9 @@ class _SessionsScreenState extends State<SessionsScreen> {
             ),
           if (visibleSessions.isEmpty)
             SliverFillRemaining(
-              hasScrollBody: false,
+              // The empty state scrolls itself when enlarged text outgrows the
+              // viewport, so the sliver must not ask it for an intrinsic
+              // height — `LayoutBuilder` cannot answer that.
               child: _NoMatchingSessions(
                 hasQuery: query.isNotEmpty || selectedProjectId != null,
                 onClear: () {
