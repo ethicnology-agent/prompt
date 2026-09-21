@@ -183,4 +183,63 @@ void main() {
     );
     semantics.dispose();
   });
+
+  for (final bounded in [true, false]) {
+    Widget scaled({required double scale}) => MaterialApp(
+      theme: promptTheme(),
+      home: MediaQuery(
+        data: MediaQueryData(textScaler: TextScaler.linear(scale)),
+        child: Scaffold(
+          // A toolbar lays its title out without bounding the height; a panel
+          // bounds it. Both paths have to hold, and only the unbounded one
+          // reproduced the overflow seen on a device at 200% text.
+          body: SizedBox(
+            width: 360,
+            height: bounded ? 64 : null,
+            child: bounded
+                ? Align(
+                    alignment: Alignment.topLeft,
+                    child: NavigationTitleButton(
+                      label: 'Build a private coding companion',
+                      semanticLabel: 'Open session details',
+                      subtitle: 'prompt +84 -12',
+                      onPressed: () {},
+                    ),
+                  )
+                : SingleChildScrollView(
+                    child: NavigationTitleButton(
+                      label: 'Build a private coding companion',
+                      semanticLabel: 'Open session details',
+                      subtitle: 'prompt +84 -12',
+                      onPressed: () {},
+                    ),
+                  ),
+          ),
+        ),
+      ),
+    );
+
+    testWidgets('the subtitle survives ordinary text, bounded=$bounded', (
+      tester,
+    ) async {
+      await tester.pumpWidget(scaled(scale: 1));
+      expect(tester.takeException(), isNull);
+      expect(find.text('prompt +84 -12'), findsOneWidget);
+    });
+
+    testWidgets('the subtitle gives way at 200% text, bounded=$bounded', (
+      tester,
+    ) async {
+      await tester.pumpWidget(scaled(scale: 2));
+      // Nothing overflows, in either layout. An unbounded height used to make
+      // the guard pass and let a second line run past a 64 toolbar.
+      expect(tester.takeException(), isNull);
+      expect(find.text('prompt +84 -12'), findsNothing);
+      // The detail stays reachable by tooltip and by voice.
+      expect(
+        tester.widget<Tooltip>(find.byType(Tooltip)).message,
+        contains('prompt +84 -12'),
+      );
+    });
+  }
 }
