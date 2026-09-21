@@ -41,16 +41,52 @@ class BasicMarkdownText extends StatelessWidget {
         header: true,
         child: _selectableText(context, text, _headingStyle(theme, level)),
       ),
-      _CodeBlock(:final text) => Semantics(
+      _CodeBlock(:final text, :final language) => Semantics(
         label: 'Code block',
+        // The scroll view the code sits in owns a node of its own, which
+        // swallowed a bare annotation. Keep the label on a container and let
+        // the code keep its own node so it is still readable aloud.
+        container: true,
+        explicitChildNodes: true,
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          color: theme.colorScheme.surfaceContainerHigh,
-          child: SelectableText(
-            text,
-            style: style?.copyWith(fontFamily: promptMonoFamily),
-            onTap: onBlockTap == null ? null : () => onBlockTap!(text),
+          decoration: BoxDecoration(
+            color:
+                theme.extension<PromptTokens>()?.surfaceHighest ??
+                theme.colorScheme.surfaceContainerHigh,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (language != null)
+                Padding(
+                  padding: const EdgeInsets.only(top: 8, left: 16, right: 16),
+                  child: Text(
+                    language,
+                    style: theme.textTheme.bodySmall?.copyWith(
+                      fontFamily: promptMonoFamily,
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              // Code is not prose: it wraps badly and reads worse. The
+              // reference scrolls it sideways instead, so a long line stays on
+              // one line.
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.all(16),
+                child: SelectableText(
+                  text,
+                  style: style?.copyWith(
+                    fontFamily: promptMonoFamily,
+                    fontSize: 14,
+                  ),
+                  onTap: onBlockTap == null ? null : () => onBlockTap!(text),
+                ),
+              ),
+            ],
           ),
         ),
       ),
@@ -242,9 +278,11 @@ class _HeadingBlock extends _MarkdownBlock {
 }
 
 class _CodeBlock extends _MarkdownBlock {
-  const _CodeBlock(this.text);
-
+  const _CodeBlock(this.text, [this.language]);
   final String text;
+
+  /// The fence's info string, when it carried one.
+  final String? language;
 }
 
 /// One line of a bulleted or numbered list.
@@ -414,6 +452,7 @@ List<_MarkdownBlock> _parseBlocks(String source) {
   final lines = source.split('\n');
   final text = <String>[];
   List<String>? code;
+  String? language;
 
   void flushText() {
     // A block that follows a list or a table starts with the blank line that
@@ -438,9 +477,14 @@ List<_MarkdownBlock> _parseBlocks(String source) {
       if (code == null) {
         flushText();
         code = <String>[];
+        // Only the first word of the info string is the language; the rest is
+        // metadata the reference does not print either.
+        final info = line.trimLeft().substring(3).trim();
+        language = info.isEmpty ? null : info.split(RegExp(r'\s+')).first;
       } else {
-        blocks.add(_CodeBlock(code.join('\n')));
+        blocks.add(_CodeBlock(code.join('\n'), language));
         code = null;
+        language = null;
       }
       continue;
     }

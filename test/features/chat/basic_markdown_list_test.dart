@@ -48,10 +48,41 @@ void main() {
     expect(find.text('•'), findsNothing);
   });
 
+  codeBlockTests();
+
   testWidgets('a list ends where the prose resumes', (tester) async {
     await tester.pumpWidget(host('- one\n\nAfterwards'));
     expect(find.text('one'), findsOneWidget);
     expect(find.text('Afterwards'), findsOneWidget);
     expect(find.text('•'), findsOneWidget);
+  });
+}
+
+void codeBlockTests() {
+  testWidgets('a fenced block prints its language and keeps code on one line', (
+    tester,
+  ) async {
+    await tester.pumpWidget(host('```python\ndef greet(name):\n    pass\n```'));
+    expect(find.text('python'), findsOneWidget);
+    expect(find.byType(SingleChildScrollView), findsWidgets);
+    final label = tester.widget<Text>(find.text('python'));
+    expect(label.style!.fontSize, 12);
+  });
+
+  testWidgets('a fence without a language prints no label', (tester) async {
+    await tester.pumpWidget(host('```\nplain\n```'));
+    expect(find.text('plain'), findsOneWidget);
+    // Nothing above the code but the code itself.
+    expect(find.byType(Text), findsNWidgets(0));
+  });
+
+  testWidgets('only the first word of the info string is the language', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      host('```dart title=example.dart\nvar a = 1;\n```'),
+    );
+    expect(find.text('dart'), findsOneWidget);
+    expect(find.text('dart title=example.dart'), findsNothing);
   });
 }
