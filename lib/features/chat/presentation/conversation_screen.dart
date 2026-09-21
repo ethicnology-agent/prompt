@@ -1136,6 +1136,7 @@ class _ConversationScreenState extends State<ConversationScreen>
             // the model picker out of reach at phone widths. Enlarged text is
             // the one case that still wraps, because the labels stop fitting.
             compact: _ComposerChoiceRow(
+              flexibleKey: const ValueKey('composer-model-picker'),
               children: [
                 CompactChoiceButton(
                   key: const ValueKey('composer-permission-picker'),
@@ -2052,7 +2053,14 @@ class _ConversationScreenState extends State<ConversationScreen>
           },
           child: Scaffold(
             appBar: AppBar(
-              toolbarHeight: isPhone ? 56 : 68,
+              // The reference gives every header 64, session and list alike,
+              // measured on the device at 168 px, density 420. A viewport short
+              // enough that 64 would swallow it — a split-screen sliver, or a
+              // keyboard over a small phone — gives the chrome back to the
+              // conversation, so a pending approval stays reachable.
+              toolbarHeight: isPhone
+                  ? (MediaQuery.sizeOf(context).height < 400 ? 56 : 64)
+                  : 68,
               titleSpacing: isPhone ? 8 : 4,
               title: ValueListenableBuilder<OpenCodeSession?>(
                 valueListenable: widget.viewModel.sessionMetadata,
@@ -2453,9 +2461,15 @@ class _DesktopResizeHandle extends StatelessWidget {
 /// The execution choices under the composer: one line normally, wrapped when
 /// the text scale makes a single line unreadable.
 class _ComposerChoiceRow extends StatelessWidget {
-  const _ComposerChoiceRow({required this.children});
+  const _ComposerChoiceRow({required this.children, this.flexibleKey});
 
   final List<Widget> children;
+
+  /// The control given first claim on the width. The others still shrink when
+  /// there is no room: Prompt shows three inline choices where the reference
+  /// shows two, so on a narrow phone something has to give, and overflowing is
+  /// not an option.
+  final Key? flexibleKey;
 
   @override
   Widget build(BuildContext context) {
@@ -2471,7 +2485,11 @@ class _ComposerChoiceRow extends StatelessWidget {
       mainAxisAlignment: MainAxisAlignment.end,
       children: [
         for (final child in children)
-          Flexible(fit: FlexFit.loose, child: child),
+          Flexible(
+            fit: FlexFit.loose,
+            flex: flexibleKey != null && child.key == flexibleKey ? 2 : 1,
+            child: child,
+          ),
       ],
     );
   }

@@ -1740,7 +1740,8 @@ void main() {
         find.descendant(of: appBar, matching: find.byType(AppIconButton)),
         findsNothing,
       );
-      expect(tester.widget<AppBar>(appBar).toolbarHeight, 56);
+      // The reference gives every header 64, measured at 168 px, density 420.
+      expect(tester.widget<AppBar>(appBar).toolbarHeight, 64);
       await tester.tap(find.byTooltip('Session details and actions'));
       await tester.pumpAndSettle();
       expect(find.byType(SessionDetailsScreen), findsOneWidget);
