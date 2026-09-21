@@ -54,6 +54,37 @@ class BasicMarkdownText extends StatelessWidget {
           ),
         ),
       ),
+      _ListBlock(:final items) => Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          for (var index = 0; index < items.length; index++) ...[
+            if (index > 0) const SizedBox(height: 6),
+            Padding(
+              padding: EdgeInsetsDirectional.only(
+                start: items[index].depth * 16,
+              ),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 1),
+                    child: Text(
+                      items[index].number == null
+                          ? _bulletForDepth(items[index].depth)
+                          : '${items[index].number}.',
+                      style: style,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _selectableText(context, items[index].text, style),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
       _TableBlock(:final headers, :final alignments, :final rows) =>
         _MarkdownTable(
           headers: headers,
@@ -216,6 +247,23 @@ class _CodeBlock extends _MarkdownBlock {
   final String text;
 }
 
+/// One line of a bulleted or numbered list.
+class _ListItem {
+  const _ListItem({required this.depth, required this.text, this.number});
+
+  /// Nesting level, counted in pairs of leading spaces.
+  final int depth;
+  final String text;
+
+  /// Position in an ordered list, or null for a bullet.
+  final int? number;
+}
+
+class _ListBlock extends _MarkdownBlock {
+  const _ListBlock(this.items);
+  final List<_ListItem> items;
+}
+
 class _TableBlock extends _MarkdownBlock {
   const _TableBlock(this.headers, this.alignments, this.rows);
 
@@ -368,10 +416,20 @@ List<_MarkdownBlock> _parseBlocks(String source) {
   List<String>? code;
 
   void flushText() {
-    if (text.isNotEmpty) {
-      blocks.add(_TextBlock(text.join('\n')));
-      text.clear();
+    // A block that follows a list or a table starts with the blank line that
+    // ended it. Drop those, but only whole blank lines: trimming the text
+    // itself would eat a trailing space that belongs to the prose.
+    var start = 0;
+    var end = text.length;
+    while (start < end && text[start].trim().isEmpty) {
+      start++;
     }
+    while (end > start && text[end - 1].trim().isEmpty) {
+      end--;
+    }
+    final kept = text.sublist(start, end);
+    text.clear();
+    if (kept.isNotEmpty) blocks.add(_TextBlock(kept.join('\n')));
   }
 
   for (var lineIndex = 0; lineIndex < lines.length; lineIndex++) {
@@ -392,10 +450,15 @@ List<_MarkdownBlock> _parseBlocks(String source) {
     }
     final heading = RegExp(r'^(#{1,3})\s+(.+)$').firstMatch(line);
     final table = _parseTableAt(lines, lineIndex);
+    final list = _parseListAt(lines, lineIndex);
     if (table != null) {
       flushText();
       blocks.add(table.block);
       lineIndex = table.endIndex;
+    } else if (list != null) {
+      flushText();
+      blocks.add(list.block);
+      lineIndex = list.endIndex;
     } else if (heading != null) {
       flushText();
       blocks.add(_HeadingBlock(heading.group(2)!, heading.group(1)!.length));
@@ -524,3 +587,38 @@ final _httpSchemePattern = RegExp(r'https?://', caseSensitive: false);
 
 bool _startsWithHttpScheme(String text, int start) =>
     _httpSchemePattern.matchAsPrefix(text, start) != null;
+
+/// The reference cycles three glyphs by depth and stops at the third.
+String _bulletForDepth(int depth) =>
+    const ['\u2022', '\u25e6', '\u25aa'][depth.clamp(0, 2)];
+
+final _listItemPattern = RegExp(r'^(\s*)(?:([-*+])|(\d{1,9})[.)])\s+(.*)$');
+
+/// Gathers the run of list lines starting at [lineIndex], or null if there is
+/// none. A blank line ends the run, as does anything that is not an item.
+({int endIndex, _ListBlock block})? _parseListAt(
+  List<String> lines,
+  int lineIndex,
+) {
+  final items = <_ListItem>[];
+  var index = lineIndex;
+  while (index < lines.length) {
+    final match = _listItemPattern.firstMatch(lines[index]);
+    if (match == null) break;
+    final content = match.group(4)!;
+    if (content.trim().isEmpty) break;
+    final number = match.group(3);
+    items.add(
+      _ListItem(
+        // Two leading spaces make one level, the usual convention; deeper
+        // indents round down rather than inventing levels.
+        depth: match.group(1)!.length ~/ 2,
+        text: content,
+        number: number == null ? null : int.parse(number),
+      ),
+    );
+    index++;
+  }
+  if (items.isEmpty) return null;
+  return (endIndex: index - 1, block: _ListBlock(items));
+}
