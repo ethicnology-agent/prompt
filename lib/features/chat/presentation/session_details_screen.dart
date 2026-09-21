@@ -44,7 +44,16 @@ class SessionDetailsScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: SettingsGroup.pageColor(theme),
-      appBar: AppBar(title: const Text('Session details'), centerTitle: false),
+      // The reference titles this screen with the session itself, not with the
+      // word "details": you arrive here from one conversation among many.
+      appBar: AppBar(
+        title: Text(
+          session.title.isEmpty ? 'Session details' : session.title,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
+        centerTitle: false,
+      ),
       body: SafeArea(
         top: false,
         child: ListView(
@@ -62,30 +71,37 @@ class SessionDetailsScreen extends StatelessWidget {
                   if (onRename != null)
                     _Action(
                       icon: Icons.edit_outlined,
+                      description: 'Give this conversation a clearer name',
                       title: 'Rename session',
                       onTap: onRename!,
                     ),
                   if (onReview != null)
                     _Action(
                       icon: Icons.rate_review_outlined,
+                      description:
+                          'Read what this session changed, file by file',
                       title: 'Review diff',
                       onTap: onReview!,
                     ),
                   if (onRefresh != null)
                     _Action(
                       icon: Icons.refresh_rounded,
+                      description: 'Fetch the transcript again from the server',
                       title: 'Refresh transcript',
                       onTap: onRefresh!,
                     ),
                   if (onOpenArtifacts != null)
                     _Action(
                       icon: Icons.folder_open_outlined,
+                      description: 'Files and outputs this session produced',
                       title: 'Session artifacts',
                       onTap: onOpenArtifacts!,
                     ),
                   if (onFork != null)
                     _Action(
                       icon: Icons.fork_right_rounded,
+                      description:
+                          'Continue in a new session with the same context',
                       title: forkInProgress
                           ? 'Forking session…'
                           : 'Fork session',
@@ -95,6 +111,7 @@ class SessionDetailsScreen extends StatelessWidget {
                   if (onDelete != null)
                     _Action(
                       icon: Icons.delete_outline,
+                      description: 'Permanently remove this session',
                       title: 'Delete session',
                       onTap: onDelete!,
                       destructive: true,
@@ -224,6 +241,7 @@ class _Action extends StatelessWidget {
   const _Action({
     required this.icon,
     required this.title,
+    required this.description,
     required this.onTap,
     this.enabled = true,
     this.destructive = false,
@@ -231,6 +249,14 @@ class _Action extends StatelessWidget {
 
   final IconData icon;
   final String title;
+
+  /// What the action will do, in one line.
+  ///
+  /// The reference explains every row in its session menu rather than trusting
+  /// a two-word label — the difference between forking and duplicating from a
+  /// message is not something a title can carry.
+  final String description;
+
   final VoidCallback onTap;
   final bool enabled;
   final bool destructive;
@@ -242,6 +268,7 @@ class _Action extends StatelessWidget {
       color: destructive ? Theme.of(context).colorScheme.error : null,
     ),
     title: Text(title),
+    subtitle: Text(description),
     trailing: const Icon(Icons.chevron_right),
     enabled: enabled,
     onTap: enabled ? onTap : null,

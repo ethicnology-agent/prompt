@@ -133,7 +133,11 @@ class _DiagnosticsScreenState extends State<DiagnosticsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Server settings')),
+      // Grouped cards need the grey page behind them, or they are white on
+      // white. The other four grouped surfaces already set it; this one was
+      // missed.
+      backgroundColor: SettingsGroup.pageColor(Theme.of(context)),
+      appBar: AppBar(title: const Text('Server settings'), centerTitle: false),
       body: PromptAdaptiveBuilder(
         builder: (context, sizeClass) {
           return ValueListenableBuilder<DiagnosticsUiState>(
