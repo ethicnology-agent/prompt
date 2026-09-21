@@ -16,6 +16,8 @@ export 'src/components/attachment_thumbnail.dart';
 export 'src/components/attachment_image_viewer.dart';
 export 'src/components/composer_action_bar.dart';
 export 'src/components/composer_surface.dart';
+export 'src/components/empty_state.dart';
+export 'src/components/notice_box.dart';
 export 'src/components/content_column.dart';
 export 'src/components/compact_choice_button.dart';
 export 'src/components/choice_field.dart';

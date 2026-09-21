@@ -84,7 +84,7 @@ void main() {
     await tester.pump();
     expect(find.text('A'), findsNothing);
     expect(
-      find.text('Choose a server directory to list terminals.'),
+      find.text('Choose a server directory to list its terminals.'),
       findsOneWidget,
     );
     await tester.pumpWidget(const SizedBox.shrink());

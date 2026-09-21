@@ -91,8 +91,13 @@ class _TerminalScreenState extends State<TerminalScreen>
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  const Text(
-                    'Experimental: commands run on the selected server directory. Output stays only in memory and is limited to 100 KiB.',
+                  // A caveat about an experimental surface that runs commands
+                  // on someone's machine should not read like body copy.
+                  const NoticeBox(
+                    message:
+                        'Experimental: commands run on the selected server '
+                        'directory. Output stays only in memory and is limited '
+                        'to 100 KiB.',
                   ),
                   const SizedBox(height: 12),
                   AppTextField(
@@ -108,10 +113,11 @@ class _TerminalScreenState extends State<TerminalScreen>
                     child: ValueListenableBuilder<TerminalUiState>(
                       valueListenable: widget.viewModel,
                       builder: (context, state, _) => switch (state) {
-                        TerminalIdle() => const Center(
-                          child: Text(
-                            'Choose a server directory to list terminals.',
-                          ),
+                        TerminalIdle() => const EmptyState(
+                          icon: Icons.terminal_outlined,
+                          title: 'No directory chosen',
+                          message:
+                              'Choose a server directory to list its terminals.',
                         ),
                         TerminalLoading() => const Center(
                           child: CircularProgressIndicator(),
