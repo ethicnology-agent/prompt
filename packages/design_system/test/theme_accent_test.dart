@@ -40,7 +40,7 @@ void main() {
         dark ? const Color(0xff111111) : Colors.white,
       );
       final tokens = theme.extension<PromptTokens>()!;
-      expect(tokens.panel, dark ? const Color(0xff161618) : Colors.white);
+      expect(tokens.panel, dark ? const Color(0xff161616) : Colors.white);
       expect(
         tokens.userMessageBackground,
         dark ? const Color(0xff242426) : const Color(0xfff0eee6),

@@ -81,7 +81,8 @@ ThemeData _theme(Brightness brightness) {
     borderSide: BorderSide(color: scheme.outlineVariant),
   );
   final tokens = PromptTokens(
-    panel: dark ? const Color(0xff161618) : const Color(0xffffffff),
+    // The reference's dark card, sampled at #161616 on its settings page.
+    panel: dark ? const Color(0xff161616) : const Color(0xffffffff),
     panelRaised: dark ? const Color(0xff242426) : const Color(0xfff5f5f5),
     subtle: dark ? const Color(0xffaaaaaf) : const Color(0xff626267),
     success: dark ? const Color(0xff77d6b7) : const Color(0xff13795b),
@@ -102,8 +103,10 @@ ThemeData _theme(Brightness brightness) {
     groupedBackground: dark ? const Color(0xff000000) : const Color(0xfff5f5f5),
     inputBackground: dark ? const Color(0xff1e1e1e) : const Color(0xfff5f5f5),
     inputPlaceholder: dark ? const Color(0xff8e8e93) : const Color(0xff999999),
-    buttonPrimaryBackground: const Color(0xff000000),
-    buttonPrimaryTint: const Color(0xffffffff),
+    buttonPrimaryBackground: dark
+        ? const Color(0xfff5f5f5)
+        : const Color(0xff000000),
+    buttonPrimaryTint: dark ? const Color(0xff111111) : const Color(0xffffffff),
     buttonPrimaryDisabled: const Color(0xffc0c0c0),
   );
 

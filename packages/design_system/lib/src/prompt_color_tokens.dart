@@ -59,7 +59,13 @@ class PromptTokens extends ThemeExtension<PromptTokens> {
   /// Placeholder text inside a field.
   final Color inputPlaceholder;
 
-  /// Primary call to action. Black in both themes, as in the reference.
+  /// Primary call to action.
+  ///
+  /// The reference inverts it rather than keeping one fill: black with white
+  /// text in light, near-white with near-black text in dark
+  /// (`RoundButton.tsx`). A black button on its black dark page would be
+  /// invisible, which is how this was caught — in a dark-mode pass, after a
+  /// first attempt shipped black for both.
   final Color buttonPrimaryBackground;
   final Color buttonPrimaryTint;
   final Color buttonPrimaryDisabled;
