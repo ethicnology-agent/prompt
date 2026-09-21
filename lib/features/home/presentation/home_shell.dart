@@ -191,8 +191,13 @@ class _HomeShellState extends State<HomeShell> {
                 ],
                 Expanded(
                   child: NavigatorPopHandler<Object?>(
+                    // `maybePop`, not `pop`: a screen inside the pane may want
+                    // the back gesture for itself — a composer with an open
+                    // choice panel closes the panel rather than leaving the
+                    // conversation. Popping unconditionally walked straight
+                    // past its `PopScope`.
                     onPopWithResult: (result) =>
-                        _paneNavigator.currentState!.pop(result),
+                        _paneNavigator.currentState!.maybePop(result),
                     child: Navigator(
                       key: _paneNavigator,
                       onGenerateRoute: (_) => MaterialPageRoute<void>(
