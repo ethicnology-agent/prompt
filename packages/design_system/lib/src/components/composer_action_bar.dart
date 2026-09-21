@@ -25,15 +25,18 @@ class ComposerActionBar extends StatelessWidget {
   /// The send or stop action.
   final Widget trailing;
 
-  /// Above this scaled size the row is allowed to grow, because the controls
-  /// can no longer be read on one line. It is the threshold the execution
-  /// controls already use to drop their roomy layout.
-  static const double _scaleCeiling = 18;
-
   @override
-  Widget build(BuildContext context) {
-    final scaled = MediaQuery.textScalerOf(context).scale(14);
-    final row = Row(
+  Widget build(BuildContext context) => ConstrainedBox(
+    // A minimum, not a fixed height. The row is 42 in the reference and 48
+    // here, and stays there whenever its contents fit; it grows only when the
+    // middle wraps, which happens when enlarged text or a narrow phone leaves
+    // no room to read the labels on one line. Pinning the height instead
+    // clipped the wrapped row and put the controls out of reach.
+    constraints: const BoxConstraints(
+      minHeight: MobileComposerMetrics.actionRowHeight,
+    ),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
       children: [
         for (final action in leading) ...[action, const SizedBox(width: 4)],
         if (controls case final middle?)
@@ -43,17 +46,6 @@ class ComposerActionBar extends StatelessWidget {
         const SizedBox(width: MobileComposerMetrics.primaryActionMarginLeft),
         trailing,
       ],
-    );
-    if (scaled > _scaleCeiling) {
-      // Enlarged text cannot be read on one line. Parity yields to legibility
-      // here rather than clipping the model name to nothing.
-      return ConstrainedBox(
-        constraints: const BoxConstraints(
-          minHeight: MobileComposerMetrics.actionRowHeight,
-        ),
-        child: row,
-      );
-    }
-    return SizedBox(height: MobileComposerMetrics.actionRowHeight, child: row);
-  }
+    ),
+  );
 }

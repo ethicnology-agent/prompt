@@ -2460,37 +2460,81 @@ class _DesktopResizeHandle extends StatelessWidget {
 
 /// The execution choices under the composer: one line normally, wrapped when
 /// the text scale makes a single line unreadable.
+/// The execution choices under the composer.
+///
+/// One line when the labels fit on one line, and a second line when they do
+/// not. The reference keeps a single row because it carries two choices;
+/// Prompt carries three, and with a keyboard up a third of the width is gone.
+/// Squeezing them regardless turned `Managed` into `Man…` and `Agent default`
+/// into `Age…`, which hides the very thing a permission mode is there to say.
+///
+/// Legibility wins over the single row. The row is still preferred, and still
+/// what a phone shows at ordinary text sizes with room to spare.
 class _ComposerChoiceRow extends StatelessWidget {
   const _ComposerChoiceRow({required this.children, this.flexibleKey});
 
   final List<Widget> children;
 
-  /// The control given first claim on the width. The others still shrink when
-  /// there is no room: Prompt shows three inline choices where the reference
-  /// shows two, so on a narrow phone something has to give, and overflowing is
-  /// not an option.
+  /// The control given first claim on the width once they do fit.
   final Key? flexibleKey;
+
+  /// Horizontal padding a choice keeps around its label.
+  static const double _chrome = 8;
+
+  /// Gap the row leaves between two choices.
+  static const double _gap = 4;
+
+  double _measure(BuildContext context, String label, TextStyle? style) {
+    final painter = TextPainter(
+      text: TextSpan(text: label, style: style),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+    )..layout();
+    return painter.width + _chrome * 2;
+  }
 
   @override
   Widget build(BuildContext context) {
-    if (MediaQuery.textScalerOf(context).scale(14) > 18) {
-      return Wrap(
-        spacing: 4,
-        runSpacing: 4,
-        alignment: WrapAlignment.end,
-        children: children,
-      );
-    }
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.end,
-      children: [
-        for (final child in children)
-          Flexible(
-            fit: FlexFit.loose,
-            flex: flexibleKey != null && child.key == flexibleKey ? 2 : 1,
-            child: child,
-          ),
-      ],
+    final style = Theme.of(context).textTheme.labelLarge;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        // Read the labels off the children rather than taking them as a
+        // parallel list, which would drift the first time one of them changed.
+        final labels = children
+            .whereType<CompactChoiceButton>()
+            .map((choice) => choice.label)
+            .toList();
+        if (labels.isEmpty) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: children,
+          );
+        }
+        final needed =
+            labels
+                .map((label) => _measure(context, label, style))
+                .fold(0.0, (total, width) => total + width) +
+            _gap * (labels.length - 1);
+        if (!constraints.hasBoundedWidth || needed <= constraints.maxWidth) {
+          return Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              for (final child in children)
+                Flexible(
+                  fit: FlexFit.loose,
+                  flex: flexibleKey != null && child.key == flexibleKey ? 2 : 1,
+                  child: child,
+                ),
+            ],
+          );
+        }
+        return Wrap(
+          spacing: _gap,
+          runSpacing: _gap,
+          alignment: WrapAlignment.end,
+          children: children,
+        );
+      },
     );
   }
 }
