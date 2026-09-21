@@ -3673,6 +3673,11 @@ void main() {
       );
       expect(find.text('/workspace/file.dart'), findsNothing);
       expect(find.text('Tool output'), findsNothing);
+      // Without a place to navigate to, the call falls back to an activity row
+      // and keeps its output reachable by tapping.
+      expect(find.text('File output stays inspectable'), findsNothing);
+      await tester.tap(find.byType(ToolActivityRow));
+      await tester.pumpAndSettle();
       expect(find.text('File output stays inspectable'), findsOneWidget);
       expect(
         find.byWidgetPredicate(
@@ -3892,9 +3897,15 @@ void main() {
     ]);
     await pumpScreen(tester);
 
+    // The row carries the tool's own wording on one line; its block label and
+    // body appear once the row is opened.
+    expect(find.text(r'$ pwd'), findsOneWidget);
+    expect(find.text('/workspace'), findsNothing);
+    expect(find.byType(ExpansionTile), findsNothing);
+    await tester.tap(find.byType(ToolActivityRow));
+    await tester.pumpAndSettle();
     expect(find.text('/workspace'), findsOneWidget);
     expect(find.text('Output'), findsOneWidget);
-    expect(find.byType(ExpansionTile), findsNothing);
   });
 
   testWidgets('renders Markdown in unfenced code and diff tool output', (
@@ -3980,6 +3991,12 @@ void main() {
     ]);
     await pumpScreen(tester);
 
+    // One logical line or twenty, the resting row is the same single line.
+    expect(find.byType(ToolActivityRow), findsOneWidget);
+    expect(find.byType(ExpansionTile), findsNothing);
+    expect(find.text('echo ok'), findsNothing);
+    await tester.tap(find.byType(ToolActivityRow));
+    await tester.pumpAndSettle();
     expect(find.text('echo ok'), findsOneWidget);
     expect(
       find.byWidgetPredicate(
@@ -3988,7 +4005,6 @@ void main() {
       ),
       findsOneWidget,
     );
-    expect(find.byType(ExpansionTile), findsNothing);
   });
 
   testWidgets('collapses a generic tool result with multiple logical lines', (
@@ -4020,7 +4036,10 @@ void main() {
     ]);
     await pumpScreen(tester);
 
-    expect(find.byType(ExpansionTile), findsOneWidget);
+    // A tool with no view of its own is one line of activity, as in the
+    // reference; its output is one tap away rather than always on screen.
+    expect(find.byType(ToolActivityRow), findsOneWidget);
+    expect(find.byType(ExpansionTile), findsNothing);
     expect(find.text('lib/a.dart\nlib/b.dart'), findsNothing);
     await tester.tap(find.text('Glob *.dart'));
     await tester.pumpAndSettle();

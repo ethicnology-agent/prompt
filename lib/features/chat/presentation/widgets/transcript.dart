@@ -372,9 +372,25 @@ class _MessageDetailCard extends StatelessWidget {
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () => onOpenFile!(path),
                 ),
+                // The card already says which tool ran; the expander holds its
+                // output, not another activity row for the same call.
                 ExpansionTile(
                   title: const Text('Tool output'),
-                  children: [_MessageDetailCard(detail: detail)],
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                      child: Align(
+                        alignment: AlignmentDirectional.centerStart,
+                        child: BasicMarkdownText(
+                          text: [toolDetail.output, toolDetail.error]
+                              .whereType<String>()
+                              .where((value) => value.isNotEmpty)
+                              .join('\n\n'),
+                          style: theme.textTheme.bodySmall,
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),
@@ -682,7 +698,14 @@ class _ToolDetailCard extends StatelessWidget {
   }
 }
 
-class _GenericToolDetailCard extends StatelessWidget {
+/// A tool with no view of its own, reported as one line of activity.
+///
+/// The reference reserves a card for tools that have something to show — a
+/// diff, a todo list, a task tree — and gives everything else a single
+/// transparent line, with the raw data one tap away. Prompt has no message
+/// detail screen yet, so the tap expands the output in place instead of
+/// navigating; the resting appearance is the same either way.
+class _GenericToolDetailCard extends StatefulWidget {
   const _GenericToolDetailCard({
     required this.presentation,
     required this.status,
@@ -692,97 +715,79 @@ class _GenericToolDetailCard extends StatelessWidget {
   final String status;
 
   @override
+  State<_GenericToolDetailCard> createState() => _GenericToolDetailCardState();
+}
+
+class _GenericToolDetailCardState extends State<_GenericToolDetailCard> {
+  bool _expanded = false;
+
+  @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final tokens = _tokens(theme);
-    final body = presentation.blocks;
-    final lines = presentation.logicalLineCount;
-    final statusPresentation = _toolStatus(status);
-    final header = ListTile(
-      contentPadding: const EdgeInsets.symmetric(horizontal: 10),
-      leading: Icon(
-        statusPresentation.icon,
-        size: 18,
-        color: statusPresentation.color(tokens),
-      ),
-      title: Text(
-        presentation.title,
-        maxLines: 2,
-        overflow: TextOverflow.ellipsis,
-      ),
-      subtitle: presentation.subtitle == null
-          ? null
-          : Text(presentation.subtitle!),
-    );
-    if (lines == 0) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 6),
-        child: Card(
-          margin: EdgeInsets.zero,
-          color: tokens.panelRaised,
-          child: header,
-        ),
-      );
-    }
-    final content = Column(
+    final blocks = widget.presentation.blocks;
+    final hasOutput = widget.presentation.logicalLineCount > 0;
+    final statusPresentation = _toolStatus(widget.status);
+    final label = [
+      widget.presentation.title,
+      ?widget.presentation.subtitle,
+    ].where((part) => part.isNotEmpty).join(' \u00b7 ');
+
+    return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        for (final block in body)
+        ToolActivityRow(
+          icon: _toolGlyph(widget.presentation.title),
+          label: label,
+          statusIcon: statusPresentation.icon,
+          statusColor: statusPresentation.color(tokens),
+          onTap: hasOutput
+              ? () => setState(() => _expanded = !_expanded)
+              : null,
+          expanded: _expanded,
+        ),
+        if (_expanded)
           Padding(
-            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            padding: const EdgeInsets.fromLTRB(38, 0, 8, 8),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                if (block.label case final label?) ...[
-                  Text(label, style: theme.textTheme.labelLarge),
-                  const SizedBox(height: 4),
+                for (final block in blocks) ...[
+                  if (block.label case final blockLabel?) ...[
+                    Text(blockLabel, style: theme.textTheme.labelLarge),
+                    const SizedBox(height: 4),
+                  ],
+                  BasicMarkdownText(
+                    text: block.text,
+                    style: theme.textTheme.bodySmall,
+                  ),
                 ],
-                BasicMarkdownText(
-                  text: block.text,
-                  style: theme.textTheme.bodySmall,
-                ),
               ],
             ),
           ),
       ],
     );
-    if (lines == 1) {
-      return Padding(
-        padding: const EdgeInsets.only(top: 6),
-        child: Card(
-          margin: EdgeInsets.zero,
-          color: tokens.panelRaised,
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [header, content],
-          ),
-        ),
-      );
-    }
-    return Padding(
-      padding: const EdgeInsets.only(top: 6),
-      child: ExpansionTile(
-        initiallyExpanded: false,
-        tilePadding: const EdgeInsets.symmetric(horizontal: 10),
-        collapsedBackgroundColor: tokens.panelRaised,
-        backgroundColor: tokens.panelRaised,
-        leading: Icon(
-          statusPresentation.icon,
-          size: 18,
-          color: statusPresentation.color(tokens),
-        ),
-        title: Text(
-          presentation.title,
-          maxLines: 2,
-          overflow: TextOverflow.ellipsis,
-        ),
-        subtitle: presentation.subtitle == null
-            ? null
-            : Text(presentation.subtitle!),
-        children: [content],
-      ),
-    );
   }
+}
+
+/// A glyph for the kind of operation, chosen from the tool's own wording.
+IconData _toolGlyph(String title) {
+  final name = title.toLowerCase();
+  if (name.contains('shell') || name.contains('bash') || name.contains('run')) {
+    return Icons.terminal_rounded;
+  }
+  if (name.contains('search') ||
+      name.contains('grep') ||
+      name.contains('find')) {
+    return Icons.search_rounded;
+  }
+  if (name.contains('read') || name.contains('file')) {
+    return Icons.description_outlined;
+  }
+  if (name.contains('web') || name.contains('fetch')) {
+    return Icons.public_rounded;
+  }
+  return Icons.build_outlined;
 }
 
 ({IconData icon, String label, Color Function(PromptTokens) color}) _toolStatus(
