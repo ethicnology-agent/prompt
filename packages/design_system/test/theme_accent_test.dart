@@ -56,7 +56,7 @@ void main() {
       expect(theme.chipTheme.selectedColor, scheme.primaryContainer);
     });
 
-    testWidgets('shared controls resolve central accent in dark=$dark', (
+    testWidgets('shared controls take the reference treatment in dark=$dark', (
       tester,
     ) async {
       await tester.pumpWidget(
@@ -93,6 +93,7 @@ void main() {
           ),
         ),
       );
+      final tokens = theme.extension<PromptTokens>()!;
       final primaryMaterial = tester.widget<Material>(
         find
             .descendant(
@@ -101,7 +102,11 @@ void main() {
             )
             .first,
       );
-      expect(primaryMaterial.color, expected.primary);
+      // The primary call to action is the reference's black pill, not the
+      // brand accent. The accent survives where it still carries meaning:
+      // a focused field, a selected chip, the floating action.
+      expect(primaryMaterial.color, tokens.buttonPrimaryBackground);
+      expect(primaryMaterial.shape, isA<StadiumBorder>());
       expect(
         tester
             .widget<RichText>(
@@ -115,7 +120,7 @@ void main() {
             .text
             .style!
             .color,
-        expected.primary,
+        theme.colorScheme.onSurface,
       );
       expect(
         tester
@@ -143,7 +148,6 @@ void main() {
       // The filled round action is a neutral composer control, not an accent
       // surface: Happy fills it with `surfaceHighest` and a secondary glyph.
       // Only the tonal variant still carries the accent.
-      final tokens = theme.extension<PromptTokens>()!;
       expect(
         icons.map((material) => material.color),
         containsAll([tokens.surfaceHighest, expected.secondaryContainer]),

@@ -159,21 +159,26 @@ ThemeData _theme(Brightness brightness) {
       showCheckmark: false,
       padding: const EdgeInsets.symmetric(horizontal: 4),
     ),
+    // The reference's primary call to action is black, tinted white, and fully
+    // rounded — a pill, not a rounded rectangle. Measured on its `Troubleshoot`
+    // button: 131 px tall with a 65.5 px corner, which only a half-height
+    // radius fits.
     filledButtonTheme: FilledButtonThemeData(
       style: FilledButton.styleFrom(
         minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(PromptUiTokens.controlRadius),
-        ),
+        backgroundColor: tokens.buttonPrimaryBackground,
+        foregroundColor: tokens.buttonPrimaryTint,
+        disabledBackgroundColor: tokens.buttonPrimaryDisabled,
+        disabledForegroundColor: tokens.buttonPrimaryTint,
+        shape: const StadiumBorder(),
         textStyle: const TextStyle(fontWeight: PromptFontWeights.semiBold),
       ),
     ),
     outlinedButtonTheme: OutlinedButtonThemeData(
       style: OutlinedButton.styleFrom(
         minimumSize: const Size(48, 48),
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(PromptUiTokens.controlRadius),
-        ),
+        foregroundColor: scheme.onSurface,
+        shape: const StadiumBorder(),
       ),
     ),
     textButtonTheme: TextButtonThemeData(
