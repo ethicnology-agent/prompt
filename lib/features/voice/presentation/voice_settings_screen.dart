@@ -13,101 +13,109 @@ class VoiceSettingsScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Voice input')),
+    backgroundColor: SettingsGroup.pageColor(Theme.of(context)),
+    appBar: AppBar(title: const Text('Voice input'), centerTitle: false),
+    // Every settings surface wears the same grouped chrome: a grey page,
+    // white cards, an uppercase heading and a sentence underneath saying what
+    // the group is for. This screen used to be a bare list on white.
     body: ListView(
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
       children: [
-        Text(
-          'Recognition language',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        ValueListenableBuilder<VoiceLanguage>(
-          valueListenable: viewModel.language,
-          builder: (context, language, _) => ChoiceField<VoiceLanguage>(
-            label: 'Language',
-            scopeKey: viewModel,
-            selected: language,
-            options: [
-              for (final option in VoiceLanguage.values)
-                InlineSelectionOption(value: option, label: option.label),
-            ],
-            onSelected: viewModel.selectLanguage,
-          ),
-        ),
-        const SizedBox(height: 20),
-        Text(
-          'Local Sherpa models',
-          style: Theme.of(context).textTheme.titleMedium,
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Install downloads, verifies, stores, and selects all four required '
-          'files in one action. French needs about 123 MiB; English needs about '
-          '69 MiB. Models remain installed across app updates. Installing '
-          'explicitly contacts Hugging Face to download the selected model.',
-        ),
-        const SizedBox(height: 12),
-        ValueListenableBuilder<Set<VoiceLanguage>>(
-          valueListenable: viewModel.selectedModelLanguages,
-          builder: (context, selected, _) =>
-              ValueListenableBuilder<Map<VoiceLanguage, double>>(
-                valueListenable: viewModel.modelInstallProgress,
-                builder: (context, progress, _) =>
-                    ValueListenableBuilder<
-                      Map<VoiceLanguage, VoiceModelInstallFailure>
-                    >(
-                      valueListenable: viewModel.modelInstallFailures,
-                      builder: (context, failures, _) => Column(
-                        children: [
-                          _ModelCard(
-                            language: VoiceLanguage.french,
-                            selected: selected.contains(VoiceLanguage.french),
-                            progress: progress[VoiceLanguage.french],
-                            failure: failures[VoiceLanguage.french],
-                            onInstall: () =>
-                                viewModel.installModelFromUserAction(
-                                  VoiceLanguage.french,
-                                ),
-                            onRemove: () => viewModel.removeModelFromUserAction(
-                              VoiceLanguage.french,
-                            ),
-                            onSelectExisting: () =>
-                                viewModel.selectModelFromUserAction(
-                                  VoiceLanguage.french,
-                                ),
-                          ),
-                          const SizedBox(height: 12),
-                          _ModelCard(
-                            language: VoiceLanguage.english,
-                            selected: selected.contains(VoiceLanguage.english),
-                            progress: progress[VoiceLanguage.english],
-                            failure: failures[VoiceLanguage.english],
-                            onInstall: () =>
-                                viewModel.installModelFromUserAction(
-                                  VoiceLanguage.english,
-                                ),
-                            onRemove: () => viewModel.removeModelFromUserAction(
-                              VoiceLanguage.english,
-                            ),
-                            onSelectExisting: () =>
-                                viewModel.selectModelFromUserAction(
-                                  VoiceLanguage.english,
-                                ),
-                          ),
-                        ],
-                      ),
-                    ),
+        SettingsGroup(
+          title: 'Recognition language',
+          footer:
+              'Speech is matched against the language you choose here, not '
+              'detected automatically.',
+          children: [
+            ValueListenableBuilder<VoiceLanguage>(
+              valueListenable: viewModel.language,
+              builder: (context, language, _) => Padding(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+                child: ChoiceField<VoiceLanguage>(
+                  label: 'Language',
+                  scopeKey: viewModel,
+                  selected: language,
+                  options: [
+                    for (final option in VoiceLanguage.values)
+                      InlineSelectionOption(value: option, label: option.label),
+                  ],
+                  onSelected: viewModel.selectLanguage,
+                ),
               ),
+            ),
+          ],
         ),
-        const SizedBox(height: 20),
-        const Text(
-          'Models and transcripts remain local. Audio stays in memory and is '
-          'released after each segment, cancellation, or lifecycle pause. '
-          'Removing a model deletes its private files.',
-        ),
+        const SizedBox(height: 8),
+        _ModelsGroup(viewModel: viewModel),
       ],
     ),
+  );
+}
+
+class _ModelsGroup extends StatelessWidget {
+  const _ModelsGroup({required this.viewModel});
+
+  final VoiceViewModel viewModel;
+
+  @override
+  Widget build(BuildContext context) => SettingsGroup(
+    title: 'Local models',
+    footer:
+        'Install downloads, verifies, stores, and selects all four required '
+        'files in one action. French needs about 123 MiB; English needs about '
+        '69 MiB. Models remain installed across app updates. Installing '
+        'explicitly contacts Hugging Face to download the selected model. '
+        'Models and transcripts remain local: audio stays in memory and is '
+        'released after each segment, cancellation, or lifecycle pause, and '
+        'removing a model deletes its private files.',
+    children: [
+      ValueListenableBuilder<Set<VoiceLanguage>>(
+        valueListenable: viewModel.selectedModelLanguages,
+        builder: (context, selected, _) =>
+            ValueListenableBuilder<Map<VoiceLanguage, double>>(
+              valueListenable: viewModel.modelInstallProgress,
+              builder: (context, progress, _) =>
+                  ValueListenableBuilder<
+                    Map<VoiceLanguage, VoiceModelInstallFailure>
+                  >(
+                    valueListenable: viewModel.modelInstallFailures,
+                    builder: (context, failures, _) => Column(
+                      children: [
+                        _ModelCard(
+                          language: VoiceLanguage.french,
+                          selected: selected.contains(VoiceLanguage.french),
+                          progress: progress[VoiceLanguage.french],
+                          failure: failures[VoiceLanguage.french],
+                          onInstall: () => viewModel.installModelFromUserAction(
+                            VoiceLanguage.french,
+                          ),
+                          onRemove: () => viewModel.removeModelFromUserAction(
+                            VoiceLanguage.french,
+                          ),
+                          onSelectExisting: () => viewModel
+                              .selectModelFromUserAction(VoiceLanguage.french),
+                        ),
+                        const SizedBox(height: 12),
+                        _ModelCard(
+                          language: VoiceLanguage.english,
+                          selected: selected.contains(VoiceLanguage.english),
+                          progress: progress[VoiceLanguage.english],
+                          failure: failures[VoiceLanguage.english],
+                          onInstall: () => viewModel.installModelFromUserAction(
+                            VoiceLanguage.english,
+                          ),
+                          onRemove: () => viewModel.removeModelFromUserAction(
+                            VoiceLanguage.english,
+                          ),
+                          onSelectExisting: () => viewModel
+                              .selectModelFromUserAction(VoiceLanguage.english),
+                        ),
+                      ],
+                    ),
+                  ),
+            ),
+      ),
+    ],
   );
 }
 

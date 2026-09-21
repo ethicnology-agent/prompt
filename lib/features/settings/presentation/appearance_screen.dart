@@ -29,6 +29,9 @@ class AppearanceScreen extends StatelessWidget {
               valueListenable: themeViewModel,
               builder: (context, mode, _) => SettingsGroup(
                 title: 'THEME',
+                footer:
+                    'Choose your preferred color scheme. This preference stays '
+                    'on this device.',
                 children: [
                   for (final option in ThemeMode.values)
                     Semantics(
@@ -87,16 +90,6 @@ class AppearanceScreen extends StatelessWidget {
                   ),
                 ),
               },
-            ),
-            Padding(
-              padding: const EdgeInsets.fromLTRB(12, 12, 12, 0),
-              child: Text(
-                'Choose your preferred color scheme. This preference stays on '
-                'this device.',
-                style: theme.textTheme.bodyMedium?.copyWith(
-                  color: theme.colorScheme.onSurfaceVariant,
-                ),
-              ),
             ),
           ],
         ),

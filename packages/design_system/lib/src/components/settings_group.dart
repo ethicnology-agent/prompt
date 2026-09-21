@@ -4,10 +4,22 @@ import '../prompt_color_tokens.dart';
 
 /// A grouped settings surface, independent of the actions inside it.
 class SettingsGroup extends StatelessWidget {
-  const SettingsGroup({required this.title, required this.children, super.key});
+  const SettingsGroup({
+    required this.title,
+    required this.children,
+    this.footer,
+    super.key,
+  });
 
   final String title;
   final List<Widget> children;
+
+  /// A sentence under the card explaining what the group is for.
+  ///
+  /// The reference makes this part of the group rather than something each
+  /// screen lays out for itself, which is why its footers all sit at the same
+  /// inset and take the same colour as the heading above them.
+  final String? footer;
 
   /// Keeps cards distinct from their page in both supported appearances.
   static Color pageColor(ThemeData theme) => theme.brightness == Brightness.dark
@@ -93,6 +105,18 @@ class SettingsGroup extends StatelessWidget {
             ),
           ),
         ),
+        if (footer case final note?)
+          Padding(
+            padding: const EdgeInsets.only(left: 12, right: 12, top: 8),
+            child: Text(
+              note,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontSize: 14,
+                height: 20 / 14,
+                color: scheme.onSurfaceVariant,
+              ),
+            ),
+          ),
       ],
     );
   }
